@@ -14,7 +14,101 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      appointments: {
+        Row: {
+          age: number
+          appointment_date: string
+          appointment_time: string
+          consultation_type: Database["public"]["Enums"]["consultation_type"]
+          created_at: string
+          dni: string
+          email: string | null
+          first_name: string
+          id: string
+          last_name: string
+          patient_type: Database["public"]["Enums"]["patient_type"]
+          phone: string
+          professional_id: string | null
+          reason: string
+          status: Database["public"]["Enums"]["appointment_status"]
+          updated_at: string
+        }
+        Insert: {
+          age: number
+          appointment_date: string
+          appointment_time: string
+          consultation_type: Database["public"]["Enums"]["consultation_type"]
+          created_at?: string
+          dni: string
+          email?: string | null
+          first_name: string
+          id?: string
+          last_name: string
+          patient_type: Database["public"]["Enums"]["patient_type"]
+          phone: string
+          professional_id?: string | null
+          reason: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Update: {
+          age?: number
+          appointment_date?: string
+          appointment_time?: string
+          consultation_type?: Database["public"]["Enums"]["consultation_type"]
+          created_at?: string
+          dni?: string
+          email?: string | null
+          first_name?: string
+          id?: string
+          last_name?: string
+          patient_type?: Database["public"]["Enums"]["patient_type"]
+          phone?: string
+          professional_id?: string | null
+          reason?: string
+          status?: Database["public"]["Enums"]["appointment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
+            referencedRelation: "professionals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      professionals: {
+        Row: {
+          created_at: string
+          days: string
+          description: string
+          id: string
+          name: string
+          photo_url: string | null
+          specialty: string
+        }
+        Insert: {
+          created_at?: string
+          days: string
+          description: string
+          id?: string
+          name: string
+          photo_url?: string | null
+          specialty: string
+        }
+        Update: {
+          created_at?: string
+          days?: string
+          description?: string
+          id?: string
+          name?: string
+          photo_url?: string | null
+          specialty?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +117,9 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      appointment_status: "pendiente" | "confirmado" | "cancelado"
+      consultation_type: "primera_vez" | "seguimiento"
+      patient_type: "niño" | "adolescente" | "adulto"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +246,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      appointment_status: ["pendiente", "confirmado", "cancelado"],
+      consultation_type: ["primera_vez", "seguimiento"],
+      patient_type: ["niño", "adolescente", "adulto"],
+    },
   },
 } as const
