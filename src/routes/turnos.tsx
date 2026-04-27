@@ -154,9 +154,9 @@ function TurnosPage() {
                     <span className="font-semibold leading-none">{d.getDate()}</span>
                     {!disabled && (
                       <span className="flex gap-0.5">
-                        {available > 0 && <Dot color="var(--status-available)" />}
-                        {pending > 0 && <Dot color="var(--status-pending)" />}
-                        {occupied > 0 && <Dot color="var(--status-occupied)" />}
+                        {available > 0 && <Dot color="--status-available" />}
+                        {pending > 0 && <Dot color="--status-pending" />}
+                        {occupied > 0 && <Dot color="--status-occupied" />}
                       </span>
                     )}
                   </button>
