@@ -232,20 +232,20 @@ function TurnosPage() {
 }
 
 function Dot({ color }: { color: string }) {
-  return <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `oklch(from ${color} l c h)` }} />;
+  return <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `var(${color})` }} />;
 }
 
 function Legend() {
   const items = [
-    { color: "var(--status-available)", label: "Disponible" },
-    { color: "var(--status-pending)", label: "Pendiente" },
-    { color: "var(--status-occupied)", label: "Ocupado" },
+    { color: "--status-available", label: "Disponible" },
+    { color: "--status-pending", label: "Pendiente" },
+    { color: "--status-occupied", label: "Ocupado" },
   ];
   return (
     <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
       {items.map((i) => (
         <div key={i.label} className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: `oklch(from ${i.color} l c h)` }} />
+          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: `var(${i.color})` }} />
           {i.label}
         </div>
       ))}
