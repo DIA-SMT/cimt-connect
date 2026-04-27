@@ -63,10 +63,10 @@ function Index() {
             <div className="overflow-hidden rounded-3xl shadow-[var(--shadow-elegant)] ring-1 ring-primary/10">
               <img
                 src={heroImg}
-                alt="Profesional acompañando a un niño en consulta de fonoaudiología"
+                alt="Centro Integral Municipal de Tartamudez — Si tartamudeás no estás solo. Catamarca 411."
                 width={1600}
                 height={1024}
-                className="h-full w-full object-cover"
+                className="h-full w-full bg-[color:var(--primary-soft)] object-contain"
               />
             </div>
             <div className="absolute -bottom-5 left-6 hidden rounded-2xl border border-border/60 bg-background/95 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur md:block">
