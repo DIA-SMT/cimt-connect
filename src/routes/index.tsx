@@ -58,26 +58,24 @@ function Index() {
             </div>
           </div>
 
-          <div className="relative">
+          <div className="relative flex flex-col items-center justify-center">
             <div className="absolute -inset-6 -z-10 rounded-[2rem] bg-[var(--gradient-hero)] opacity-20 blur-2xl" />
-            <div className="overflow-hidden rounded-3xl shadow-[var(--shadow-elegant)] ring-1 ring-primary/10">
+            <div className="w-full max-w-xs overflow-hidden rounded-3xl shadow-[var(--shadow-elegant)] ring-1 ring-primary/10 sm:max-w-sm">
               <img
                 src={heroImg}
                 alt="Centro Integral Municipal de Tartamudez — Si tartamudeás no estás solo. Catamarca 411."
-                width={1600}
-                height={1024}
-                className="h-full w-full bg-[color:var(--primary-soft)] object-contain"
+                width={800}
+                height={1000}
+                className="block h-auto w-full bg-[color:var(--primary-soft)] object-contain"
               />
             </div>
-            <div className="absolute -bottom-5 left-6 hidden rounded-2xl border border-border/60 bg-background/95 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur md:block">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-                <div className="text-sm">
-                  <div className="font-semibold text-foreground">Servicio gratuito</div>
-                  <div className="text-xs text-muted-foreground">Equipo interdisciplinario</div>
-                </div>
+            <div className="mt-5 inline-flex items-center gap-3 rounded-2xl border border-border/60 bg-background/95 px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div className="text-sm">
+                <div className="font-semibold text-foreground">Servicio gratuito</div>
+                <div className="text-xs text-muted-foreground">Equipo interdisciplinario</div>
               </div>
             </div>
           </div>
