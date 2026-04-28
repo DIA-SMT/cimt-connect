@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   MapPin, Clock, Phone, Mail, CalendarCheck, Stethoscope,
   HeartHandshake, Users, ShieldCheck, Sparkles, ArrowRight,
+  Info, AlertCircle, Baby, Activity, CheckCircle2,
 } from "lucide-react";
 import heroImg from "@/assets/hero.jpg";
 
