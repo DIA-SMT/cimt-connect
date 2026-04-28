@@ -95,7 +95,7 @@ function Index() {
               </Button>
             </div>
 
-            <div className="mt-8 grid grid-cols-2 gap-4 sm:max-w-md md:grid-cols-3">
+            <div className="mt-8 flex flex-col gap-3 sm:max-w-md">
               <InfoChip icon={MapPin} title="Catamarca 411" subtitle="San Miguel de Tucumán" />
               <InfoChip icon={Clock} title="Lun a Vie" subtitle="07:30 — 17:30 hs" />
               <InfoChip icon={ShieldCheck} title="Gratuito" subtitle="Equipo interdisciplinario" />
