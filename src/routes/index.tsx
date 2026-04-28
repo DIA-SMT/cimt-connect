@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   MapPin, Clock, Phone, Mail, CalendarCheck, Stethoscope,
   HeartHandshake, Users, ShieldCheck, Sparkles, ArrowRight,
+  Info, AlertCircle, Baby, Activity, CheckCircle2,
 } from "lucide-react";
 import heroImg from "@/assets/hero.jpg";
 
@@ -76,6 +77,71 @@ function Index() {
 
       {/* INFO SECTION */}
       <section className="container mx-auto px-4 py-16 md:px-6 md:py-20">
+        <div className="mx-auto max-w-3xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
+            <Info className="h-3.5 w-3.5" />
+            Información
+          </div>
+          <h2 className="mt-4 font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
+            ¿Qué es la tartamudez?
+          </h2>
+          <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+            La tartamudez, clínicamente llamada <strong className="text-foreground">trastorno de la fluidez del habla</strong> o <strong className="text-foreground">disfluencia</strong>, es una dificultad en el ritmo normal del habla que puede incluir repeticiones, prolongaciones o bloqueos al hablar.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          <InfoBlock icon={AlertCircle} title="Señales frecuentes">
+            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <BulletItem>Repetición de sonidos o sílabas</BulletItem>
+              <BulletItem>Bloqueos al comenzar palabras</BulletItem>
+              <BulletItem>Tensión al hablar</BulletItem>
+              <BulletItem>Evitación de palabras</BulletItem>
+              <BulletItem>Ansiedad al comunicarse</BulletItem>
+            </ul>
+          </InfoBlock>
+
+          <InfoBlock icon={Baby} title="¿En qué edades puede aparecer?">
+            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <BulletItem>Primera infancia (más común)</BulletItem>
+              <BulletItem>Niñez escolar</BulletItem>
+              <BulletItem>Adolescencia</BulletItem>
+              <BulletItem>Adultez</BulletItem>
+            </ul>
+          </InfoBlock>
+        </div>
+
+        <div className="mt-6 grid gap-6 md:grid-cols-3">
+          <SeverityCard level="Leve" tone="soft" description="Interrupciones ocasionales en el habla, sin gran impacto en la comunicación." />
+          <SeverityCard level="Moderada" tone="medium" description="Frecuencia mayor de disfluencias, ya impacta en lo social y emocional." />
+          <SeverityCard level="Severa" tone="strong" description="Bloqueos notorios, tensión muscular evidente y evitación frecuente del habla." />
+        </div>
+
+        <div className="mt-10 flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-7 sm:flex-row sm:items-center sm:justify-between md:p-8">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">
+                ¿Tiene tratamiento? Sí.
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Con un abordaje profesional adecuado puede mejorar notablemente la comunicación y la calidad de vida.
+              </p>
+            </div>
+          </div>
+          <Button asChild size="lg" className="h-12 shrink-0 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
+            <Link to="/turnos">
+              Solicitar turno
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* SERVICES SECTION */}
+      <section className="container mx-auto px-4 pb-16 md:px-6 md:pb-20">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
             Acompañamiento integral en cada etapa
@@ -180,5 +246,51 @@ function ContactItem({ icon: Icon, label, value }: { icon: typeof MapPin; label:
         <div className="text-base font-medium text-foreground">{value}</div>
       </div>
     </li>
+  );
+}
+
+function InfoBlock({ icon: Icon, title, children }: { icon: typeof Info; title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl border border-border/60 bg-card p-7 shadow-[var(--shadow-card)]">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
+          <Icon className="h-5 w-5" />
+        </div>
+        <h3 className="text-lg font-bold text-[color:var(--primary-deep)]">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function BulletItem({ children }: { children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+      <span>{children}</span>
+    </li>
+  );
+}
+
+function SeverityCard({ level, tone, description }: { level: string; tone: "soft" | "medium" | "strong"; description: string }) {
+  const toneStyles = {
+    soft: "border-primary/15 bg-[color:var(--primary-soft)]/40",
+    medium: "border-primary/30 bg-[color:var(--primary-soft)]/70",
+    strong: "border-primary/50 bg-primary/15",
+  }[tone];
+  const dotStyles = {
+    soft: "bg-primary/40",
+    medium: "bg-primary/70",
+    strong: "bg-primary",
+  }[tone];
+  return (
+    <div className={`rounded-3xl border p-6 ${toneStyles}`}>
+      <div className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${dotStyles}`} />
+        <Activity className="h-4 w-4 text-[color:var(--primary-deep)]" />
+        <span className="text-sm font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">{level}</span>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-foreground/80">{description}</p>
+    </div>
   );
 }
