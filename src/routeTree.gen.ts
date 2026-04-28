@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TurnosRouteImport } from './routes/turnos'
 import { Route as ProfesionalesRouteImport } from './routes/profesionales'
+import { Route as ExploraRouteImport } from './routes/explora'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const TurnosRoute = TurnosRouteImport.update({
 const ProfesionalesRoute = ProfesionalesRouteImport.update({
   id: '/profesionales',
   path: '/profesionales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExploraRoute = ExploraRouteImport.update({
+  id: '/explora',
+  path: '/explora',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -38,12 +44,14 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/explora': typeof ExploraRoute
   '/profesionales': typeof ProfesionalesRoute
   '/turnos': typeof TurnosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/explora': typeof ExploraRoute
   '/profesionales': typeof ProfesionalesRoute
   '/turnos': typeof TurnosRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/explora': typeof ExploraRoute
   '/profesionales': typeof ProfesionalesRoute
   '/turnos': typeof TurnosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/profesionales' | '/turnos'
+  fullPaths: '/' | '/admin' | '/explora' | '/profesionales' | '/turnos'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/profesionales' | '/turnos'
-  id: '__root__' | '/' | '/admin' | '/profesionales' | '/turnos'
+  to: '/' | '/admin' | '/explora' | '/profesionales' | '/turnos'
+  id: '__root__' | '/' | '/admin' | '/explora' | '/profesionales' | '/turnos'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  ExploraRoute: typeof ExploraRoute
   ProfesionalesRoute: typeof ProfesionalesRoute
   TurnosRoute: typeof TurnosRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/profesionales'
       fullPath: '/profesionales'
       preLoaderRoute: typeof ProfesionalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/explora': {
+      id: '/explora'
+      path: '/explora'
+      fullPath: '/explora'
+      preLoaderRoute: typeof ExploraRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  ExploraRoute: ExploraRoute,
   ProfesionalesRoute: ProfesionalesRoute,
   TurnosRoute: TurnosRoute,
 }

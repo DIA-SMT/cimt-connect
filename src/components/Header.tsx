@@ -18,6 +18,7 @@ export function Header() {
         </Link>
         <nav className="flex items-center gap-1 sm:gap-2">
           <NavLink to="/">Inicio</NavLink>
+          <NavLink to="/explora">Explorá</NavLink>
           <NavLink to="/profesionales">Profesionales</NavLink>
           <NavLink to="/turnos">Turnos</NavLink>
           <Link
