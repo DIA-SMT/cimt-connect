@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, ArrowRight, CalendarCheck, CheckCircle2, Sparkles,
+  ArrowRight, CalendarCheck, RotateCcw, Sparkles,
   User, Users, Heart, Repeat, Pause, Zap, HelpCircle, Clock3,
-  CalendarDays, History, Smile, Frown, ShieldOff, RotateCcw,
+  CalendarDays, History, Smile, Frown, ShieldOff,
 } from "lucide-react";
 
 export const Route = createFileRoute("/explora")({
@@ -20,19 +20,23 @@ export const Route = createFileRoute("/explora")({
   component: ExploraPage,
 });
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type OptionId = string;
-type Step = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  options: { id: OptionId; label: string; icon: typeof User; score: number }[];
-};
+type StepOption = { id: OptionId; label: string; icon: typeof User; score: number };
+type Step = { id: string; title: string; options: StepOption[] };
+type Tone = "green" | "yellow" | "blue";
+type ChatMsg =
+  | { id: string; from: "bot"; text: string }
+  | { id: string; from: "user"; text: string }
+  | { id: string; from: "result"; score: number };
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
 
 const STEPS: Step[] = [
   {
     id: "para_quien",
     title: "¿Para quién es esta consulta?",
-    subtitle: "Contanos a quién querés orientar.",
     options: [
       { id: "mi", label: "Para mí", icon: User, score: 0 },
       { id: "hijo", label: "Para mi hijo/a", icon: Heart, score: 0 },
@@ -42,17 +46,16 @@ const STEPS: Step[] = [
   {
     id: "que_sucede",
     title: "¿Qué sucede al hablar?",
-    subtitle: "Elegí la opción que más se parezca.",
     options: [
       { id: "repite", label: "Repite sonidos", icon: Repeat, score: 2 },
       { id: "traba", label: "Se traba al empezar", icon: Pause, score: 2 },
       { id: "rapido", label: "Habla rápido y se enreda", icon: Zap, score: 1 },
-      { id: "no_seguro", label: "No estoy seguro", icon: HelpCircle, score: 1 },
+      { id: "no_seguro", label: "No estoy seguro/a", icon: HelpCircle, score: 1 },
     ],
   },
   {
     id: "desde_cuando",
-    title: "¿Desde cuándo ocurre?",
+    title: "¿Desde cuándo ocurre esto?",
     options: [
       { id: "poco", label: "Hace poco", icon: Clock3, score: 1 },
       { id: "meses", label: "Hace meses", icon: CalendarDays, score: 2 },
@@ -61,8 +64,7 @@ const STEPS: Step[] = [
   },
   {
     id: "impacto",
-    title: "¿Cómo impacta?",
-    subtitle: "Pensá en lo emocional y social.",
+    title: "¿Cómo impacta en lo emocional y social?",
     options: [
       { id: "poco", label: "Le molesta poco", icon: Smile, score: 1 },
       { id: "frustra", label: "Le genera frustración", icon: Frown, score: 2 },
@@ -71,265 +73,361 @@ const STEPS: Step[] = [
   },
 ];
 
-type Tone = "green" | "yellow" | "blue";
+const INTRO_MESSAGES = [
+  "¡Hola! 👋 Soy **LIA**, la asistente virtual del **Centro Integral de Motricidad del Habla**.",
+  "Estoy aquí para ayudarte a entender mejor la fluidez del habla con unas preguntas simples.",
+  "Es anónimo, gratuito y lleva solo **~1 minuto** ⏱️ ¿Empezamos?",
+];
+
+const BRIDGE = ["Entendido ✅", "Perfecto, gracias 😊", "Anotado 📝", "Claro ✅"];
 
 function getResult(score: number): { tone: Tone; emoji: string; title: string; description: string; cta: string } {
   if (score <= 3) {
     return {
-      tone: "green",
-      emoji: "🟢",
+      tone: "green", emoji: "🟢",
       title: "Puede ser algo evolutivo",
-      description: "Por lo que nos contás, podría tratarse de una disfluencia evolutiva propia del desarrollo del habla. Te recomendamos observar la evolución y, si persiste o aumenta, consultar con nuestro equipo.",
+      description: "Por lo que me contás, podría tratarse de una disfluencia evolutiva propia del desarrollo del habla. Te recomiendo observar la evolución y, si persiste o aumenta, consultar con nuestro equipo.",
       cta: "Conocer más",
     };
   }
   if (score <= 6) {
     return {
-      tone: "yellow",
-      emoji: "🟡",
+      tone: "yellow", emoji: "🟡",
       title: "Sería recomendable consultar",
       description: "Las señales que describís ameritan una evaluación profesional. Una consulta temprana permite orientar mejor el abordaje y evitar que se consolide.",
       cta: "Solicitar turno",
     };
   }
   return {
-    tone: "blue",
-    emoji: "🔵",
+    tone: "blue", emoji: "🔵",
     title: "Nuestro equipo puede ayudarte",
     description: "Lo que describís indica que un acompañamiento profesional puede mejorar significativamente la comunicación y la calidad de vida. Solicitá un turno gratuito con nuestro equipo interdisciplinario.",
     cta: "Solicitar turno",
   };
 }
 
-function ExploraPage() {
-  const [started, setStarted] = useState(false);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, { id: OptionId; score: number }>>({});
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  const totalSteps = STEPS.length;
-  const isFinished = stepIndex >= totalSteps;
-  const currentStep = STEPS[Math.min(stepIndex, totalSteps - 1)];
-  const progressPct = isFinished ? 100 : Math.round((stepIndex / totalSteps) * 100);
+const uid = () => Math.random().toString(36).slice(2, 9);
+const wait = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
-  const score = useMemo(
-    () => Object.values(answers).reduce((sum, a) => sum + a.score, 0),
-    [answers],
+function renderBotText(text: string) {
+  const parts = text.split(/\*\*(.*?)\*\*/g);
+  return parts.map((part, i) =>
+    i % 2 === 1 ? <strong key={i} className="font-bold text-[color:var(--primary-deep)]">{part}</strong> : part
   );
+}
 
-  const handleSelect = (optionId: OptionId, optionScore: number) => {
-    setAnswers((prev) => ({ ...prev, [currentStep.id]: { id: optionId, score: optionScore } }));
-    // Auto-advance after a short delay for nicer UX
-    setTimeout(() => {
-      setStepIndex((i) => i + 1);
-    }, 220);
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function LiaAvatar({ size = "md" }: { size?: "sm" | "md" }) {
+  const dim = size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
+  return (
+    <div className={`${dim} shrink-0 rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] flex items-center justify-center font-display font-bold text-primary-foreground shadow-sm`}>
+      LIA
+    </div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1 px-1 py-0.5">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="h-2 w-2 rounded-full bg-[color:var(--primary-deep)]/40"
+          style={{ animation: `lia-bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ChatBubble({ msg, onRestart }: { msg: ChatMsg; onRestart: () => void }) {
+  if (msg.from === "bot") {
+    return (
+      <div className="flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <LiaAvatar size="sm" />
+        <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-card border border-border/60 px-4 py-3 text-sm leading-relaxed text-foreground shadow-[var(--shadow-card)]">
+          {renderBotText(msg.text)}
+        </div>
+      </div>
+    );
+  }
+
+  if (msg.from === "user") {
+    return (
+      <div className="flex justify-end animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="max-w-[75%] rounded-2xl rounded-br-none bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-sm">
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
+
+  // Result card
+  const result = getResult(msg.score);
+  const toneStyles: Record<Tone, { ring: string; bg: string; badge: string; text: string }> = {
+    green: { ring: "border-emerald-200", bg: "bg-emerald-50", badge: "bg-emerald-500 text-white", text: "text-emerald-900" },
+    yellow: { ring: "border-amber-200", bg: "bg-amber-50", badge: "bg-amber-500 text-white", text: "text-amber-900" },
+    blue: { ring: "border-primary/30", bg: "bg-[color:var(--primary-soft)]", badge: "bg-primary text-primary-foreground", text: "text-[color:var(--primary-deep)]" },
+  };
+  const t = toneStyles[result.tone];
+
+  return (
+    <div className="flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <LiaAvatar size="sm" />
+      <div className={`max-w-[85%] rounded-2xl rounded-bl-none border bg-card p-5 shadow-[var(--shadow-elegant)] ${t.ring}`}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${t.badge}`}>
+            <span>{result.emoji}</span> Resultado orientativo
+          </span>
+        </div>
+        <p className={`font-display text-lg font-bold leading-snug mb-2 ${t.text}`}>{result.title}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground mb-4">{result.description}</p>
+        <div className={`rounded-xl p-3 text-xs ${t.bg} ${t.text} mb-4`}>
+          <strong>Importante:</strong> este resultado es solo orientativo y no constituye un diagnóstico. Para una evaluación profesional, solicitá un turno gratuito.
+        </div>
+        <Button asChild size="sm" className="w-full rounded-full bg-primary font-semibold hover:bg-[color:var(--primary-deep)]">
+          <Link to="/turnos">
+            <CalendarCheck className="mr-1.5 h-4 w-4" />
+            {result.cta}
+          </Link>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+function ExploraPage() {
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [stepIndex, setStepIndex] = useState(-1);
+  const [answers, setAnswers] = useState<Record<string, { id: string; score: number }>>({});
+  const [finished, setFinished] = useState(false);
+  const [restartKey, setRestartKey] = useState(0);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  // sessionRef is incremented on every restart so in-flight handlers abort
+  const sessionRef = useRef(0);
+
+  // Auto-scroll — only when messages are actually present
+  useEffect(() => {
+    if (messages.length > 0 || isTyping) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [messages, isTyping]);
+
+  // Intro sequence (re-runs on restart).
+  // Uses a LOCAL `cancelled` boolean so StrictMode's double-invoke doesn't
+  // let the first async continue after cleanup runs.
+  useEffect(() => {
+    let cancelled = false;
+    // Bump session so any in-flight handlers from a previous run abort.
+    const mySession = ++sessionRef.current;
+
+    setMessages([]);
+    setStarted(false);
+    setStepIndex(-1);
+    setAnswers({});
+    setFinished(false);
+    setIsTyping(false);
+
+    const run = async () => {
+      for (let i = 0; i < INTRO_MESSAGES.length; i++) {
+        if (cancelled) return;
+        setIsTyping(true);
+        await wait(750 + i * 100);
+        if (cancelled) return;
+        setIsTyping(false);
+        setMessages((prev) => [...prev, { id: uid(), from: "bot", text: INTRO_MESSAGES[i] }]);
+        if (i < INTRO_MESSAGES.length - 1) await wait(280);
+      }
+    };
+
+    run();
+    // Cleanup: mark this specific invocation as cancelled
+    return () => {
+      cancelled = true;
+      void mySession; // suppress unused-var lint
+    };
+  }, [restartKey]);
+
+  const handleStart = async () => {
+    if (isTyping) return;
+    const mySession = sessionRef.current;
+    setStarted(true);
+    setIsTyping(true);
+    await wait(750);
+    if (sessionRef.current !== mySession) return;
+    setIsTyping(false);
+    setMessages((prev) => [...prev, { id: uid(), from: "bot", text: STEPS[0].title }]);
+    setStepIndex(0);
   };
 
-  const handleBack = () => {
-    if (stepIndex > 0) setStepIndex((i) => i - 1);
+  const handleSelect = async (option: StepOption) => {
+    if (isTyping || finished) return;
+    const mySession = sessionRef.current;
+
+    setMessages((prev) => [...prev, { id: uid(), from: "user", text: option.label }]);
+
+    const newAnswers = { ...answers, [STEPS[stepIndex].id]: { id: option.id, score: option.score } };
+    setAnswers(newAnswers);
+
+    const nextIndex = stepIndex + 1;
+
+    if (nextIndex >= STEPS.length) {
+      // Done
+      setIsTyping(true);
+      await wait(900);
+      if (sessionRef.current !== mySession) return;
+      setIsTyping(false);
+      setMessages((prev) => [...prev, { id: uid(), from: "bot", text: "¡Gracias por contarme! 🙏 Ya analicé tus respuestas..." }]);
+      await wait(350);
+      setIsTyping(true);
+      await wait(1100);
+      if (sessionRef.current !== mySession) return;
+      setIsTyping(false);
+      const finalScore = Object.values(newAnswers).reduce((sum, a) => sum + a.score, 0);
+      setMessages((prev) => [...prev, { id: uid(), from: "result", score: finalScore }]);
+      setFinished(true);
+      setStepIndex(nextIndex);
+    } else {
+      // Next question
+      setIsTyping(true);
+      await wait(800);
+      if (sessionRef.current !== mySession) return;
+      setIsTyping(false);
+      setMessages((prev) => [...prev, { id: uid(), from: "bot", text: BRIDGE[stepIndex % BRIDGE.length] }]);
+      await wait(300);
+      setIsTyping(true);
+      await wait(650);
+      if (sessionRef.current !== mySession) return;
+      setIsTyping(false);
+      setMessages((prev) => [...prev, { id: uid(), from: "bot", text: STEPS[nextIndex].title }]);
+      setStepIndex(nextIndex);
+    }
   };
 
   const handleRestart = () => {
-    setStarted(false);
-    setStepIndex(0);
-    setAnswers({});
+    // Bumping sessionRef here aborts any in-flight handleSelect/handleStart
+    sessionRef.current++;
+    setRestartKey((k) => k + 1);
   };
+
+  const currentStep = stepIndex >= 0 && stepIndex < STEPS.length ? STEPS[stepIndex] : null;
+  const showStart = !started && messages.length >= INTRO_MESSAGES.length && !isTyping;
+  const canAnswer = !!currentStep && !isTyping && !finished;
 
   return (
     <Layout>
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[var(--gradient-soft)]" />
-        <div className="container mx-auto max-w-3xl px-4 py-14 md:px-6 md:py-20">
-          {!started && (
-            <Intro onStart={() => setStarted(true)} />
-          )}
+      <style>{`
+        @keyframes lia-bounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+          40% { transform: translateY(-6px); opacity: 1; }
+        }
+      `}</style>
 
-          {started && !isFinished && (
-            <div className="rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] sm:p-8 md:p-10">
-              {/* Progress */}
-              <div className="mb-8">
-                <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span>Paso {stepIndex + 1} de {totalSteps}</span>
-                  <span>{progressPct}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-[color:var(--primary-soft)]">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-                    style={{ width: `${progressPct}%` }}
-                  />
+      <section className="relative flex flex-col" style={{ minHeight: "calc(100vh - 68px)" }}>
+        <div className="absolute inset-0 -z-10 bg-[var(--gradient-soft)]" />
+
+        {/* ── Header ── */}
+        <div className="sticky top-0 z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">
+          <div className="container mx-auto max-w-2xl px-4 py-3 flex items-center gap-3">
+            <LiaAvatar />
+            <div>
+              <p className="font-display font-bold text-[color:var(--primary-deep)] leading-none">LIA</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Asistente virtual · CIMT</p>
+            </div>
+            <div className="ml-auto flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              En línea
+            </div>
+          </div>
+        </div>
+
+        {/* ── Chat messages ── */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="container mx-auto max-w-2xl px-4 py-6 flex flex-col gap-4">
+            {messages.map((msg) => (
+              <ChatBubble key={msg.id} msg={msg} onRestart={handleRestart} />
+            ))}
+
+            {isTyping && (
+              <div className="flex items-end gap-2 animate-in fade-in duration-200">
+                <LiaAvatar size="sm" />
+                <div className="rounded-2xl rounded-bl-none bg-card border border-border/60 px-4 py-3 shadow-sm">
+                  <TypingDots />
                 </div>
               </div>
+            )}
 
-              <h2 className="font-display text-2xl font-bold text-[color:var(--primary-deep)] sm:text-3xl">
-                {currentStep.title}
-              </h2>
-              {currentStep.subtitle && (
-                <p className="mt-2 text-sm text-muted-foreground sm:text-base">{currentStep.subtitle}</p>
-              )}
+            <div ref={bottomRef} />
+          </div>
+        </div>
 
-              <div className="mt-7 grid gap-3 sm:grid-cols-2">
+        {/* ── Bottom controls ── */}
+        <div className="sticky bottom-0 z-20 border-t border-border/60 bg-background/90 backdrop-blur-md">
+          <div className="container mx-auto max-w-2xl px-4 py-4">
+
+            {/* Start button */}
+            {showStart && (
+              <Button
+                onClick={handleStart}
+                size="lg"
+                className="w-full h-12 rounded-full bg-primary font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] hover:bg-[color:var(--primary-deep)] transition-all hover:-translate-y-0.5"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                ¡Vamos!
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            )}
+
+            {/* Option chips */}
+            {canAnswer && (
+              <div className="flex flex-wrap gap-2 justify-center">
                 {currentStep.options.map((opt) => {
-                  const selected = answers[currentStep.id]?.id === opt.id;
                   const Icon = opt.icon;
                   return (
                     <button
                       key={opt.id}
                       type="button"
-                      onClick={() => handleSelect(opt.id, opt.score)}
-                      className={`group flex items-center gap-3 rounded-2xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
-                        selected
-                          ? "border-primary bg-primary/5 shadow-[var(--shadow-card)]"
-                          : "border-border/60 bg-background hover:border-primary/40"
-                      }`}
+                      onClick={() => handleSelect(opt)}
+                      className="flex items-center gap-2 rounded-full border-2 border-primary/25 bg-background px-4 py-2.5 text-sm font-semibold text-[color:var(--primary-deep)] transition-all hover:border-primary hover:bg-[color:var(--primary-soft)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] active:scale-95"
                     >
-                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
-                        selected
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)] group-hover:bg-primary/15"
-                      }`}>
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <span className="flex-1 text-sm font-semibold text-foreground sm:text-base">{opt.label}</span>
-                      {selected && <CheckCircle2 className="h-5 w-5 text-primary" />}
+                      <Icon className="h-4 w-4 text-primary shrink-0" />
+                      {opt.label}
                     </button>
                   );
                 })}
               </div>
+            )}
 
-              <div className="mt-8 flex items-center justify-between">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={handleBack}
-                  disabled={stepIndex === 0}
-                  className="rounded-full text-muted-foreground hover:text-[color:var(--primary-deep)] disabled:opacity-40"
-                >
-                  <ArrowLeft className="mr-1 h-4 w-4" />
-                  Atrás
-                </Button>
-                <span className="text-xs text-muted-foreground">Tocá una opción para avanzar</span>
-              </div>
-            </div>
-          )}
+            {/* Restart */}
+            {finished && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRestart}
+                className="w-full h-11 rounded-full border-primary/30 font-semibold text-[color:var(--primary-deep)] hover:bg-primary/5"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Volver a empezar
+              </Button>
+            )}
 
-          {started && isFinished && (
-            <ResultCard
-              result={getResult(score)}
-              onRestart={handleRestart}
-            />
-          )}
+            {/* Hint */}
+            {canAnswer && (
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Tocá una opción para responderle a LIA
+              </p>
+            )}
+          </div>
         </div>
       </section>
     </Layout>
-  );
-}
-
-function Intro({ onStart }: { onStart: () => void }) {
-  return (
-    <div className="text-center">
-      <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
-        <Sparkles className="h-3.5 w-3.5" />
-        Mini guía interactiva
-      </div>
-      <h1 className="mt-5 font-display text-4xl font-extrabold leading-tight text-[color:var(--primary-deep)] sm:text-5xl">
-        Explorá tu fluidez al hablar
-      </h1>
-      <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
-        Un recorrido guiado de <strong className="text-foreground">1 minuto</strong> con 5 preguntas cortas para orientarte sobre la disfluencia. Es anónimo, gratuito y no reemplaza una consulta profesional.
-      </p>
-
-      <div className="mx-auto mt-8 grid max-w-md gap-3 text-left sm:grid-cols-3">
-        <MiniBadge value="5" label="preguntas" />
-        <MiniBadge value="~1 min" label="duración" />
-        <MiniBadge value="100%" label="anónimo" />
-      </div>
-
-      <Button
-        size="lg"
-        onClick={onStart}
-        className="mt-9 h-12 rounded-full bg-primary px-8 text-base font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] hover:bg-[color:var(--primary-deep)]"
-      >
-        Comenzar
-        <ArrowRight className="ml-1 h-5 w-5" />
-      </Button>
-    </div>
-  );
-}
-
-function MiniBadge({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 text-center backdrop-blur">
-      <div className="text-lg font-bold text-[color:var(--primary-deep)]">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
-function ResultCard({
-  result,
-  onRestart,
-}: {
-  result: ReturnType<typeof getResult>;
-  onRestart: () => void;
-}) {
-  const toneStyles: Record<Tone, { ring: string; bg: string; chip: string; text: string }> = {
-    green: {
-      ring: "ring-emerald-500/30",
-      bg: "bg-emerald-50",
-      chip: "bg-emerald-500 text-white",
-      text: "text-emerald-900",
-    },
-    yellow: {
-      ring: "ring-amber-500/30",
-      bg: "bg-amber-50",
-      chip: "bg-amber-500 text-white",
-      text: "text-amber-900",
-    },
-    blue: {
-      ring: "ring-primary/30",
-      bg: "bg-[color:var(--primary-soft)]",
-      chip: "bg-primary text-primary-foreground",
-      text: "text-[color:var(--primary-deep)]",
-    },
-  };
-  const t = toneStyles[result.tone];
-
-  return (
-    <div className={`rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-elegant)] ring-2 sm:p-10 ${t.ring}`}>
-      <div className={`flex h-14 w-14 items-center justify-center rounded-2xl text-2xl ${t.chip}`}>
-        <span aria-hidden>{result.emoji}</span>
-      </div>
-      <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-3 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Resultado orientativo
-      </div>
-      <h2 className="mt-3 font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
-        {result.title}
-      </h2>
-      <p className="mt-4 text-base leading-relaxed text-muted-foreground sm:text-lg">
-        {result.description}
-      </p>
-
-      <div className={`mt-6 rounded-2xl p-4 text-sm ${t.bg} ${t.text}`}>
-        <strong>Importante:</strong> este resultado es solo orientativo y no constituye un diagnóstico. Para una evaluación profesional, solicitá un turno gratuito con nuestro equipo.
-      </div>
-
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-        <Button asChild size="lg" className="h-12 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
-          <Link to="/turnos">
-            <CalendarCheck className="mr-1 h-5 w-5" />
-            {result.cta}
-          </Link>
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          onClick={onRestart}
-          className="h-12 rounded-full border-primary/30 px-7 font-semibold text-[color:var(--primary-deep)] hover:bg-primary/5"
-        >
-          <RotateCcw className="mr-1 h-4 w-4" />
-          Volver a empezar
-        </Button>
-      </div>
-    </div>
   );
 }

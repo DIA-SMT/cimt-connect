@@ -51,15 +51,43 @@ export function AppointmentForm({ date, time, onSuccess, onCancel }: Props) {
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.from("appointments").insert({
-      ...parsed.data,
-      email: parsed.data.email || null,
+
+    // 1. Upsert paciente por DNI (crea si no existe, actualiza si ya existe)
+    const { data: patientData, error: patientError } = await supabase
+      .from("patients")
+      .upsert(
+        {
+          first_name: parsed.data.first_name,
+          last_name: parsed.data.last_name,
+          dni: parsed.data.dni,
+          age: parsed.data.age,
+          phone: parsed.data.phone,
+          email: parsed.data.email || null,
+          patient_type: parsed.data.patient_type,
+        },
+        { onConflict: "dni" }
+      )
+      .select("id")
+      .single();
+
+    if (patientError || !patientData) {
+      setSubmitting(false);
+      toast.error("No se pudo registrar el paciente. Intentá nuevamente.");
+      return;
+    }
+
+    // 2. Insertar turno referenciando al paciente
+    const { error: apptError } = await supabase.from("appointments").insert({
+      patient_id: patientData.id,
+      consultation_type: parsed.data.consultation_type,
+      reason: parsed.data.reason,
       appointment_date: date,
       appointment_time: time,
       status: "pendiente",
     });
+
     setSubmitting(false);
-    if (error) {
+    if (apptError) {
       toast.error("No se pudo guardar la solicitud. Intentá nuevamente.");
       return;
     }

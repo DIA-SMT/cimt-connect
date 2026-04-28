@@ -16,60 +16,49 @@ export type Database = {
     Tables: {
       appointments: {
         Row: {
-          age: number
           appointment_date: string
           appointment_time: string
           consultation_type: Database["public"]["Enums"]["consultation_type"]
           created_at: string
-          dni: string
-          email: string | null
-          first_name: string
           id: string
-          last_name: string
-          patient_type: Database["public"]["Enums"]["patient_type"]
-          phone: string
+          patient_id: string | null
           professional_id: string | null
           reason: string
           status: Database["public"]["Enums"]["appointment_status"]
           updated_at: string
         }
         Insert: {
-          age: number
           appointment_date: string
           appointment_time: string
           consultation_type: Database["public"]["Enums"]["consultation_type"]
           created_at?: string
-          dni: string
-          email?: string | null
-          first_name: string
           id?: string
-          last_name: string
-          patient_type: Database["public"]["Enums"]["patient_type"]
-          phone: string
+          patient_id?: string | null
           professional_id?: string | null
           reason: string
           status?: Database["public"]["Enums"]["appointment_status"]
           updated_at?: string
         }
         Update: {
-          age?: number
           appointment_date?: string
           appointment_time?: string
           consultation_type?: Database["public"]["Enums"]["consultation_type"]
           created_at?: string
-          dni?: string
-          email?: string | null
-          first_name?: string
           id?: string
-          last_name?: string
-          patient_type?: Database["public"]["Enums"]["patient_type"]
-          phone?: string
+          patient_id?: string | null
           professional_id?: string | null
           reason?: string
           status?: Database["public"]["Enums"]["appointment_status"]
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "appointments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "appointments_professional_id_fkey"
             columns: ["professional_id"]
@@ -78,6 +67,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      patients: {
+        Row: {
+          age: number
+          created_at: string
+          dni: string
+          email: string | null
+          first_name: string
+          id: string
+          last_name: string
+          notes: string | null
+          patient_type: Database["public"]["Enums"]["patient_type"]
+          phone: string
+          updated_at: string
+        }
+        Insert: {
+          age: number
+          created_at?: string
+          dni: string
+          email?: string | null
+          first_name: string
+          id?: string
+          last_name: string
+          notes?: string | null
+          patient_type: Database["public"]["Enums"]["patient_type"]
+          phone: string
+          updated_at?: string
+        }
+        Update: {
+          age?: number
+          created_at?: string
+          dni?: string
+          email?: string | null
+          first_name?: string
+          id?: string
+          last_name?: string
+          notes?: string | null
+          patient_type?: Database["public"]["Enums"]["patient_type"]
+          phone?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       professionals: {
         Row: {

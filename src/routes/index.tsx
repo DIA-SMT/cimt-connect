@@ -268,7 +268,7 @@ function InfoChip({ icon: Icon, title, subtitle }: { icon: typeof MapPin; title:
 function FeatureCard({ icon: Icon, title, text }: { icon: typeof Stethoscope; title: string; text: string }) {
   return (
     <div className="group rounded-3xl border border-border/60 bg-card p-7 shadow-[var(--shadow-card)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elegant)]">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--gradient-hero)] text-primary-foreground shadow-[var(--shadow-card)]">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
         <Icon className="h-6 w-6" strokeWidth={2} />
       </div>
       <h3 className="mt-5 text-xl font-bold text-[color:var(--primary-deep)]">{title}</h3>
