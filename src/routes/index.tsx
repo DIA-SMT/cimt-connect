@@ -77,6 +77,71 @@ function Index() {
 
       {/* INFO SECTION */}
       <section className="container mx-auto px-4 py-16 md:px-6 md:py-20">
+        <div className="mx-auto max-w-3xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
+            <Info className="h-3.5 w-3.5" />
+            Información
+          </div>
+          <h2 className="mt-4 font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
+            ¿Qué es la tartamudez?
+          </h2>
+          <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+            La tartamudez, clínicamente llamada <strong className="text-foreground">trastorno de la fluidez del habla</strong> o <strong className="text-foreground">disfluencia</strong>, es una dificultad en el ritmo normal del habla que puede incluir repeticiones, prolongaciones o bloqueos al hablar.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          <InfoBlock icon={AlertCircle} title="Señales frecuentes">
+            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <BulletItem>Repetición de sonidos o sílabas</BulletItem>
+              <BulletItem>Bloqueos al comenzar palabras</BulletItem>
+              <BulletItem>Tensión al hablar</BulletItem>
+              <BulletItem>Evitación de palabras</BulletItem>
+              <BulletItem>Ansiedad al comunicarse</BulletItem>
+            </ul>
+          </InfoBlock>
+
+          <InfoBlock icon={Baby} title="¿En qué edades puede aparecer?">
+            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              <BulletItem>Primera infancia (más común)</BulletItem>
+              <BulletItem>Niñez escolar</BulletItem>
+              <BulletItem>Adolescencia</BulletItem>
+              <BulletItem>Adultez</BulletItem>
+            </ul>
+          </InfoBlock>
+        </div>
+
+        <div className="mt-6 grid gap-6 md:grid-cols-3">
+          <SeverityCard level="Leve" tone="soft" description="Interrupciones ocasionales en el habla, sin gran impacto en la comunicación." />
+          <SeverityCard level="Moderada" tone="medium" description="Frecuencia mayor de disfluencias, ya impacta en lo social y emocional." />
+          <SeverityCard level="Severa" tone="strong" description="Bloqueos notorios, tensión muscular evidente y evitación frecuente del habla." />
+        </div>
+
+        <div className="mt-10 flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-7 sm:flex-row sm:items-center sm:justify-between md:p-8">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">
+                ¿Tiene tratamiento? Sí.
+              </h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Con un abordaje profesional adecuado puede mejorar notablemente la comunicación y la calidad de vida.
+              </p>
+            </div>
+          </div>
+          <Button asChild size="lg" className="h-12 shrink-0 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
+            <Link to="/turnos">
+              Solicitar turno
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* SERVICES SECTION */}
+      <section className="container mx-auto px-4 pb-16 md:px-6 md:pb-20">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
             Acompañamiento integral en cada etapa
