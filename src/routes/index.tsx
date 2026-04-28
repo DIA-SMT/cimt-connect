@@ -20,6 +20,48 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
+const InfoBlock = ({ icon: Icon, title, children }: { icon: typeof Info; title: string; children: React.ReactNode }) => (
+  <div className="rounded-3xl border border-border/60 bg-card p-7 shadow-[var(--shadow-card)]">
+    <div className="flex items-center gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
+        <Icon className="h-5 w-5" />
+      </div>
+      <h3 className="text-lg font-bold text-[color:var(--primary-deep)]">{title}</h3>
+    </div>
+    {children}
+  </div>
+);
+
+const BulletItem = ({ children }: { children: React.ReactNode }) => (
+  <li className="flex items-start gap-2">
+    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+    <span>{children}</span>
+  </li>
+);
+
+const SeverityCard = ({ level, tone, description }: { level: string; tone: "soft" | "medium" | "strong"; description: string }) => {
+  const toneStyles = {
+    soft: "border-primary/15 bg-[color:var(--primary-soft)]/40",
+    medium: "border-primary/30 bg-[color:var(--primary-soft)]/70",
+    strong: "border-primary/50 bg-primary/15",
+  }[tone];
+  const dotStyles = {
+    soft: "bg-primary/40",
+    medium: "bg-primary/70",
+    strong: "bg-primary",
+  }[tone];
+  return (
+    <div className={`rounded-3xl border p-6 ${toneStyles}`}>
+      <div className="flex items-center gap-2">
+        <span className={`h-2.5 w-2.5 rounded-full ${dotStyles}`} />
+        <Activity className="h-4 w-4 text-[color:var(--primary-deep)]" />
+        <span className="text-sm font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">{level}</span>
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-foreground/80">{description}</p>
+    </div>
+  );
+};
+
 function Index() {
   return (
     <Layout>
@@ -249,48 +291,3 @@ function ContactItem({ icon: Icon, label, value }: { icon: typeof MapPin; label:
   );
 }
 
-function InfoBlock({ icon: Icon, title, children }: { icon: typeof Info; title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-3xl border border-border/60 bg-card p-7 shadow-[var(--shadow-card)]">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
-          <Icon className="h-5 w-5" />
-        </div>
-        <h3 className="text-lg font-bold text-[color:var(--primary-deep)]">{title}</h3>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function BulletItem({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function SeverityCard({ level, tone, description }: { level: string; tone: "soft" | "medium" | "strong"; description: string }) {
-  const toneStyles = {
-    soft: "border-primary/15 bg-[color:var(--primary-soft)]/40",
-    medium: "border-primary/30 bg-[color:var(--primary-soft)]/70",
-    strong: "border-primary/50 bg-primary/15",
-  }[tone];
-  const dotStyles = {
-    soft: "bg-primary/40",
-    medium: "bg-primary/70",
-    strong: "bg-primary",
-  }[tone];
-  return (
-    <div className={`rounded-3xl border p-6 ${toneStyles}`}>
-      <div className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${dotStyles}`} />
-        <Activity className="h-4 w-4 text-[color:var(--primary-deep)]" />
-        <span className="text-sm font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">{level}</span>
-      </div>
-      <p className="mt-3 text-sm leading-relaxed text-foreground/80">{description}</p>
-    </div>
-  );
-}
