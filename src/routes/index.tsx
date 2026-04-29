@@ -68,13 +68,9 @@ function Index() {
       {/* HERO */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 -z-10 bg-[var(--gradient-soft)]" />
-        <div className="container mx-auto grid gap-10 px-4 py-16 md:grid-cols-2 md:gap-12 md:px-6 md:py-24 lg:py-28">
+        <div className="container mx-auto grid gap-10 px-4 py-10 md:grid-cols-2 md:gap-12 md:px-6 md:py-16 lg:py-20">
           <div className="flex flex-col justify-center">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              Salud pública municipal
-            </div>
-            <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.05] text-[color:var(--primary-deep)] sm:text-5xl lg:text-6xl">
+            <h1 className="font-display text-4xl font-extrabold leading-[1.05] text-[color:var(--primary-deep)] sm:text-5xl lg:text-6xl">
               Centro Integral Municipal de <span className="text-primary">Tartamudez</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">

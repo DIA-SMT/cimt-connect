@@ -1,13 +1,17 @@
 import { Link } from "@tanstack/react-router";
-import { Activity } from "lucide-react";
+import logoTortuga from "../assets/logo-tortuga.png";
 
 export function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
         <Link to="/" className="flex items-center gap-2.5 group">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--gradient-hero)] text-primary-foreground shadow-[var(--shadow-card)] transition-transform group-hover:scale-105">
-            <Activity className="h-5 w-5" strokeWidth={2.5} />
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-[var(--shadow-card)] transition-transform group-hover:scale-105 overflow-hidden border border-border/40">
+            <img 
+              src={logoTortuga} 
+              alt="CIMT Logo" 
+              className="h-9 w-9 object-contain"
+            />
           </div>
           <div className="leading-tight">
             <div className="font-display text-base font-bold text-[color:var(--primary-deep)]">CIMT</div>
