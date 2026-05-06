@@ -1,0 +1,55 @@
+name: Supabase Keepalive
+
+# Evita que el proyecto Supabase Free se pause por inactividad.
+# Llama a la RPC dedicada api.keepalive() dos veces por día.
+
+on:
+  schedule:
+    # 06:00 y 18:00 UTC todos los días (cada 12h, < 48h requerido)
+    - cron: '0 6,18 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call api.keepalive() RPC
+        env:
+          SUPABASE_PROJECT_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_PROJECT_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "Missing SUPABASE_PROJECT_URL or SUPABASE_ANON_KEY secret." >&2
+            exit 1
+          fi
+
+          URL="${SUPABASE_PROJECT_URL%/}/rest/v1/rpc/keepalive"
+          echo "POST $URL"
+
+          HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" \
+            -X POST "$URL" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Accept-Profile: api" \
+            -H "Content-Profile: api" \
+            -d '{}')
+
+          echo "HTTP $HTTP_CODE"
+          cat response.json || true
+          echo
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Keepalive ping failed." >&2
+            exit 1
+          fi
