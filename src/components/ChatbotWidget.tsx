@@ -62,12 +62,12 @@ export function ChatbotWidget() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [hasOpened, setHasOpened] = useState(false);
   const [showBadge, setShowBadge] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasOpenedRef = useRef(false);
 
   // Scroll to bottom whenever messages update
   useEffect(() => {
@@ -81,24 +81,23 @@ export function ChatbotWidget() {
 
   // Greeting message on first open
   useEffect(() => {
-    if (isOpen && !hasOpened) {
-      setHasOpened(true);
-      setShowBadge(false);
-      setIsTyping(true);
-      const t = setTimeout(() => {
-        setIsTyping(false);
-        setMessages([
-          {
-            id: uid(),
-            role: "assistant",
-            content:
-              "¡Hola! 👋 Soy **LIA**, la asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
-          },
-        ]);
-      }, 900);
-      return () => clearTimeout(t);
-    }
-  }, [isOpen, hasOpened]);
+    if (!isOpen || hasOpenedRef.current) return;
+    hasOpenedRef.current = true;
+    setShowBadge(false);
+    setIsTyping(true);
+    const t = setTimeout(() => {
+      setIsTyping(false);
+      setMessages([
+        {
+          id: uid(),
+          role: "assistant",
+          content:
+            "¡Hola! 👋 Soy **LIA**, la asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
+        },
+      ]);
+    }, 900);
+    return () => clearTimeout(t);
+  }, [isOpen]);
 
   const handleOpen = () => {
     setIsOpen(true);

@@ -29,8 +29,14 @@ const SYSTEM_PROMPT = `Sos LIA, la asistente virtual del CIMT (Centro Integral M
 Cuando el usuario quiera sacar un turno, motivalo a ir a la sección /turnos del sitio.`;
 
 export default defineEventHandler(async (event) => {
-  const apiKey = process.env.VITE_OPENROUTER_API_KEY;
-  const model = process.env.VITE_OPENROUTER_MODEL || "openai/gpt-4o-mini";
+  const apiKey =
+    process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
+  const model =
+    process.env.OPENROUTER_MODEL ||
+    process.env.VITE_OPENROUTER_MODEL ||
+    "openai/gpt-4o-mini";
+
+  console.log("[LIA] apiKey present:", !!apiKey, "model:", model);
 
   if (!apiKey) {
     setResponseStatus(event, 500);
@@ -47,7 +53,7 @@ export default defineEventHandler(async (event) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": "https://cimt-connect.vercel.app",
-        "X-Title": "CIMT – LIA Asistente Virtual",
+        "X-Title": "CIMT - LIA Asistente Virtual",
       },
       body: JSON.stringify({
         model,
@@ -79,6 +85,8 @@ export default defineEventHandler(async (event) => {
   } catch (err) {
     console.error("[LIA] server fetch error:", err);
     setResponseStatus(event, 503);
-    return { error: "Error al conectar con el asistente." };
+    return {
+      error: `Error al conectar con el asistente: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 });
