@@ -172,7 +172,8 @@ function SelectField({ label, name, options }: {
 function requestErrorMessage(message: string | undefined): string {
   const code = message?.split(":")[0];
   if (code === "SLOT_TAKEN") return "Ese horario acaba de ser reservado. Elegí otro, por favor.";
-  if (code?.startsWith("INVALID_")) return message!.slice(code.length + 1).trim();
+  // Estos traen un mensaje pensado para el usuario después del código
+  if (code === "ALREADY_BOOKED" || code?.startsWith("INVALID_")) return message!.slice(code.length + 1).trim();
   return "No se pudo guardar la solicitud. Intentá nuevamente.";
 }
 

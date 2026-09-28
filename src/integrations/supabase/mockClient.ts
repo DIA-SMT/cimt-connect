@@ -301,6 +301,18 @@ function rpc(fn: string, args: Row = {}) {
     }
     const now = new Date().toISOString();
 
+    // Un turno a futuro por DNI (misma regla que 8_limites_abuso.sql)
+    const today = now.slice(0, 10);
+    const existingPatient = store.patients.find((p) => p.dni === args.p_dni);
+    const existing = existingPatient && store.appointments.find((a) =>
+      a.patient_id === existingPatient.id && a.status !== "cancelado" && String(a.appointment_date) >= today);
+    if (existing) {
+      const [y, m, d] = String(existing.appointment_date).split("-");
+      return Promise.resolve({ data: null, error: {
+        message: `ALREADY_BOOKED: Ya hay un turno a nombre de este DNI para el ${d}/${m}/${y}. Si necesitás cambiarlo, comunicate con el centro.`,
+      } });
+    }
+
     // Upsert paciente por DNI (no toca los datos de la ficha)
     const contact = {
       first_name: args.p_first_name, last_name: args.p_last_name, age: args.p_age,
@@ -346,6 +358,9 @@ export const mockSupabase = {
       setSession({ user: { id: "mock-admin", email } }, "SIGNED_IN");
       return { data: { session }, error: null };
     },
+    // Recuperación de contraseña: en mock no se manda ningún email
+    resetPasswordForEmail: async () => ({ data: {}, error: null }),
+    updateUser: async () => ({ data: { user: session?.user ?? null }, error: null }),
     signOut: async () => {
       setSession(null, "SIGNED_OUT");
       return { error: null };

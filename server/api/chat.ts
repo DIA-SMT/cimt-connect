@@ -1,4 +1,5 @@
-import { defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
+import { createHash } from "node:crypto";
+import { defineEventHandler, getRequestIP, readBody, setResponseStatus } from "nitro/h3";
 
 const SYSTEM_PROMPT = `Sos LIA, la asistente virtual del CIMT (Centro Integral Municipal de Tartamudez) de San Miguel de Tucumán, Argentina.
 
@@ -30,6 +31,72 @@ const SYSTEM_PROMPT = `Sos LIA, la asistente virtual del CIMT (Centro Integral M
 
 Cuando el usuario quiera sacar un turno, motivalo a ir a la sección /turnos del sitio.`;
 
+// ── Límites contra abuso ─────────────────────────────────────────────────────
+// Cada mensaje consume crédito de OpenRouter, así que se limita por persona (IP).
+// El conteo se guarda en Supabase (supabase/sql_para_copiar/8_limites_abuso.sql)
+// para que valga entre todas las instancias de Vercel. Si Supabase no responde,
+// se usa un contador en memoria como respaldo.
+
+const MAX_HISTORY = 12;        // mensajes que se mandan al modelo
+const MAX_MESSAGE_CHARS = 1000;
+const MEMORY_LIMIT = 20;       // respaldo: mensajes cada 10 minutos por instancia
+const MEMORY_WINDOW_MS = 10 * 60 * 1000;
+
+const memoryHits = new Map<string, { count: number; resetAt: number }>();
+
+function memoryRateLimitHit(key: string): boolean {
+  const now = Date.now();
+  const entry = memoryHits.get(key);
+  if (!entry || entry.resetAt <= now) {
+    memoryHits.set(key, { count: 1, resetAt: now + MEMORY_WINDOW_MS });
+    if (memoryHits.size > 5000) {
+      for (const [k, v] of memoryHits) if (v.resetAt <= now) memoryHits.delete(k);
+    }
+    return true;
+  }
+  entry.count++;
+  return entry.count <= MEMORY_LIMIT;
+}
+
+async function rateLimitHit(ip: string): Promise<boolean> {
+  // Se guarda un hash de la IP, nunca la IP real
+  const salt = process.env.RATE_LIMIT_SALT || "cimt-lia";
+  const key = createHash("sha256").update(`${salt}:${ip}`).digest("hex");
+
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  if (url && anonKey) {
+    try {
+      const res = await fetch(`${url}/rest/v1/rpc/chat_rate_limit_hit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+        body: JSON.stringify({ p_key: key }),
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) return (await res.json()) === true;
+      console.warn("[LIA] rate limit RPC status:", res.status);
+    } catch (err) {
+      console.warn("[LIA] rate limit RPC error:", err);
+    }
+  }
+  return memoryRateLimitHit(key);
+}
+
+type ChatMessage = { role: "user" | "assistant"; content: string };
+
+// Solo se aceptan mensajes de usuario/asistente (nada de "system" inyectado),
+// recortados en largo y cantidad.
+function sanitizeMessages(raw: unknown): ChatMessage[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((m): m is ChatMessage =>
+      !!m && typeof m === "object" &&
+      (m.role === "user" || m.role === "assistant") &&
+      typeof m.content === "string" && m.content.trim() !== "")
+    .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) }))
+    .slice(-MAX_HISTORY);
+}
+
 export default defineEventHandler(async (event) => {
   const apiKey =
     process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
@@ -45,8 +112,20 @@ export default defineEventHandler(async (event) => {
     return { error: "OpenRouter API key not configured" };
   }
 
-  const body = await readBody(event) as { messages?: Array<{ role: string; content: string }> };
-  const userMessages = body?.messages ?? [];
+  const body = await readBody(event) as { messages?: unknown };
+  const userMessages = sanitizeMessages(body?.messages);
+  if (userMessages.length === 0 || userMessages[userMessages.length - 1].role !== "user") {
+    setResponseStatus(event, 400);
+    return { error: "Mensaje inválido" };
+  }
+
+  const ip = getRequestIP(event, { xForwardedFor: true }) ?? "unknown";
+  if (!(await rateLimitHit(ip))) {
+    setResponseStatus(event, 429);
+    return {
+      error: "Llegaste al límite de mensajes por ahora. Probá de nuevo en unos minutos, o escribinos a cimt@smt.gob.ar.",
+    };
+  }
 
   try {
     const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
