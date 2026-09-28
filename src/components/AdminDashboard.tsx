@@ -6,7 +6,7 @@ import {
 import {
   Users, CalendarCheck, TrendingUp, Clock3,
 } from "lucide-react";
-import { MOCK_PROFESSIONALS } from "@/lib/mockData";
+import type { ProfessionalOption } from "@/lib/patients";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,6 +18,7 @@ type Patient = {
   phone: string;
   email: string | null;
   patient_type: "niño" | "adolescente" | "adulto";
+  professional_id?: string | null;
 };
 
 type Appt = {
@@ -32,7 +33,7 @@ type Appt = {
   patients: Patient | null;
 };
 
-type Props = { appts: Appt[] };
+type Props = { appts: Appt[]; professionals: ProfessionalOption[] };
 
 // ─── Color palette ────────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ function CustomTooltip({ active, payload, label }: {
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 
-export function AdminDashboard({ appts }: Props) {
+export function AdminDashboard({ appts, professionals }: Props) {
   // Only non-cancelled for most metrics
   const active = appts.filter((a) => a.status !== "cancelado");
 
@@ -149,17 +150,18 @@ export function AdminDashboard({ appts }: Props) {
   const byProfessional = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const a of appts) {
-      const key = a.professional_id ?? "__none__";
+      // El turno casi nunca trae profesional: se usa el "profesional a cargo" de la ficha
+      const key = a.professional_id ?? a.patients?.professional_id ?? "__none__";
       counts[key] = (counts[key] ?? 0) + 1;
     }
     return Object.entries(counts)
       .map(([id, total]) => {
-        const pro = MOCK_PROFESSIONALS.find((p) => p.id === id);
+        const pro = professionals.find((p) => p.id === id);
         const name = pro ? pro.name.replace(/^Lic\.\s*/, "").split(" ").slice(0, 1).join(" ") + " " + pro.name.split(" ").slice(-1) : "Sin asignar";
         return { name, total };
       })
       .sort((a, b) => b.total - a.total);
-  }, [appts]);
+  }, [appts, professionals]);
 
   // ── Tipo de paciente ──────────────────────────────────────────────────────
   const byPatientType = useMemo(() => {

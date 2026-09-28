@@ -100,6 +100,9 @@ GRANT EXECUTE ON FUNCTION public.get_booked_slots(DATE, DATE) TO anon, authentic
 --    guarda el turno como 'pendiente'. Devuelve el id del turno.
 --    Los errores empiezan con un código (SLOT_TAKEN, INVALID_...)
 --    para que el front muestre un mensaje claro.
+--    OJO: la versión vigente está en 8_limites_abuso.sql (agrega la regla
+--    de un turno a futuro por DNI). Si volvés a correr este script, corré
+--    el 8 después.
 
 CREATE OR REPLACE FUNCTION public.request_appointment(
   p_first_name        TEXT,

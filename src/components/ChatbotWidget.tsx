@@ -131,6 +131,13 @@ export function ChatbotWidget() {
 
       const data = await response.json();
 
+      // Límite de mensajes: se muestra el aviso tal cual, sin "Error al conectar"
+      if (response.status === 429) {
+        setIsTyping(false);
+        setApiError(data?.error ?? "Llegaste al límite de mensajes por ahora. Probá de nuevo en unos minutos.");
+        return;
+      }
+
       if (!response.ok) {
         console.error("[LIA] API error:", data);
         throw new Error(data?.error ?? `HTTP ${response.status}`);

@@ -21,6 +21,7 @@ type Patient = {
   phone: string;
   email: string | null;
   patient_type: "niño" | "adolescente" | "adulto";
+  professional_id: string | null;
 };
 
 type Appt = {
@@ -52,7 +53,8 @@ type AuthState =
   | { kind: "loading" }
   | { kind: "signed_out" }
   | { kind: "forbidden"; email: string }
-  | { kind: "admin"; email: string };
+  | { kind: "admin"; email: string }
+  | { kind: "recovery" }; // entró desde el link de "olvidé mi contraseña"
 
 // Gate de acceso: requiere sesión de Supabase Auth y estar en la tabla admins.
 // La protección real está en la base (RLS): esto solo decide qué pantalla mostrar.
@@ -61,9 +63,17 @@ function AdminPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // El link del email de recuperación trae una sesión temporal: en vez del panel
+    // hay que mostrar el formulario de contraseña nueva. Se mira el hash antes de
+    // que supabase-js lo procese y lo borre.
+    let recovering = window.location.hash.includes("type=recovery");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async function resolve(session: any) {
+      if (recovering) {
+        if (!cancelled) setAuth({ kind: "recovery" });
+        return;
+      }
       if (!session) {
         if (!cancelled) setAuth({ kind: "signed_out" });
         return;
@@ -75,7 +85,8 @@ function AdminPage() {
     }
 
     supabase.auth.getSession().then(({ data }: { data: { session: unknown } }) => resolve(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: unknown) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event: string, session: unknown) => {
+      if (event === "PASSWORD_RECOVERY") recovering = true;
       resolve(session);
     });
     return () => {
@@ -99,11 +110,13 @@ function AdminPage() {
     );
   }
   if (auth.kind === "signed_out") return <AdminLogin />;
+  if (auth.kind === "recovery") return <SetNewPassword />;
   if (auth.kind === "forbidden") return <AdminForbidden email={auth.email} onSignOut={signOut} />;
   return <AdminPanel email={auth.email} onSignOut={signOut} />;
 }
 
 function AdminLogin() {
+  const [mode, setMode] = useState<"login" | "forgot" | "sent">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -117,38 +130,167 @@ function AdminLogin() {
     // Si sale bien, onAuthStateChange en AdminPage cambia la pantalla
   }
 
+  async function handleForgot(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/admin`,
+    });
+    setSubmitting(false);
+    if (error?.status === 429) {
+      toast.error("Ya se pidieron varios emails. Esperá unos minutos antes de pedir otro.");
+      return;
+    }
+    if (error) {
+      toast.error("No se pudo enviar el email. Intentá de nuevo más tarde.");
+      return;
+    }
+    // No se confirma si el email existe o no (evita que se puedan averiguar cuentas)
+    setMode("sent");
+  }
+
+  if (mode === "sent") {
+    return (
+      <AuthCard title="Revisá tu email" subtitle="">
+        <p className="text-center text-sm text-muted-foreground">
+          Si <strong>{email.trim()}</strong> tiene una cuenta, te llegó un email con un link para crear una
+          contraseña nueva. Puede tardar unos minutos; revisá también la carpeta de spam.
+        </p>
+        <Button variant="outline" className="w-full" onClick={() => setMode("login")}>
+          Volver a ingresar
+        </Button>
+      </AuthCard>
+    );
+  }
+
+  if (mode === "forgot") {
+    return (
+      <AuthCard title="Recuperar contraseña" subtitle="Te mandamos un link para crear una nueva" onSubmit={handleForgot}>
+        <div className="space-y-1.5">
+          <Label htmlFor="forgot-email">Email</Label>
+          <Input id="forgot-email" type="email" autoComplete="username" required
+            value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <Button type="submit" disabled={submitting}
+          className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+          {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Enviar link
+        </Button>
+        <button type="button" onClick={() => setMode("login")}
+          className="block w-full text-center text-sm text-muted-foreground hover:text-foreground">
+          Volver
+        </button>
+      </AuthCard>
+    );
+  }
+
+  return (
+    <AuthCard title="Panel de administración" subtitle="Ingresá con tu cuenta del CIMT" onSubmit={handleSubmit}>
+      <div className="space-y-1.5">
+        <Label htmlFor="admin-email">Email</Label>
+        <Input id="admin-email" type="email" autoComplete="username" required
+          value={email} onChange={(e) => setEmail(e.target.value)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="admin-password">Contraseña</Label>
+        <Input id="admin-password" type="password" autoComplete="current-password" required
+          value={password} onChange={(e) => setPassword(e.target.value)} />
+      </div>
+      <Button type="submit" disabled={submitting}
+        className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Ingresar
+      </Button>
+      <button type="button" onClick={() => setMode("forgot")}
+        className="block w-full text-center text-sm text-muted-foreground hover:text-foreground">
+        ¿Olvidaste tu contraseña?
+      </button>
+    </AuthCard>
+  );
+}
+
+// Pantalla a la que llega el link del email de recuperación
+function SetNewPassword() {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (password.length < 8) {
+      toast.error("La contraseña tiene que tener al menos 8 caracteres");
+      return;
+    }
+    if (password !== confirm) {
+      toast.error("Las contraseñas no coinciden");
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setSubmitting(false);
+    if (error) {
+      toast.error(
+        error.code === "same_password"
+          ? "La contraseña nueva tiene que ser distinta a la anterior"
+          : "No se pudo cambiar la contraseña. Pedí un link nuevo desde «¿Olvidaste tu contraseña?».",
+      );
+      return;
+    }
+    toast.success("Contraseña actualizada");
+    // Recarga limpia (sin el hash del link) para entrar al panel con la sesión nueva
+    window.location.replace("/admin");
+  }
+
+  return (
+    <AuthCard title="Nueva contraseña" subtitle="Elegí una contraseña de al menos 8 caracteres" onSubmit={handleSubmit}>
+      <div className="space-y-1.5">
+        <Label htmlFor="new-password">Contraseña nueva</Label>
+        <Input id="new-password" type="password" autoComplete="new-password" required minLength={8}
+          value={password} onChange={(e) => setPassword(e.target.value)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="confirm-password">Repetir contraseña</Label>
+        <Input id="confirm-password" type="password" autoComplete="new-password" required minLength={8}
+          value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      </div>
+      <Button type="submit" disabled={submitting}
+        className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Guardar contraseña
+      </Button>
+    </AuthCard>
+  );
+}
+
+// Tarjeta centrada que comparten el login, la recuperación y la contraseña nueva
+function AuthCard({ title, subtitle, onSubmit, children }: {
+  title: string;
+  subtitle: string;
+  onSubmit?: (e: React.FormEvent<HTMLFormElement>) => void;
+  children: React.ReactNode;
+}) {
+  const className =
+    "w-full max-w-sm space-y-4 rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] sm:p-8";
+  const content = (
+    <>
+      <div className="flex flex-col items-center text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
+          <Lock className="h-5 w-5" />
+        </div>
+        <h1 className="mt-3 font-display text-2xl font-extrabold text-[color:var(--primary-deep)]">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+      </div>
+      {children}
+    </>
+  );
   return (
     <Layout>
       <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
-        <form
-          onSubmit={handleSubmit}
-          className="w-full max-w-sm space-y-4 rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] sm:p-8"
-        >
-          <div className="flex flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
-              <Lock className="h-5 w-5" />
-            </div>
-            <h1 className="mt-3 font-display text-2xl font-extrabold text-[color:var(--primary-deep)]">
-              Panel de administración
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">Ingresá con tu cuenta del CIMT</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="admin-email">Email</Label>
-            <Input id="admin-email" type="email" autoComplete="username" required
-              value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="admin-password">Contraseña</Label>
-            <Input id="admin-password" type="password" autoComplete="current-password" required
-              value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          <Button type="submit" disabled={submitting}
-            className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Ingresar
-          </Button>
-        </form>
+        {onSubmit ? (
+          <form onSubmit={onSubmit} className={className}>{content}</form>
+        ) : (
+          <div className={className}>{content}</div>
+        )}
       </section>
     </Layout>
   );
@@ -187,7 +329,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
     if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("appointments")
-      .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type)")
+      .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type, professional_id)")
       .order("appointment_date", { ascending: true })
       .order("appointment_time", { ascending: true });
     if (error) toast.error("No se pudieron cargar los turnos");
@@ -282,7 +424,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
         ) : activeTab === "dashboard" ? (
           <div className="mt-6">
-            <AdminDashboard appts={appts} />
+            <AdminDashboard appts={appts} professionals={professionals} />
           </div>
         ) : (
           <>
