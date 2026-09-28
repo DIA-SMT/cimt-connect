@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { formatTime } from "@/lib/appointments";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -44,7 +45,132 @@ export const Route = createFileRoute("/admin")({
 
 type Tab = "turnos" | "dashboard";
 
+type AuthState =
+  | { kind: "loading" }
+  | { kind: "signed_out" }
+  | { kind: "forbidden"; email: string }
+  | { kind: "admin"; email: string };
+
+// Gate de acceso: requiere sesión de Supabase Auth y estar en la tabla admins.
+// La protección real está en la base (RLS): esto solo decide qué pantalla mostrar.
 function AdminPage() {
+  const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function resolve(session: any) {
+      if (!session) {
+        if (!cancelled) setAuth({ kind: "signed_out" });
+        return;
+      }
+      const email = session.user?.email ?? "";
+      const { data, error } = await supabase.rpc("is_admin");
+      if (cancelled) return;
+      setAuth(!error && data === true ? { kind: "admin", email } : { kind: "forbidden", email });
+    }
+
+    supabase.auth.getSession().then(({ data }: { data: { session: unknown } }) => resolve(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: unknown) => {
+      resolve(session);
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setAuth({ kind: "signed_out" });
+  }
+
+  if (auth.kind === "loading") {
+    return (
+      <Layout>
+        <div className="flex justify-center py-32">
+          <Loader2 className="h-7 w-7 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+  if (auth.kind === "signed_out") return <AdminLogin />;
+  if (auth.kind === "forbidden") return <AdminForbidden email={auth.email} onSignOut={signOut} />;
+  return <AdminPanel email={auth.email} onSignOut={signOut} />;
+}
+
+function AdminLogin() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSubmitting(true);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setSubmitting(false);
+    if (error) toast.error("Email o contraseña incorrectos");
+    // Si sale bien, onAuthStateChange en AdminPage cambia la pantalla
+  }
+
+  return (
+    <Layout>
+      <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
+        <form
+          onSubmit={handleSubmit}
+          className="w-full max-w-sm space-y-4 rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] sm:p-8"
+        >
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
+              <Lock className="h-5 w-5" />
+            </div>
+            <h1 className="mt-3 font-display text-2xl font-extrabold text-[color:var(--primary-deep)]">
+              Panel de administración
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">Ingresá con tu cuenta del CIMT</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-email">Email</Label>
+            <Input id="admin-email" type="email" autoComplete="username" required
+              value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="admin-password">Contraseña</Label>
+            <Input id="admin-password" type="password" autoComplete="current-password" required
+              value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <Button type="submit" disabled={submitting}
+            className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Ingresar
+          </Button>
+        </form>
+      </section>
+    </Layout>
+  );
+}
+
+function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+  return (
+    <Layout>
+      <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
+        <div className="w-full max-w-sm rounded-3xl border border-border/60 bg-card p-8 text-center shadow-[var(--shadow-card)]">
+          <ShieldAlert className="mx-auto h-10 w-10 text-[color:var(--status-occupied)]" />
+          <h1 className="mt-3 font-display text-xl font-bold text-[color:var(--primary-deep)]">Sin permisos</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            La cuenta <strong>{email}</strong> no tiene acceso al panel. Pedile a un administrador que te habilite.
+          </p>
+          <Button variant="outline" className="mt-5" onClick={onSignOut}>
+            <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
+          </Button>
+        </div>
+      </section>
+    </Layout>
+  );
+}
+
+function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   const [appts, setAppts] = useState<Appt[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | Appt["status"]>("all");
@@ -53,11 +179,12 @@ function AdminPage() {
 
   async function fetchAppts() {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("appointments")
       .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type)")
       .order("appointment_date", { ascending: true })
       .order("appointment_time", { ascending: true });
+    if (error) toast.error("No se pudieron cargar los turnos");
     setAppts((data ?? []) as Appt[]);
     setLoading(false);
   }
@@ -101,9 +228,11 @@ function AdminPage() {
               Gestión y métricas del CIMT
             </p>
           </div>
-          <div className="flex items-start gap-2 rounded-2xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            <ShieldAlert className="h-4 w-4 shrink-0" />
-            <span>Acceso temporalmente sin login — MVP interno</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">{email}</span>
+            <Button variant="outline" size="sm" onClick={onSignOut}>
+              <LogOut className="mr-1.5 h-3.5 w-3.5" /> Cerrar sesión
+            </Button>
           </div>
         </div>
 
