@@ -145,7 +145,34 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_booked_slots: {
+        Args: { p_start: string; p_end: string }
+        Returns: {
+          appointment_date: string
+          appointment_time: string
+          status: Database["public"]["Enums"]["appointment_status"]
+        }[]
+      }
+      is_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      request_appointment: {
+        Args: {
+          p_first_name: string
+          p_last_name: string
+          p_dni: string
+          p_age: number
+          p_phone: string
+          p_email: string | null
+          p_patient_type: Database["public"]["Enums"]["patient_type"]
+          p_consultation_type: Database["public"]["Enums"]["consultation_type"]
+          p_reason: string
+          p_date: string
+          p_time: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       appointment_status: "pendiente" | "confirmado" | "cancelado"

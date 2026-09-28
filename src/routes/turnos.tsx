@@ -40,12 +40,8 @@ function TurnosPage() {
     const start = formatDateKey(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
     const end = formatDateKey(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0));
     setLoading(true);
-    const { data } = await supabase
-      .from("appointments")
-      .select("appointment_date, appointment_time, status")
-      .gte("appointment_date", start)
-      .lte("appointment_date", end)
-      .neq("status", "cancelado");
+    // RPC pública: solo devuelve fecha/hora/estado, sin datos de pacientes
+    const { data } = await supabase.rpc("get_booked_slots", { p_start: start, p_end: end });
     setAppts((data ?? []) as Appt[]);
     setLoading(false);
   }

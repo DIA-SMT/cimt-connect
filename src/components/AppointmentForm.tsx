@@ -52,43 +52,25 @@ export function AppointmentForm({ date, time, onSuccess, onCancel }: Props) {
     }
     setSubmitting(true);
 
-    // 1. Upsert paciente por DNI (crea si no existe, actualiza si ya existe)
-    const { data: patientData, error: patientError } = await supabase
-      .from("patients")
-      .upsert(
-        {
-          first_name: parsed.data.first_name,
-          last_name: parsed.data.last_name,
-          dni: parsed.data.dni,
-          age: parsed.data.age,
-          phone: parsed.data.phone,
-          email: parsed.data.email || null,
-          patient_type: parsed.data.patient_type,
-        },
-        { onConflict: "dni" }
-      )
-      .select("id")
-      .single();
-
-    if (patientError || !patientData) {
-      setSubmitting(false);
-      toast.error("No se pudo registrar el paciente. Intentá nuevamente.");
-      return;
-    }
-
-    // 2. Insertar turno referenciando al paciente
-    const { error: apptError } = await supabase.from("appointments").insert({
-      patient_id: patientData.id,
-      consultation_type: parsed.data.consultation_type,
-      reason: parsed.data.reason,
-      appointment_date: date,
-      appointment_time: time,
-      status: "pendiente",
+    // RPC pública: valida, crea/actualiza el paciente por DNI y guarda el turno.
+    // Las tablas no son accesibles directamente sin ser admin.
+    const { error } = await supabase.rpc("request_appointment", {
+      p_first_name: parsed.data.first_name,
+      p_last_name: parsed.data.last_name,
+      p_dni: parsed.data.dni,
+      p_age: parsed.data.age,
+      p_phone: parsed.data.phone,
+      p_email: parsed.data.email || null,
+      p_patient_type: parsed.data.patient_type,
+      p_consultation_type: parsed.data.consultation_type,
+      p_reason: parsed.data.reason,
+      p_date: date,
+      p_time: time,
     });
 
     setSubmitting(false);
-    if (apptError) {
-      toast.error("No se pudo guardar la solicitud. Intentá nuevamente.");
+    if (error) {
+      toast.error(requestErrorMessage(error.message));
       return;
     }
     setDone(true);
@@ -184,6 +166,14 @@ function SelectField({ label, name, options }: {
       </select>
     </div>
   );
+}
+
+// Los errores de request_appointment vienen como "CODIGO: mensaje"
+function requestErrorMessage(message: string | undefined): string {
+  const code = message?.split(":")[0];
+  if (code === "SLOT_TAKEN") return "Ese horario acaba de ser reservado. Elegí otro, por favor.";
+  if (code?.startsWith("INVALID_")) return message!.slice(code.length + 1).trim();
+  return "No se pudo guardar la solicitud. Intentá nuevamente.";
 }
 
 function formatLongDate(iso: string): string {
