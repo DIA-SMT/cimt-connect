@@ -5,10 +5,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock } from "lucide-react";
+import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock, Users, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { formatTime } from "@/lib/appointments";
 import { AdminDashboard } from "@/components/AdminDashboard";
+import { PatientsTab } from "@/components/admin/PatientsTab";
+import { PatientRecordSheet } from "@/components/admin/PatientRecordSheet";
+import type { ProfessionalOption } from "@/lib/patients";
 
 type Patient = {
   first_name: string;
@@ -43,7 +46,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "turnos" | "dashboard";
+type Tab = "turnos" | "pacientes" | "dashboard";
 
 type AuthState =
   | { kind: "loading" }
@@ -176,9 +179,12 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
   const [statusFilter, setStatusFilter] = useState<"all" | Appt["status"]>("all");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [activeTab, setActiveTab] = useState<Tab>("turnos");
+  const [professionals, setProfessionals] = useState<ProfessionalOption[]>([]);
+  const [openPatientId, setOpenPatientId] = useState<string | null>(null);
+  const [patientsVersion, setPatientsVersion] = useState(0);
 
-  async function fetchAppts() {
-    setLoading(true);
+  async function fetchAppts({ silent = false } = {}) {
+    if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("appointments")
       .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type)")
@@ -189,7 +195,17 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
     setLoading(false);
   }
 
-  useEffect(() => { fetchAppts(); }, []);
+  useEffect(() => {
+    fetchAppts();
+    supabase.from("professionals").select("id, name, specialty").order("name", { ascending: true })
+      .then(({ data }: { data: ProfessionalOption[] | null }) => setProfessionals(data ?? []));
+  }, []);
+
+  // Al cerrar una ficha con cambios: recargar la planilla y los turnos (por si cambió el nombre)
+  function handlePatientChanged() {
+    setPatientsVersion((v) => v + 1);
+    fetchAppts({ silent: true });
+  }
 
   async function updateStatus(id: string, status: Appt["status"]) {
     const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
@@ -245,6 +261,12 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
             label="Turnos"
           />
           <TabButton
+            active={activeTab === "pacientes"}
+            onClick={() => setActiveTab("pacientes")}
+            icon={<Users className="h-4 w-4" />}
+            label="Pacientes"
+          />
+          <TabButton
             active={activeTab === "dashboard"}
             onClick={() => setActiveTab("dashboard")}
             icon={<LayoutDashboard className="h-4 w-4" />}
@@ -256,6 +278,8 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
           <div className="flex justify-center py-24">
             <Loader2 className="h-7 w-7 animate-spin text-primary" />
           </div>
+        ) : activeTab === "pacientes" ? (
+          <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
         ) : activeTab === "dashboard" ? (
           <div className="mt-6">
             <AdminDashboard appts={appts} />
@@ -339,6 +363,11 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
                         <p className="mt-2 text-sm text-foreground/80 line-clamp-2">{a.reason}</p>
                       </div>
                       <div className="flex flex-wrap gap-1.5 md:flex-col md:items-end">
+                        {a.patient_id && (
+                          <Button size="sm" variant="outline" onClick={() => setOpenPatientId(a.patient_id)}>
+                            <FileText className="mr-1 h-3.5 w-3.5" /> Ficha
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline"
                           disabled={a.status === "confirmado"}
                           onClick={() => updateStatus(a.id, "confirmado")}
@@ -365,6 +394,13 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
           </>
         )}
       </section>
+
+      <PatientRecordSheet
+        patientId={openPatientId}
+        professionals={professionals}
+        onClose={() => setOpenPatientId(null)}
+        onChanged={handlePatientChanged}
+      />
     </Layout>
   );
 }

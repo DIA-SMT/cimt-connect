@@ -68,8 +68,166 @@ export type Database = {
           },
         ]
       }
+      patient_followups: {
+        Row: {
+          author_email: string | null
+          created_at: string
+          id: string
+          note: string
+          note_date: string
+          patient_id: string
+        }
+        Insert: {
+          author_email?: string | null
+          created_at?: string
+          id?: string
+          note: string
+          note_date?: string
+          patient_id: string
+        }
+        Update: {
+          author_email?: string | null
+          created_at?: string
+          id?: string
+          note?: string
+          note_date?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_followups_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_referrals: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          destination: string | null
+          id: string
+          kind: string
+          outcome: string | null
+          patient_id: string
+          reason: string | null
+          registered: boolean
+          referral_date: string
+          specialty: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          destination?: string | null
+          id?: string
+          kind: string
+          outcome?: string | null
+          patient_id: string
+          reason?: string | null
+          registered?: boolean
+          referral_date?: string
+          specialty: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          destination?: string | null
+          id?: string
+          kind?: string
+          outcome?: string | null
+          patient_id?: string
+          reason?: string | null
+          registered?: boolean
+          referral_date?: string
+          specialty?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_referrals_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_reports: {
+        Row: {
+          author_email: string | null
+          created_at: string
+          diagnosis: string | null
+          id: string
+          patient_id: string
+          professional_id: string | null
+          progress: string | null
+          report_date: string
+          therapy_evolution: string | null
+          updated_at: string
+        }
+        Insert: {
+          author_email?: string | null
+          created_at?: string
+          diagnosis?: string | null
+          id?: string
+          patient_id: string
+          professional_id?: string | null
+          progress?: string | null
+          report_date?: string
+          therapy_evolution?: string | null
+          updated_at?: string
+        }
+        Update: {
+          author_email?: string | null
+          created_at?: string
+          diagnosis?: string | null
+          id?: string
+          patient_id?: string
+          professional_id?: string | null
+          progress?: string | null
+          report_date?: string
+          therapy_evolution?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_reports_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_reports_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
+            referencedRelation: "professionals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
+          case_status: Database["public"]["Enums"]["case_status"]
+          cud_status: string | null
+          guardian_name: string | null
+          guardian_phone: string | null
+          has_health_insurance: boolean | null
+          health_insurance: string | null
+          is_medicated: boolean
+          main_diagnosis: string | null
+          medication: string | null
+          other_conditions: string[]
+          professional_id: string | null
+          referred_by: string | null
+          school: string | null
           age: number
           created_at: string
           dni: string
@@ -83,6 +241,19 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          case_status?: Database["public"]["Enums"]["case_status"]
+          cud_status?: string | null
+          guardian_name?: string | null
+          guardian_phone?: string | null
+          has_health_insurance?: boolean | null
+          health_insurance?: string | null
+          is_medicated?: boolean
+          main_diagnosis?: string | null
+          medication?: string | null
+          other_conditions?: string[]
+          professional_id?: string | null
+          referred_by?: string | null
+          school?: string | null
           age: number
           created_at?: string
           dni: string
@@ -96,6 +267,19 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          case_status?: Database["public"]["Enums"]["case_status"]
+          cud_status?: string | null
+          guardian_name?: string | null
+          guardian_phone?: string | null
+          has_health_insurance?: boolean | null
+          health_insurance?: string | null
+          is_medicated?: boolean
+          main_diagnosis?: string | null
+          medication?: string | null
+          other_conditions?: string[]
+          professional_id?: string | null
+          referred_by?: string | null
+          school?: string | null
           age?: number
           created_at?: string
           dni?: string
@@ -108,7 +292,15 @@ export type Database = {
           phone?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "patients_professional_id_fkey"
+            columns: ["professional_id"]
+            isOneToOne: false
+            referencedRelation: "professionals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       professionals: {
         Row: {
@@ -176,6 +368,7 @@ export type Database = {
     }
     Enums: {
       appointment_status: "pendiente" | "confirmado" | "cancelado"
+      case_status: "en_evaluacion" | "en_tratamiento" | "derivado" | "alta" | "abandono"
       consultation_type: "primera_vez" | "seguimiento"
       patient_type: "niño" | "adolescente" | "adulto"
     }
@@ -306,6 +499,7 @@ export const Constants = {
   public: {
     Enums: {
       appointment_status: ["pendiente", "confirmado", "cancelado"],
+      case_status: ["en_evaluacion", "en_tratamiento", "derivado", "alta", "abandono"],
       consultation_type: ["primera_vez", "seguimiento"],
       patient_type: ["niño", "adolescente", "adulto"],
     },
