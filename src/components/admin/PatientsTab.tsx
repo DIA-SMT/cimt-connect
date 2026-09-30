@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Download, Loader2, Pill, Plus, Search, ArrowRightLeft, ClipboardX } from "lucide-react";
 import {
   CASE_STATUS_COLOR, CASE_STATUS_LABEL, PATIENT_TYPE_LABEL, exportPatientsCsv, formatShortDate,
-  fullName, type CaseStatus, type PatientRecord, type PatientStats, type PatientType, type ProfessionalOption,
+  fullName, normalizePatient, type CaseStatus, type PatientRecord, type PatientStats, type PatientType, type ProfessionalOption,
 } from "@/lib/patients";
+import { LOCALITY_OPTIONS } from "@/lib/center";
 
 type Props = {
   professionals: ProfessionalOption[];
@@ -37,11 +38,7 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
     ]).then(([p, r, f, rep]) => {
       if (cancelled) return;
       if (p.error) toast.error("No se pudieron cargar los pacientes");
-      setPatients(((p.data ?? []) as PatientRecord[]).map((x) => ({
-        ...x,
-        other_conditions: x.other_conditions ?? [],
-        has_health_insurance: x.has_health_insurance ?? null,
-      })));
+      setPatients(((p.data ?? []) as PatientRecord[]).map(normalizePatient));
 
       const map = new Map<string, PatientStats>();
       const get = (id: string) => {
@@ -82,7 +79,7 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
       if (insuranceFilter === "con" && p.has_health_insurance !== true) return false;
       if (insuranceFilter === "sin" && p.has_health_insurance !== false) return false;
       if (!q) return true;
-      return normalizeText(`${p.first_name} ${p.last_name} ${p.dni}`).includes(q);
+      return normalizeText(`${p.first_name} ${p.last_name} ${p.dni} ${p.locality ?? ""}`).includes(q);
     });
   }, [patients, query, statusFilter, insuranceFilter]);
 
@@ -102,7 +99,7 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-56 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre o DNI"
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, DNI o localidad"
             aria-label="Buscar paciente" className="pl-9" />
         </div>
         <Button variant="outline" onClick={() => exportPatientsCsv(filtered, professionals, stats)}
@@ -161,6 +158,7 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
                       </div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         DNI {p.dni} · {p.age} años · {PATIENT_TYPE_LABEL[p.patient_type as PatientType]}
+                        {p.locality && ` · ${p.locality}`}
                         {p.has_health_insurance !== null && ` · ${p.has_health_insurance ? p.health_insurance || "Con obra social" : "Sin obra social"}`}
                         {p.professional_id && proName.has(p.professional_id) && ` · ${proName.get(p.professional_id)}`}
                       </div>
@@ -232,6 +230,7 @@ function NewPatientDialog({ open, onClose, onCreated }: {
       age: Number(get("age")),
       phone: get("phone"),
       patient_type: get("patient_type") as PatientType,
+      locality: get("locality") || null,
     };
     if (payload.first_name.length < 2 || payload.last_name.length < 2) { toast.error("Nombre y apellido son obligatorios"); return; }
     if (!/^\d{6,10}$/.test(payload.dni)) { toast.error("DNI inválido"); return; }
@@ -246,7 +245,7 @@ function NewPatientDialog({ open, onClose, onCreated }: {
       return;
     }
     toast.success("Paciente creado");
-    onCreated({ ...(data as PatientRecord), other_conditions: (data as PatientRecord).other_conditions ?? [] });
+    onCreated(normalizePatient(data as PatientRecord));
   }
 
   return (
@@ -262,6 +261,13 @@ function NewPatientDialog({ open, onClose, onCreated }: {
             <Field name="dni" label="DNI" inputMode="numeric" />
             <Field name="age" label="Edad" type="number" />
             <Field name="phone" label="Teléfono" inputMode="tel" />
+            <div className="space-y-1.5">
+              <Label htmlFor="np_locality">Localidad</Label>
+              <Input id="np_locality" name="locality" list="np-locality-options" maxLength={80} />
+              <datalist id="np-locality-options">
+                {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
+              </datalist>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="np_patient_type">Tipo de paciente</Label>
               <select id="np_patient_type" name="patient_type" required defaultValue=""

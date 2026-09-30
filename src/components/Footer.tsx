@@ -1,4 +1,5 @@
 import { MapPin, Clock, Phone, Mail } from "lucide-react";
+import { CENTER } from "@/lib/center";
 
 export function Footer() {
   return (
@@ -19,19 +20,24 @@ export function Footer() {
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                Catamarca 411, San Miguel de Tucumán
+                {CENTER.address}, {CENTER.city}
               </li>
               <li className="flex items-center gap-2">
                 <Clock className="h-4 w-4 shrink-0 text-primary" />
-                Lun a Vie · 07:30 a 17:30 hs
+                {CENTER.hoursLong}
               </li>
               <li className="flex items-center gap-2">
                 <Phone className="h-4 w-4 shrink-0 text-primary" />
-                (0381) 4XX-XXXX
+                <a href={CENTER.phoneHref} className="hover:text-foreground hover:underline">
+                  {CENTER.phoneDisplay}
+                </a>
+                <span className="text-xs">({CENTER.phoneNote.toLowerCase()})</span>
               </li>
               <li className="flex items-center gap-2">
                 <Mail className="h-4 w-4 shrink-0 text-primary" />
-                cimt@smt.gob.ar
+                <a href={`mailto:${CENTER.email}`} className="hover:text-foreground hover:underline">
+                  {CENTER.email}
+                </a>
               </li>
             </ul>
           </div>
@@ -40,8 +46,8 @@ export function Footer() {
               Atención
             </h4>
             <p className="mt-3 text-sm text-muted-foreground">
-              Servicio público y gratuito.<br />
-              Detección temprana, diagnóstico y tratamiento integral de la disfluencia.
+              Servicio público y gratuito, con turno programado.<br />
+              Presencial y por telemedicina, desde los {CENTER.minAge} años.
             </p>
           </div>
         </div>

@@ -5,11 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock, Users, FileText } from "lucide-react";
+import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock, Users, FileText, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { formatTime } from "@/lib/appointments";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
+import { StatsTab } from "@/components/admin/StatsTab";
 import { PatientRecordSheet } from "@/components/admin/PatientRecordSheet";
 import type { ProfessionalOption } from "@/lib/patients";
 
@@ -22,11 +23,13 @@ type Patient = {
   email: string | null;
   patient_type: "niño" | "adolescente" | "adulto";
   professional_id: string | null;
+  locality: string | null;
 };
 
 type Appt = {
   id: string;
   consultation_type: "primera_vez" | "seguimiento";
+  modality: "presencial" | "telemedicina" | null;
   reason: string;
   appointment_date: string;
   appointment_time: string;
@@ -47,7 +50,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "turnos" | "pacientes" | "dashboard";
+type Tab = "turnos" | "pacientes" | "estadisticas" | "dashboard";
 
 type AuthState =
   | { kind: "loading" }
@@ -329,7 +332,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
     if (!silent) setLoading(true);
     const { data, error } = await supabase
       .from("appointments")
-      .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type, professional_id)")
+      .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type, professional_id, locality)")
       .order("appointment_date", { ascending: true })
       .order("appointment_time", { ascending: true });
     if (error) toast.error("No se pudieron cargar los turnos");
@@ -395,7 +398,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
         </div>
 
         {/* Tabs */}
-        <div className="mt-6 flex gap-1 rounded-xl border border-border/60 bg-muted/40 p-1 w-fit">
+        <div className="mt-6 flex w-fit flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
           <TabButton
             active={activeTab === "turnos"}
             onClick={() => setActiveTab("turnos")}
@@ -407,6 +410,12 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
             onClick={() => setActiveTab("pacientes")}
             icon={<Users className="h-4 w-4" />}
             label="Pacientes"
+          />
+          <TabButton
+            active={activeTab === "estadisticas"}
+            onClick={() => setActiveTab("estadisticas")}
+            icon={<BarChart3 className="h-4 w-4" />}
+            label="Estadísticas"
           />
           <TabButton
             active={activeTab === "dashboard"}
@@ -422,6 +431,8 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
           </div>
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
+        ) : activeTab === "estadisticas" ? (
+          <StatsTab key={patientsVersion} />
         ) : activeTab === "dashboard" ? (
           <div className="mt-6">
             <AdminDashboard appts={appts} professionals={professionals} />
@@ -498,9 +509,15 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
                           <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                             {a.patients?.patient_type} · {a.consultation_type === "primera_vez" ? "1ra vez" : "seguimiento"}
                           </span>
+                          {a.modality === "telemedicina" && (
+                            <span className="rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">
+                              Telemedicina
+                            </span>
+                          )}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           DNI {a.patients?.dni} · {a.patients?.age} años · {a.patients?.phone}{a.patients?.email && ` · ${a.patients.email}`}
+                          {a.patients?.locality && ` · ${a.patients.locality}`}
                         </div>
                         <p className="mt-2 text-sm text-foreground/80 line-clamp-2">{a.reason}</p>
                       </div>

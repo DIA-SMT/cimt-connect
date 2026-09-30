@@ -1,45 +1,34 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
-import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useState } from "react";
-import { Calendar, User2, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowRight, Brain, GraduationCap, Hand, MessageCircle, Scale } from "lucide-react";
+import { CENTER, DISCIPLINES } from "@/lib/center";
+import { ServicesGrid } from "@/components/ServicesGrid";
 
-type Professional = {
-  id: string;
-  name: string;
-  specialty: string;
-  days: string;
-  description: string;
-  photo_url: string | null;
-};
+// Por ahora se muestran las disciplinas del equipo, no personas: los nombres reales
+// de los profesionales todavía no están confirmados (ver relevamiento, pregunta 11).
 
 export const Route = createFileRoute("/profesionales")({
   head: () => ({
     meta: [
-      { title: "Profesionales — CIMT" },
-      { name: "description", content: "Conocé al equipo interdisciplinario del Centro Integral Municipal de Tartamudez: fonoaudiología, psicología y coordinación." },
-      { property: "og:title", content: "Profesionales — CIMT" },
-      { property: "og:description", content: "Equipo interdisciplinario de fonoaudiología, psicología y coordinación." },
+      { title: "Nuestro equipo — CIMT" },
+      { name: "description", content: "Equipo interdisciplinario del Centro Integral Municipal de Tartamudez: fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
+      { property: "og:title", content: "Nuestro equipo — CIMT" },
+      { property: "og:description", content: "Fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
     ],
   }),
   component: ProfesionalesPage,
 });
 
+const DISCIPLINE_ICONS: Record<(typeof DISCIPLINES)[number]["name"], typeof Brain> = {
+  "Fonoaudiología": MessageCircle,
+  "Psicología": Brain,
+  "Psicopedagogía": GraduationCap,
+  "Terapia ocupacional": Hand,
+  "Asesoría legal": Scale,
+};
+
 function ProfesionalesPage() {
-  const [pros, setPros] = useState<Professional[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase
-      .from("professionals")
-      .select("*")
-      .order("specialty", { ascending: true })
-      .then(({ data }) => {
-        setPros(data ?? []);
-        setLoading(false);
-      });
-  }, []);
-
   return (
     <Layout>
       <section className="container mx-auto px-4 py-14 md:px-6 md:py-20">
@@ -48,55 +37,48 @@ function ProfesionalesPage() {
             Equipo interdisciplinario
           </div>
           <h1 className="mt-4 font-display text-4xl font-extrabold text-[color:var(--primary-deep)] sm:text-5xl">
-            Nuestros profesionales
+            Nuestro equipo
           </h1>
           <p className="mt-4 text-muted-foreground">
-            Un equipo comprometido con el cuidado, la escucha y el abordaje integral de la
-            disfluencia.
+            Profesionales de distintas disciplinas trabajan juntos para acompañar a niños, adolescentes
+            y adultos con tartamudez, desde los {CENTER.minAge} años, y a sus familias.
           </p>
         </div>
 
-        {loading ? (
-          <div className="mt-16 flex justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        ) : (
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {pros.map((p) => (
+        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {DISCIPLINES.map((d) => {
+            const Icon = DISCIPLINE_ICONS[d.name];
+            return (
               <article
-                key={p.id}
-                className="group overflow-hidden rounded-3xl border border-border/60 bg-card shadow-[var(--shadow-card)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elegant)]"
+                key={d.name}
+                className="rounded-3xl border border-border/60 bg-card p-7 shadow-[var(--shadow-card)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elegant)]"
               >
-                <div className="relative h-48 bg-[var(--gradient-hero)]">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {p.photo_url ? (
-                      <img src={p.photo_url} alt={p.name} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-background/90 shadow-lg ring-4 ring-background/40">
-                        <User2 className="h-12 w-12 text-primary" strokeWidth={1.5} />
-                      </div>
-                    )}
-                  </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+                  <Icon className="h-6 w-6" strokeWidth={2} />
                 </div>
-                <div className="p-6">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-primary">
-                    {p.specialty}
-                  </div>
-                  <h3 className="mt-1.5 text-xl font-bold text-[color:var(--primary-deep)]">
-                    {p.name}
-                  </h3>
-                  <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    {p.days}
-                  </div>
-                  <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                    {p.description}
-                  </p>
-                </div>
+                <h2 className="mt-5 text-xl font-bold text-[color:var(--primary-deep)]">{d.name}</h2>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{d.description}</p>
               </article>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
+
+        <div className="mx-auto mt-16 max-w-2xl text-center">
+          <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)]">Cómo trabajamos</h2>
+        </div>
+        <ServicesGrid className="mt-8" />
+
+        <div className="mt-12 flex flex-col items-center gap-3 text-center">
+          <Button asChild size="lg" className="h-12 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
+            <Link to="/turnos">
+              Solicitar turno
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            O llamá al <a href={CENTER.phoneHref} className="font-semibold text-foreground hover:underline">{CENTER.phoneDisplay}</a>
+          </p>
+        </div>
       </section>
     </Layout>
   );

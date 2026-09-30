@@ -7,16 +7,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, CheckCircle2 } from "lucide-react";
+import { CENTER, LOCALITY_OPTIONS } from "@/lib/center";
 
 const schema = z.object({
   first_name: z.string().trim().min(2, "Nombre requerido").max(60),
   last_name: z.string().trim().min(2, "Apellido requerido").max(60),
   dni: z.string().trim().regex(/^\d{6,10}$/, "DNI inválido"),
-  age: z.coerce.number().int().min(1).max(120),
+  age: z.coerce.number().int().min(CENTER.minAge, `El centro atiende a partir de los ${CENTER.minAge} años`).max(120),
   phone: z.string().trim().min(6, "Teléfono requerido").max(25),
+  locality: z.string().trim().min(2, "Indicá tu localidad").max(80),
   email: z.string().trim().email("Email inválido").max(120).optional().or(z.literal("")),
   patient_type: z.enum(["niño", "adolescente", "adulto"]),
   consultation_type: z.enum(["primera_vez", "seguimiento"]),
+  modality: z.enum(["presencial", "telemedicina"]),
   reason: z.string().trim().min(5, "Indicá brevemente el motivo").max(500),
 });
 
@@ -40,9 +43,11 @@ export function AppointmentForm({ date, time, onSuccess, onCancel }: Props) {
       dni: fd.get("dni") as string,
       age: fd.get("age") as string,
       phone: fd.get("phone") as string,
+      locality: fd.get("locality") as string,
       email: (fd.get("email") as string) || "",
       patient_type: fd.get("patient_type") as "niño" | "adolescente" | "adulto",
       consultation_type: fd.get("consultation_type") as "primera_vez" | "seguimiento",
+      modality: fd.get("modality") as "presencial" | "telemedicina",
       reason: fd.get("reason") as string,
     };
     const parsed = schema.safeParse(raw);
@@ -66,6 +71,8 @@ export function AppointmentForm({ date, time, onSuccess, onCancel }: Props) {
       p_reason: parsed.data.reason,
       p_date: date,
       p_time: time,
+      p_modality: parsed.data.modality,
+      p_locality: parsed.data.locality,
     });
 
     setSubmitting(false);
@@ -104,9 +111,17 @@ export function AppointmentForm({ date, time, onSuccess, onCancel }: Props) {
         <Field label="Nombre" name="first_name" required />
         <Field label="Apellido" name="last_name" required />
         <Field label="DNI" name="dni" required inputMode="numeric" />
-        <Field label="Edad" name="age" required type="number" min={1} max={120} />
+        <Field label="Edad" name="age" required type="number" min={CENTER.minAge} max={120} />
         <Field label="Teléfono" name="phone" required inputMode="tel" />
         <Field label="Email (opcional)" name="email" type="email" />
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="locality">Localidad<span className="text-destructive"> *</span></Label>
+          <Input id="locality" name="locality" required list="locality-options" maxLength={80}
+            placeholder="Ej: San Miguel de Tucumán" autoComplete="address-level2" />
+          <datalist id="locality-options">
+            {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
+          </datalist>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -119,6 +134,12 @@ export function AppointmentForm({ date, time, onSuccess, onCancel }: Props) {
           { value: "primera_vez", label: "Primera vez" },
           { value: "seguimiento", label: "Seguimiento" },
         ]} />
+        <div className="sm:col-span-2">
+          <SelectField label="Modalidad" name="modality" options={[
+            { value: "presencial", label: "Presencial (en el centro)" },
+            { value: "telemedicina", label: "Telemedicina (a distancia)" },
+          ]} />
+        </div>
       </div>
 
       <div className="space-y-1.5">
