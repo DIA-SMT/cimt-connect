@@ -7,6 +7,8 @@ import {
   Info, AlertCircle, Baby, Activity, CheckCircle2,
 } from "lucide-react";
 import heroImg from "@/assets/hero.jpg";
+import { CENTER } from "@/lib/center";
+import { ServicesGrid } from "@/components/ServicesGrid";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -75,8 +77,8 @@ function Index() {
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
               Atención <strong className="text-foreground">gratuita e interdisciplinaria</strong> para
-              personas con disfluencia. Detección temprana, diagnóstico y tratamiento integral
-              en San Miguel de Tucumán.
+              personas con disfluencia, desde los {CENTER.minAge} años. Detección temprana, diagnóstico
+              y tratamiento integral en San Miguel de Tucumán.
             </p>
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -87,13 +89,13 @@ function Index() {
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-primary/30 px-7 text-base font-semibold text-[color:var(--primary-deep)] hover:bg-primary/5">
-                <Link to="/profesionales">Ver profesionales</Link>
+                <Link to="/profesionales">Conocé el equipo</Link>
               </Button>
             </div>
 
             <div className="mt-8 flex flex-col gap-3 sm:max-w-md">
-              <InfoChip icon={MapPin} title="Catamarca 411" subtitle="San Miguel de Tucumán" />
-              <InfoChip icon={Clock} title="Lun a Vie" subtitle="07:30 — 17:30 hs" />
+              <InfoChip icon={MapPin} title={CENTER.address} subtitle={CENTER.city} />
+              <InfoChip icon={Clock} title="Lun a Vie" subtitle={CENTER.hoursShort} />
               <InfoChip icon={ShieldCheck} title="Gratuito" subtitle="Equipo interdisciplinario" />
             </div>
           </div>
@@ -199,7 +201,7 @@ function Index() {
           <FeatureCard
             icon={HeartHandshake}
             title="Diagnóstico personalizado"
-            text="Cada paciente recibe una valoración integral por nuestro equipo de fonoaudiología y psicología."
+            text="Cada paciente recibe una valoración integral de nuestro equipo: fonoaudiología, psicología, psicopedagogía y terapia ocupacional."
           />
           <FeatureCard
             icon={Users}
@@ -207,6 +209,9 @@ function Index() {
             text="Abordaje continuo que incluye al paciente, su familia y entorno. Seguimiento profesional gratuito."
           />
         </div>
+
+        {/* Cómo trabajamos: modalidades de atención */}
+        <ServicesGrid className="mt-6" />
       </section>
 
       {/* MAP + CONTACT */}
@@ -220,10 +225,11 @@ function Index() {
               Estamos ubicados en pleno centro de San Miguel de Tucumán. Ingreso libre y gratuito.
             </p>
             <ul className="mt-6 space-y-4">
-              <ContactItem icon={MapPin} label="Dirección" value="Catamarca 411, San Miguel de Tucumán" />
-              <ContactItem icon={Clock} label="Horarios" value="Lunes a Viernes · 07:30 a 17:30 hs" />
-              <ContactItem icon={Phone} label="Teléfono" value="(0381) 4XX-XXXX" />
-              <ContactItem icon={Mail} label="Email" value="cimt@smt.gob.ar" />
+              <ContactItem icon={MapPin} label="Dirección" value={`${CENTER.address}, ${CENTER.city}`} />
+              <ContactItem icon={Clock} label="Horarios" value={CENTER.hoursLong} />
+              <ContactItem icon={Phone} label={`Teléfono · ${CENTER.phoneNote.toLowerCase()}`}
+                value={CENTER.phoneDisplay} href={CENTER.phoneHref} />
+              <ContactItem icon={Mail} label="Email" value={CENTER.email} href={`mailto:${CENTER.email}`} />
             </ul>
             <Button asChild size="lg" className="mt-8 h-12 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
               <Link to="/turnos">
@@ -273,7 +279,9 @@ function FeatureCard({ icon: Icon, title, text }: { icon: typeof Stethoscope; ti
   );
 }
 
-function ContactItem({ icon: Icon, label, value }: { icon: typeof MapPin; label: string; value: string }) {
+function ContactItem({ icon: Icon, label, value, href }: {
+  icon: typeof MapPin; label: string; value: string; href?: string;
+}) {
   return (
     <li className="flex items-start gap-4 rounded-2xl border border-border/60 bg-background p-4">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-primary">
@@ -281,7 +289,9 @@ function ContactItem({ icon: Icon, label, value }: { icon: typeof MapPin; label:
       </div>
       <div>
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
-        <div className="text-base font-medium text-foreground">{value}</div>
+        <div className="text-base font-medium text-foreground">
+          {href ? <a href={href} className="hover:text-primary hover:underline">{value}</a> : value}
+        </div>
       </div>
     </li>
   );

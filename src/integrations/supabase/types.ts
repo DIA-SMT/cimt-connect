@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       appointments: {
         Row: {
+          modality: string
           appointment_date: string
           appointment_time: string
           consultation_type: Database["public"]["Enums"]["consultation_type"]
@@ -28,6 +29,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          modality?: string
           appointment_date: string
           appointment_time: string
           consultation_type: Database["public"]["Enums"]["consultation_type"]
@@ -40,6 +42,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          modality?: string
           appointment_date?: string
           appointment_time?: string
           consultation_type?: Database["public"]["Enums"]["consultation_type"]
@@ -215,6 +218,7 @@ export type Database = {
       }
       patients: {
         Row: {
+          therapy_modes: string[]
           case_status: Database["public"]["Enums"]["case_status"]
           cud_status: string | null
           guardian_name: string | null
@@ -235,12 +239,15 @@ export type Database = {
           first_name: string
           id: string
           last_name: string
+          locality: string | null
           notes: string | null
           patient_type: Database["public"]["Enums"]["patient_type"]
           phone: string
           updated_at: string
         }
         Insert: {
+          locality?: string | null
+          therapy_modes?: string[]
           case_status?: Database["public"]["Enums"]["case_status"]
           cud_status?: string | null
           guardian_name?: string | null
@@ -267,6 +274,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          locality?: string | null
+          therapy_modes?: string[]
           case_status?: Database["public"]["Enums"]["case_status"]
           cud_status?: string | null
           guardian_name?: string | null
@@ -362,6 +371,8 @@ export type Database = {
           p_reason: string
           p_date: string
           p_time: string
+          p_modality?: string
+          p_locality?: string | null
         }
         Returns: string
       }

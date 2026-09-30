@@ -9,6 +9,10 @@
 --      consume crédito de OpenRouter): 20 cada 10 minutos y 100 por día.
 --   2. Turnos: cada DNI puede tener como máximo UN turno a futuro
 --      (pendiente o confirmado). Reemplaza request_appointment().
+--
+-- OJO: la versión vigente de request_appointment() está en
+-- 9_modalidad_localidad.sql. Si volvés a correr este script, corré el 9
+-- después (si no, quedan dos versiones de la función y los turnos fallan).
 -- ============================================================
 
 

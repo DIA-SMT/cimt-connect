@@ -6,6 +6,7 @@ export type CaseStatus = "en_evaluacion" | "en_tratamiento" | "derivado" | "alta
 export type CudStatus = "si" | "no" | "en_tramite";
 export type ReferralKind = "derivacion" | "interconsulta";
 export type ReferralStatus = "pendiente" | "realizada" | "cancelada";
+export type TherapyMode = "individual" | "grupal" | "gam" | "familia";
 
 export type PatientRecord = {
   id: string;
@@ -30,6 +31,8 @@ export type PatientRecord = {
   school: string | null;
   guardian_name: string | null;
   guardian_phone: string | null;
+  locality: string | null;
+  therapy_modes: TherapyMode[];
   created_at: string;
   updated_at: string;
 };
@@ -97,6 +100,13 @@ export const PATIENT_TYPE_LABEL: Record<PatientType, string> = {
   adulto: "Adulto",
 };
 
+export const THERAPY_MODE_LABEL: Record<TherapyMode, string> = {
+  individual: "Individual",
+  grupal: "Grupal",
+  gam: "GAM (grupo de ayuda mutua)",
+  familia: "Acompañamiento familiar",
+};
+
 export const CUD_LABEL: Record<CudStatus, string> = {
   si: "Tiene CUD",
   no: "No tiene",
@@ -148,6 +158,18 @@ export const SPECIALTY_OPTIONS = [
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Filas viejas o recién creadas pueden traer null en las columnas agregadas después
+export function normalizePatient(p: PatientRecord): PatientRecord {
+  return {
+    ...p,
+    other_conditions: p.other_conditions ?? [],
+    therapy_modes: p.therapy_modes ?? [],
+    is_medicated: !!p.is_medicated,
+    has_health_insurance: p.has_health_insurance ?? null,
+    locality: p.locality ?? null,
+  };
+}
+
 export function fullName(p: Pick<PatientRecord, "first_name" | "last_name">): string {
   return `${p.last_name}, ${p.first_name}`;
 }
@@ -180,20 +202,21 @@ export function exportPatientsCsv(
 ) {
   const proName = new Map(professionals.map((p) => [p.id, p.name]));
   const header = [
-    "Apellido", "Nombre", "DNI", "Edad", "Tipo", "Teléfono", "Email",
+    "Apellido", "Nombre", "DNI", "Edad", "Tipo", "Teléfono", "Email", "Localidad",
     "Tutor/responsable", "Tel. tutor", "Escolaridad", "¿Obra social?", "Obra social",
-    "Estado", "Profesional a cargo", "Derivado por", "Diagnóstico / motivo",
+    "Estado", "Profesional a cargo", "Terapia", "Derivado por", "Diagnóstico / motivo",
     "Otras condiciones", "CUD", "Medicado", "Medicación",
     "Derivaciones pendientes", "Interconsultas registradas", "Último informe", "Último seguimiento", "Notas",
   ];
   const rows = patients.map((p) => {
     const st = stats.get(p.id);
     return [
-      p.last_name, p.first_name, p.dni, p.age, PATIENT_TYPE_LABEL[p.patient_type], p.phone, p.email,
+      p.last_name, p.first_name, p.dni, p.age, PATIENT_TYPE_LABEL[p.patient_type], p.phone, p.email, p.locality,
       p.guardian_name, p.guardian_phone, p.school,
       p.has_health_insurance === null ? "" : p.has_health_insurance ? "Con obra social" : "Sin obra social",
       p.has_health_insurance ? p.health_insurance : "",
       CASE_STATUS_LABEL[p.case_status], p.professional_id ? proName.get(p.professional_id) : "",
+      p.therapy_modes.map((m) => THERAPY_MODE_LABEL[m]).join(", "),
       p.referred_by, p.main_diagnosis,
       p.other_conditions.join(", "), p.cud_status ? CUD_LABEL[p.cud_status] : "",
       p.is_medicated ? "Sí" : "No", p.medication,

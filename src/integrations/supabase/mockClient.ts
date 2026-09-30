@@ -38,7 +38,12 @@ const PATIENT_DEFAULTS: Row = {
   school: null,
   guardian_name: null,
   guardian_phone: null,
+  locality: null,
+  therapy_modes: [],
 };
+
+// Localidades de ejemplo para que la pestaña Estadísticas muestre algo en demo
+const DEMO_LOCALITIES = ["San Miguel de Tucumán", "Yerba Buena", "San Miguel de Tucumán", "Tafí Viejo", "Banda del Río Salí", null];
 
 const patientsByDni = new Map<string, Row>();
 for (const a of MOCK_APPOINTMENTS) {
@@ -53,6 +58,7 @@ for (const a of MOCK_APPOINTMENTS) {
     phone: a.phone,
     email: a.email,
     patient_type: a.patient_type,
+    locality: DEMO_LOCALITIES[patientsByDni.size % DEMO_LOCALITIES.length],
     created_at: a.created_at,
     updated_at: a.created_at,
   });
@@ -69,6 +75,7 @@ const store: Record<string, Row[]> = {
     appointment_date: a.appointment_date,
     appointment_time: a.appointment_time,
     status: a.status,
+    modality: "presencial",
     professional_id: a.professional_id,
     created_at: a.created_at,
     updated_at: a.updated_at,
@@ -90,6 +97,7 @@ if (demo) {
     is_medicated: true,
     medication: "Metilfenidato 10 mg/día — indicado por neuropediatría",
     guardian_name: "Madre",
+    therapy_modes: ["individual", "familia"],
     has_health_insurance: true,
     health_insurance: "Subsidio de Salud",
   });
@@ -114,7 +122,7 @@ if (demo) {
 }
 
 const INSERT_DEFAULTS: Record<string, Row> = {
-  appointments: { status: "pendiente" },
+  appointments: { status: "pendiente", modality: "presencial" },
   patients: PATIENT_DEFAULTS,
   patient_referrals: { status: "pendiente", outcome: null, destination: null, reason: null, registered: false },
   patient_followups: {},
@@ -293,6 +301,10 @@ function rpc(fn: string, args: Row = {}) {
   }
 
   if (fn === "request_appointment") {
+    // Mismas validaciones nuevas que 9_modalidad_localidad.sql
+    if (Number(args.p_age) < 2) {
+      return Promise.resolve({ data: null, error: { message: "INVALID_AGE: El centro atiende a partir de los 2 años" } });
+    }
     const time = `${String(args.p_time).slice(0, 5)}:00`;
     const taken = store.appointments.some((a) =>
       a.appointment_date === args.p_date && a.appointment_time === time && a.status !== "cancelado");
@@ -317,6 +329,7 @@ function rpc(fn: string, args: Row = {}) {
     const contact = {
       first_name: args.p_first_name, last_name: args.p_last_name, age: args.p_age,
       phone: args.p_phone, email: args.p_email ?? null, patient_type: args.p_patient_type,
+      ...(args.p_locality ? { locality: args.p_locality } : {}),
     };
     let patient = store.patients.find((p) => p.dni === args.p_dni);
     if (patient) {
@@ -335,6 +348,7 @@ function rpc(fn: string, args: Row = {}) {
       appointment_date: args.p_date,
       appointment_time: time,
       status: "pendiente",
+      modality: args.p_modality ?? "presencial",
       professional_id: null,
       created_at: now,
       updated_at: now,

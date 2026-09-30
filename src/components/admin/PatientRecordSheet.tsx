@@ -14,9 +14,11 @@ import {
 import { formatTime } from "@/lib/appointments";
 import { Chip, Section, TextAreaField, TextField, selectClass } from "./fields";
 import { ReportsSection } from "./PatientReports";
+import { LOCALITY_OPTIONS } from "@/lib/center";
 import {
   CASE_STATUS_LABEL, CUD_LABEL, CONDITION_OPTIONS, PATIENT_TYPE_LABEL, REFERRAL_KIND_LABEL,
-  REFERRAL_STATUS_LABEL, SPECIALTY_OPTIONS, formatShortDate, fullName, todayKey,
+  REFERRAL_STATUS_LABEL, SPECIALTY_OPTIONS, THERAPY_MODE_LABEL, formatShortDate, fullName, normalizePatient, todayKey,
+  type TherapyMode,
   type CaseStatus, type CudStatus, type Followup, type PatientRecord, type PatientType,
   type ProfessionalOption, type Referral, type ReferralKind, type ReferralStatus, type Report,
 } from "@/lib/patients";
@@ -27,6 +29,7 @@ type PatientAppt = {
   appointment_time: string;
   status: "pendiente" | "confirmado" | "cancelado";
   consultation_type: "primera_vez" | "seguimiento";
+  modality: "presencial" | "telemedicina" | null;
   reason: string;
 };
 
@@ -43,7 +46,7 @@ const EDITABLE_FIELDS = [
   "first_name", "last_name", "dni", "age", "phone", "email", "patient_type", "notes",
   "case_status", "professional_id", "referred_by", "main_diagnosis", "other_conditions",
   "cud_status", "is_medicated", "medication", "has_health_insurance", "health_insurance", "school",
-  "guardian_name", "guardian_phone",
+  "guardian_name", "guardian_phone", "locality", "therapy_modes",
 ] as const satisfies readonly (keyof PatientRecord)[];
 
 
@@ -70,7 +73,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
       supabase.from("patient_followups").select("*").eq("patient_id", patientId)
         .order("note_date", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("appointments")
-        .select("id, appointment_date, appointment_time, status, consultation_type, reason")
+        .select("id, appointment_date, appointment_time, status, consultation_type, modality, reason")
         .eq("patient_id", patientId)
         .order("appointment_date", { ascending: false }),
       supabase.from("patient_reports").select("*").eq("patient_id", patientId)
@@ -82,7 +85,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
         onClose();
         return;
       }
-      const rec = normalize(p.data as PatientRecord);
+      const rec = normalizePatient(p.data as PatientRecord);
       setPatient(rec);
       setDraft(rec);
       setReferrals((r.data ?? []) as Referral[]);
@@ -125,7 +128,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
       toast.error(dbError.code === "23505" ? "Ya existe otro paciente con ese DNI" : "No se pudo guardar la ficha");
       return;
     }
-    const saved = normalize({ ...draft, ...payload } as PatientRecord);
+    const saved = normalizePatient({ ...draft, ...payload } as PatientRecord);
     setPatient(saved);
     setDraft(saved);
     toast.success("Ficha guardada");
@@ -220,6 +223,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                     onChange={(v) => set("guardian_name", v)} placeholder="Para menores de edad" />
                   <TextField label="Teléfono del tutor" value={draft.guardian_phone ?? ""}
                     onChange={(v) => set("guardian_phone", v)} inputMode="tel" />
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="locality">Localidad</Label>
+                    <Input id="locality" list="ficha-locality-options" value={draft.locality ?? ""}
+                      onChange={(e) => set("locality", e.target.value)} placeholder="Ej: San Miguel de Tucumán" />
+                    <datalist id="ficha-locality-options">
+                      {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
+                    </datalist>
+                  </div>
                   <div className="sm:col-span-2">
                     <TextField label="Escolaridad / institución" value={draft.school ?? ""}
                       onChange={(v) => set("school", v)} placeholder="Ej: 1er grado, Escuela N° 123" />
@@ -244,6 +255,20 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   <div className="sm:col-span-2">
                     <TextAreaField label="Diagnóstico / motivo principal" value={draft.main_diagnosis ?? ""}
                       onChange={(v) => set("main_diagnosis", v)} />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Terapia</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(THERAPY_MODE_LABEL) as TherapyMode[]).map((m) => (
+                      <Chip key={m} active={draft.therapy_modes.includes(m)}
+                        onClick={() => set("therapy_modes", draft.therapy_modes.includes(m)
+                          ? draft.therapy_modes.filter((x) => x !== m)
+                          : [...draft.therapy_modes, m])}>
+                        {THERAPY_MODE_LABEL[m]}
+                      </Chip>
+                    ))}
                   </div>
                 </div>
 
@@ -307,6 +332,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                           <span className="text-xs font-normal text-muted-foreground">
                             <span className="capitalize">{a.status}</span>
                             {" · "}{a.consultation_type === "primera_vez" ? "1ra vez" : "seguimiento"}
+                            {a.modality === "telemedicina" && " · telemedicina"}
                           </span>
                         </div>
                         <p className="mt-1 text-muted-foreground">{a.reason}</p>
@@ -587,16 +613,6 @@ function emptyReferralForm() {
     destination: "",
     reason: "",
     referral_date: todayKey(),
-  };
-}
-
-// La base puede devolver null en columnas nuevas de filas viejas
-function normalize(p: PatientRecord): PatientRecord {
-  return {
-    ...p,
-    other_conditions: p.other_conditions ?? [],
-    is_medicated: !!p.is_medicated,
-    has_health_insurance: p.has_health_insurance ?? null,
   };
 }
 
