@@ -56,6 +56,29 @@ se pause por inactividad.
   ```
 - Disparar el workflow a mano: GitHub → Actions → "Supabase Keepalive" → Run workflow.
 
+## GitHub desactiva el workflow si el repo está inactivo
+
+GitHub apaga los workflows programados de repos públicos después de **60 días
+sin actividad** en el repo (estado `disabled_inactivity`). Pasó el 5/7/2026:
+el último commit había sido el 6/5 y el keepalive dejó de correr.
+
+Para que no vuelva a pasar, el workflow tiene un segundo paso que llama a la
+API de GitHub para volver a habilitarse a sí mismo en cada corrida, lo que
+reinicia el contador de 60 días sin necesidad de commits. Necesita
+`permissions: actions: write` (ya está en el workflow).
+
+Si igual se desactiva (por ejemplo, si cambian los permisos del repo):
+GitHub → Actions → "Supabase Keepalive" → **Enable workflow**, y después
+**Run workflow** para probarlo.
+
+Para ver el estado sin entrar a GitHub (repo público):
+
+```bash
+curl -s https://api.github.com/repos/DIA-SMT/cimt-connect/actions/workflows/supabase-keepalive.yml | grep '"state"'
+```
+
+Tiene que decir `"active"`.
+
 ## Ajustar o desactivar
 
 - Cambiar la frecuencia: editar el `cron` en

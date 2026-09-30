@@ -2,15 +2,21 @@ name: Supabase Keepalive
 
 # Evita que el proyecto Supabase Free se pause por inactividad.
 # Llama a la RPC dedicada api.keepalive() dos veces por día.
+#
+# Ojo: GitHub desactiva los workflows programados de repos públicos después
+# de 60 días sin actividad en el repo (pasó el 5/7/2026). Por eso el segundo
+# paso vuelve a "habilitar" este mismo workflow en cada corrida, lo que
+# reinicia ese contador sin necesidad de commits.
 
 on:
   schedule:
-    # 06:00 y 18:00 UTC todos los días (cada 12h, < 48h requerido)
+    # 06:00 y 18:00 UTC todos los días (cada 12h; Supabase pausa a los 7 días)
     - cron: '0 6,18 * * *'
   workflow_dispatch: {}
 
 permissions:
   contents: read
+  actions: write # para el paso que evita la desactivación por inactividad
 
 concurrency:
   group: supabase-keepalive
@@ -52,4 +58,21 @@ jobs:
           if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
             echo "Keepalive ping failed." >&2
             exit 1
+          fi
+
+      - name: Keep this workflow enabled (GitHub 60-day inactivity rule)
+        # Corre aunque falle el ping: lo importante es que el workflow no se apague.
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/supabase-keepalive.yml/enable")
+          echo "Enable workflow: HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" != "204" ]; then
+            echo "::warning::No se pudo renovar el workflow (HTTP $HTTP_CODE). Revisar Settings > Actions > Workflow permissions." >&2
           fi
