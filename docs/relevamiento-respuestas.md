@@ -287,6 +287,16 @@ La directora de la institución, en conjunto con el equipo de profesionales.
 
 ---
 
+## Pedidos adicionales (después del relevamiento)
+
+- **Rincón social** (octubre 2026): espacio motivacional con personas que
+  tartamudean (artistas, deportistas, figuras públicas), películas, libros y
+  música. Incluye el libro "Yo y la tartamudez" de la Municipalidad
+  (https://smt.gob.ar/nota/yo-y-la-tartamudez/101). Implementado en /rincon,
+  administrable desde el panel (script 14).
+
+---
+
 ## Plan de implementación propuesto
 
 Ver el resumen por fases en la conversación del 2026-10-02. Orden sugerido:

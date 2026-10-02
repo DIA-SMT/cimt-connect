@@ -212,6 +212,25 @@ function Index() {
 
         {/* Cómo trabajamos: modalidades de atención */}
         <ServicesGrid className="mt-6" />
+
+        {/* Rincón social */}
+        <Link to="/rincon"
+          className="group mt-6 flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+              <Sparkles className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Rincón social: historias que inspiran</h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Personas, películas, libros, artistas y deportistas que muestran que la tartamudez no define lo que alguien puede lograr.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary group-hover:underline">
+            Conocé el rincón <ArrowRight className="h-4 w-4" />
+          </span>
+        </Link>
       </section>
 
       {/* MAP + CONTACT */}
