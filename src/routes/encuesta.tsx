@@ -64,7 +64,7 @@ function EncuestaPage() {
     <Layout>
       <section className="container mx-auto max-w-2xl px-4 py-12 md:py-16">
         <div className="text-center">
-          <h1 className="font-display text-4xl font-extrabold text-[color:var(--primary-deep)]">Encuesta de satisfacción</h1>
+          <h1 className="font-hand text-5xl text-[color:var(--primary-deep)]">Encuesta de satisfacción</h1>
           <p className="mt-3 text-muted-foreground">
             Nos ayuda a mejorar. Es <strong>anónima</strong>: no te pedimos nombre ni DNI. Te lleva un minuto.
           </p>
@@ -76,7 +76,7 @@ function EncuestaPage() {
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]">
                 <CheckCircle2 className="h-8 w-8" />
               </div>
-              <h2 className="mt-4 text-2xl font-bold text-[color:var(--primary-deep)]">¡Gracias por responder!</h2>
+              <h2 className="font-hand mt-4 text-4xl text-[color:var(--primary-deep)]">¡Gracias por responder!</h2>
               <p className="mt-2 text-muted-foreground">Tu opinión nos sirve para mejorar la atención.</p>
             </div>
           ) : (

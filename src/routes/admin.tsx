@@ -113,7 +113,7 @@ function AdminPage() {
 
   if (auth.kind === "loading") {
     return (
-      <Layout>
+      <Layout plain>
         <div className="flex justify-center py-32">
           <Loader2 className="h-7 w-7 animate-spin text-primary" />
         </div>
@@ -295,7 +295,7 @@ function AuthCard({ title, subtitle, onSubmit, children }: {
     </>
   );
   return (
-    <Layout>
+    <Layout plain>
       <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
         {onSubmit ? (
           <form onSubmit={onSubmit} className={className}>{content}</form>
@@ -309,7 +309,7 @@ function AuthCard({ title, subtitle, onSubmit, children }: {
 
 function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   return (
-    <Layout>
+    <Layout plain>
       <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
         <div className="w-full max-w-sm rounded-3xl border border-border/60 bg-card p-8 text-center shadow-[var(--shadow-card)]">
           <ShieldAlert className="mx-auto h-10 w-10 text-[color:var(--status-occupied)]" />
@@ -366,7 +366,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   }
 
   return (
-    <Layout>
+    <Layout plain>
       <section className="container mx-auto px-4 py-10 md:px-6 md:py-14">
         {/* Header */}
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">

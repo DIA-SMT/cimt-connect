@@ -69,10 +69,9 @@ function Index() {
     <Layout>
       {/* HERO */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[var(--gradient-soft)]" />
         <div className="container mx-auto grid gap-10 px-4 py-10 md:grid-cols-2 md:gap-12 md:px-6 md:py-16 lg:py-20">
           <div className="flex flex-col justify-center">
-            <h1 className="font-display text-4xl font-extrabold leading-[1.05] text-[color:var(--primary-deep)] sm:text-5xl lg:text-6xl">
+            <h1 className="font-hand text-5xl leading-[1.05] text-[color:var(--primary-deep)] sm:text-6xl lg:text-7xl">
               Centro Integral Municipal de <span className="text-primary">Tartamudez</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
@@ -122,7 +121,7 @@ function Index() {
             <Info className="h-3.5 w-3.5" />
             Información
           </div>
-          <h2 className="mt-4 font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
+          <h2 className="font-hand mt-4 text-4xl text-[color:var(--primary-deep)] sm:text-5xl">
             ¿Qué es la tartamudez?
           </h2>
           <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
@@ -183,7 +182,7 @@ function Index() {
       {/* SERVICES SECTION */}
       <section className="container mx-auto px-4 pb-16 md:px-6 md:pb-20">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)] sm:text-4xl">
+          <h2 className="font-hand text-4xl text-[color:var(--primary-deep)] sm:text-5xl">
             Acompañamiento integral en cada etapa
           </h2>
           <p className="mt-4 text-muted-foreground">
@@ -213,9 +212,29 @@ function Index() {
         {/* Cómo trabajamos: modalidades de atención */}
         <ServicesGrid className="mt-6" />
 
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {/* Para familias */}
+        <Link to="/familias"
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+              <HeartHandshake className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Para familias</h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Consejos para acompañar en casa y cómo trabaja cada área del centro con la tartamudez.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary group-hover:underline">
+            Ver consejos <ArrowRight className="h-4 w-4" />
+          </span>
+        </Link>
+
         {/* Rincón social */}
         <Link to="/rincon"
-          className="group mt-6 flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
               <Sparkles className="h-6 w-6" />
@@ -231,13 +250,14 @@ function Index() {
             Conocé el rincón <ArrowRight className="h-4 w-4" />
           </span>
         </Link>
+        </div>
       </section>
 
       {/* MAP + CONTACT */}
       <section className="bg-[color:var(--primary-soft)]/40 py-16 md:py-20">
         <div className="container mx-auto grid gap-10 px-4 md:grid-cols-2 md:px-6">
           <div>
-            <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)]">
+            <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">
               Encontranos
             </h2>
             <p className="mt-3 text-muted-foreground">

@@ -51,12 +51,11 @@ function RinconPage() {
   return (
     <Layout>
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[var(--gradient-soft)]" />
         <div className="container mx-auto px-4 py-14 text-center md:px-6 md:py-20">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
             <Sparkles className="h-3.5 w-3.5" /> Rincón social
           </div>
-          <h1 className="mx-auto mt-4 max-w-3xl font-display text-4xl font-extrabold text-[color:var(--primary-deep)] sm:text-5xl">
+          <h1 className="font-hand mx-auto mt-4 max-w-3xl text-5xl text-[color:var(--primary-deep)] sm:text-6xl">
             Historias que inspiran
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
@@ -91,7 +90,7 @@ function RinconPage() {
         )}
 
         <div className="mx-auto mt-14 max-w-2xl rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-7 text-center">
-          <h2 className="font-display text-2xl font-bold text-[color:var(--primary-deep)]">¿Conocés una historia que inspire?</h2>
+          <h2 className="font-hand text-3xl text-[color:var(--primary-deep)]">¿Conocés una historia que inspire?</h2>
           <p className="mt-2 text-muted-foreground">
             Si querés recomendar una película, un libro o una persona, contanos: escribinos a{" "}
             <a href={`mailto:${CENTER.email}`} className="font-semibold text-foreground hover:underline">{CENTER.email}</a>.

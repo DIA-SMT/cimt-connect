@@ -100,7 +100,7 @@ function TurnosPage() {
     <Layout>
       <section className="container mx-auto px-4 py-12 md:px-6 md:py-16">
         <div className="mx-auto max-w-2xl text-center">
-          <h1 className="font-display text-4xl font-extrabold text-[color:var(--primary-deep)] sm:text-5xl">
+          <h1 className="font-hand text-5xl text-[color:var(--primary-deep)] sm:text-6xl">
             Solicitar turno
           </h1>
           <p className="mt-4 text-muted-foreground">
@@ -132,7 +132,7 @@ function TurnosPage() {
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]">
                 <CheckCircle2 className="h-8 w-8" />
               </div>
-              <h2 className="mt-4 text-2xl font-bold text-[color:var(--primary-deep)]">¡Solicitud enviada!</h2>
+              <h2 className="font-hand mt-4 text-4xl text-[color:var(--primary-deep)]">¡Solicitud enviada!</h2>
               <p className="mt-2 max-w-md text-muted-foreground">
                 El equipo del CIMT te va a llamar al teléfono que dejaste para invitarte al próximo taller
                 informativo y coordinar los turnos.

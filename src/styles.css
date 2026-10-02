@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Gochi+Hand&display=swap');
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
@@ -62,6 +62,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-sans: 'Figtree', system-ui, sans-serif;
+  --font-hand: 'Gochi Hand', 'Comic Sans MS', cursive;
 }
 
 :root {
@@ -165,4 +166,22 @@
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }
+}
+
+/* Hoja cuadriculada, como los folletos del CIMT (página Para familias).
+   Usa los colores del tema, así funciona también en modo oscuro. */
+.bg-notebook {
+  --grid-line: color-mix(in oklab, var(--primary) 10%, transparent);
+  background-color: var(--background);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -1px -1px;
+}
+
+/* Títulos con letra manuscrita: sin el espaciado negativo de los títulos */
+.font-hand {
+  letter-spacing: 0;
+  font-weight: 400;
 }

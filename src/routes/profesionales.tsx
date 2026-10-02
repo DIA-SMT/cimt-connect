@@ -47,7 +47,7 @@ function ProfesionalesPage() {
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
             Equipo interdisciplinario
           </div>
-          <h1 className="mt-4 font-display text-4xl font-extrabold text-[color:var(--primary-deep)] sm:text-5xl">
+          <h1 className="font-hand mt-4 text-5xl text-[color:var(--primary-deep)] sm:text-6xl">
             Nuestro equipo
           </h1>
           <p className="mt-4 text-muted-foreground">
@@ -77,7 +77,7 @@ function ProfesionalesPage() {
         {team.length > 0 && (
           <>
             <div className="mx-auto mt-16 max-w-2xl text-center">
-              <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)]">Profesionales</h2>
+              <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">Profesionales</h2>
             </div>
             <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {team.map((m) => (
@@ -104,7 +104,7 @@ function ProfesionalesPage() {
         )}
 
         <div className="mx-auto mt-16 max-w-2xl text-center">
-          <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)]">Cómo trabajamos</h2>
+          <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">Cómo trabajamos</h2>
         </div>
         <ServicesGrid className="mt-8" />
 
