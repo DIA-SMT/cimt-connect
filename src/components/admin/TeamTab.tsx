@@ -26,6 +26,7 @@ type Professional = {
   active: boolean;
   show_on_site: boolean;
   user_id: string | null;
+  session_minutes: number;
 };
 
 type Props = {
@@ -51,7 +52,7 @@ export function TeamTab({ currentEmail, onProfessionalsChanged }: Props) {
   async function load() {
     const [p, u] = await Promise.all([
       supabase.from("professionals")
-        .select("id, name, specialty, license, days, description, photo_url, active, show_on_site, user_id")
+        .select("id, name, specialty, license, days, description, photo_url, active, show_on_site, user_id, session_minutes")
         .order("name", { ascending: true }),
       supabase.from("admins").select("user_id, email, full_name, role, active, created_at").order("created_at"),
     ]);
@@ -143,7 +144,7 @@ export function TeamTab({ currentEmail, onProfessionalsChanged }: Props) {
                         {p.active && p.show_on_site && <Tag tone="primary"><Globe className="h-3 w-3" /> En el sitio</Tag>}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {p.specialty}{p.license && ` · MP ${p.license}`}
+                        {p.specialty}{p.license && ` · MP ${p.license}`} · {p.session_minutes ?? 30} min
                         {p.user_id && userEmail.get(p.user_id) && ` · Usuario: ${userEmail.get(p.user_id)}`}
                       </div>
                     </div>
@@ -253,6 +254,7 @@ function ProfessionalDialog({ professional, onClose, onSaved }: {
     photo_url: professional?.photo_url ?? "",
     active: professional?.active ?? true,
     show_on_site: professional?.show_on_site ?? false,
+    session_minutes: String(professional?.session_minutes ?? 30),
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -275,6 +277,8 @@ function ProfessionalDialog({ professional, onClose, onSaved }: {
     if (form.name.trim().length < 3) { toast.error("Indicá el nombre"); return; }
     if (form.specialty.trim().length < 3) { toast.error("Indicá la especialidad"); return; }
     if (form.show_on_site && !form.active) { toast.error("Un profesional inactivo no puede mostrarse en el sitio"); return; }
+    const minutes = Number(form.session_minutes);
+    if (!Number.isInteger(minutes) || minutes < 10 || minutes > 180) { toast.error("La duración de la sesión tiene que estar entre 10 y 180 minutos"); return; }
     setSaving(true);
     const payload = {
       name: form.name.trim(),
@@ -285,6 +289,7 @@ function ProfessionalDialog({ professional, onClose, onSaved }: {
       photo_url: form.photo_url || null,
       active: form.active,
       show_on_site: form.show_on_site,
+      session_minutes: minutes,
     };
     const { error } = professional
       ? await supabase.from("professionals").update(payload).eq("id", professional.id)
@@ -336,6 +341,8 @@ function ProfessionalDialog({ professional, onClose, onSaved }: {
             </div>
             <TextField label="Matrícula (MP)" value={form.license} onChange={(v) => set("license", v)} placeholder="Ej: 2226" />
             <TextField label="Días de atención" value={form.days} onChange={(v) => set("days", v)} placeholder="Ej: Lunes a viernes" />
+            <TextField label="Duración de la sesión (min)" type="number" value={form.session_minutes}
+              onChange={(v) => set("session_minutes", v)} placeholder="30" />
           </div>
           <TextAreaField label="Descripción para el sitio" value={form.description} onChange={(v) => set("description", v)}
             placeholder="Breve presentación profesional (sin datos personales)" />

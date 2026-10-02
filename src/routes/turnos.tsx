@@ -1,80 +1,100 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { z } from "zod";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { TIME_SLOTS, formatDateKey, formatTime, isWeekend } from "@/lib/appointments";
-import { ChevronLeft, ChevronRight, Loader2, Info } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AppointmentForm } from "@/components/AppointmentForm";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { CalendarDays, CheckCircle2, ClipboardList, Loader2, Phone, Users } from "lucide-react";
+import { CENTER, LOCALITY_OPTIONS } from "@/lib/center";
 
-type Appt = {
-  appointment_date: string;
-  appointment_time: string;
-  status: "pendiente" | "confirmado" | "cancelado";
-};
+// Solicitud de ingreso (fase 2). Según el relevamiento, el paciente no elige
+// horario: el centro asigna terapia y profesional, el ingreso pasa por un taller
+// informativo para familias (mensual) y los turnos se asignan por teléfono.
 
 export const Route = createFileRoute("/turnos")({
   head: () => ({
     meta: [
       { title: "Solicitar turno — CIMT" },
-      { name: "description", content: "Reservá tu turno gratuito en el Centro Integral Municipal de Tartamudez. Calendario con disponibilidad en tiempo real." },
+      { name: "description", content: "Pedí tu ingreso al Centro Integral Municipal de Tartamudez. Atención gratuita desde los 2 años." },
       { property: "og:title", content: "Solicitar turno — CIMT" },
-      { property: "og:description", content: "Calendario de turnos con disponibilidad en tiempo real." },
+      { property: "og:description", content: "Completá la solicitud y el equipo del CIMT se comunica con vos." },
     ],
   }),
   component: TurnosPage,
 });
 
+const schema = z.object({
+  first_name: z.string().trim().min(2, "Nombre requerido").max(60),
+  last_name: z.string().trim().min(2, "Apellido requerido").max(60),
+  dni: z.string().trim().regex(/^\d{6,10}$/, "DNI inválido"),
+  age: z.coerce.number().int().min(CENTER.minAge, `El centro atiende a partir de los ${CENTER.minAge} años`).max(120),
+  patient_type: z.enum(["niño", "adolescente", "adulto"]),
+  guardian_name: z.string().trim().max(80),
+  phone: z.string().trim().min(6, "Teléfono requerido").max(25),
+  email: z.string().trim().email("Email inválido").max(120).optional().or(z.literal("")),
+  locality: z.string().trim().min(2, "Indicá la localidad").max(80),
+  preferred_modality: z.enum(["presencial", "telemedicina"]),
+  referred_by: z.string().trim().max(120),
+  reason: z.string().trim().min(5, "Contanos brevemente el motivo").max(800),
+}).refine((d) => d.patient_type === "adulto" || d.guardian_name.length >= 3, {
+  message: "Indicá el nombre del adulto responsable", path: ["guardian_name"],
+});
+
+type UpcomingWorkshop = { workshop_date: string; start_time: string; place: string };
+
 function TurnosPage() {
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
-  });
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [appts, setAppts] = useState<Appt[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [formOpen, setFormOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [patientType, setPatientType] = useState("");
+  const [workshops, setWorkshops] = useState<UpcomingWorkshop[]>([]);
 
-  async function fetchAppts() {
-    const start = formatDateKey(new Date(cursor.getFullYear(), cursor.getMonth(), 1));
-    const end = formatDateKey(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0));
-    setLoading(true);
-    // RPC pública: solo devuelve fecha/hora/estado, sin datos de pacientes
-    const { data } = await supabase.rpc("get_booked_slots", { p_start: start, p_end: end });
-    setAppts((data ?? []) as Appt[]);
-    setLoading(false);
-  }
+  useEffect(() => {
+    supabase.rpc("get_upcoming_workshops").then(({ data }: { data: UpcomingWorkshop[] | null }) => setWorkshops(data ?? []));
+  }, []);
 
-  useEffect(() => { fetchAppts(); /* eslint-disable-next-line */ }, [cursor]);
-
-  const days = useMemo(() => buildMonthGrid(cursor), [cursor]);
-
-  const apptsByDate = useMemo(() => {
-    const map = new Map<string, Appt[]>();
-    for (const a of appts) {
-      const arr = map.get(a.appointment_date) ?? [];
-      arr.push(a);
-      map.set(a.appointment_date, arr);
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const raw = Object.fromEntries(
+      ["first_name", "last_name", "dni", "age", "patient_type", "guardian_name", "phone", "email", "locality",
+        "preferred_modality", "referred_by", "reason"].map((k) => [k, String(fd.get(k) ?? "")]),
+    );
+    const parsed = schema.safeParse(raw);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Revisá los datos");
+      return;
     }
-    return map;
-  }, [appts]);
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const slots = useMemo(() => {
-    if (!selectedDate) return [];
-    const key = formatDateKey(selectedDate);
-    const dayAppts = apptsByDate.get(key) ?? [];
-    return TIME_SLOTS.map((t) => {
-      const found = dayAppts.find((a) => formatTime(a.appointment_time) === t);
-      const status = found
-        ? found.status === "confirmado" ? "occupied" : "pending"
-        : "available";
-      return { time: t, status: status as "occupied" | "pending" | "available" };
+    const d = parsed.data;
+    setSubmitting(true);
+    const { error } = await supabase.rpc("submit_intake_request", {
+      p_first_name: d.first_name,
+      p_last_name: d.last_name,
+      p_dni: d.dni,
+      p_age: d.age,
+      p_patient_type: d.patient_type,
+      p_phone: d.phone,
+      p_email: d.email || null,
+      p_guardian_name: d.patient_type === "adulto" ? null : d.guardian_name,
+      p_locality: d.locality,
+      p_preferred_modality: d.preferred_modality,
+      p_referred_by: d.referred_by || null,
+      p_reason: d.reason,
     });
-  }, [selectedDate, apptsByDate]);
+    setSubmitting(false);
+    if (error) {
+      const code = error.message?.split(":")[0];
+      toast.error(code === "ALREADY_REQUESTED" || code?.startsWith("INVALID_")
+        ? error.message.slice(code.length + 1).trim()
+        : "No se pudo enviar la solicitud. Probá de nuevo o llamanos.");
+      return;
+    }
+    setDone(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <Layout>
@@ -84,181 +104,150 @@ function TurnosPage() {
             Solicitar turno
           </h1>
           <p className="mt-4 text-muted-foreground">
-            Elegí un día disponible y luego un horario. La atención es gratuita.
+            La atención es gratuita, para niños, adolescentes y adultos desde los {CENTER.minAge} años.
+            Completá la solicitud y el equipo del CIMT se comunica con vos.
           </p>
         </div>
 
-        <Legend />
+        {/* Cómo sigue */}
+        <ol className="mx-auto mt-10 grid max-w-4xl gap-4 md:grid-cols-3">
+          <Step n={1} icon={ClipboardList} title="Completás la solicitud"
+            text="Con los datos de la persona que consulta y el motivo." />
+          <Step n={2} icon={Users} title="Taller informativo"
+            text="Te llamamos para invitarte al taller para familias, que se hace una vez al mes." />
+          <Step n={3} icon={CalendarDays} title="Turnos asignados"
+            text="El equipo evalúa cada caso y te asigna los turnos con los profesionales que correspondan." />
+        </ol>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          {/* CALENDAR */}
-          <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <button
-                onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-border hover:bg-[color:var(--primary-soft)]"
-                aria-label="Mes anterior"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <h2 className="font-display text-xl font-bold capitalize text-[color:var(--primary-deep)]">
-                {cursor.toLocaleDateString("es-AR", { month: "long", year: "numeric" })}
-              </h2>
-              <button
-                onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-border hover:bg-[color:var(--primary-soft)]"
-                aria-label="Mes siguiente"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
+        {workshops.length > 0 && (
+          <p className="mx-auto mt-6 max-w-2xl rounded-2xl bg-[color:var(--primary-soft)] px-4 py-3 text-center text-sm text-[color:var(--primary-deep)]">
+            <strong>Próximo taller para familias:</strong>{" "}
+            {formatLong(workshops[0].workshop_date)} a las {workshops[0].start_time.slice(0, 5)} hs · {workshops[0].place}
+          </p>
+        )}
 
-            <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((d) => (
-                <div key={d} className="py-2">{d}</div>
-              ))}
-            </div>
-
-            <div className="mt-1 grid grid-cols-7 gap-1.5">
-              {days.map((d, i) => {
-                if (!d) return <div key={i} className="aspect-square" />;
-                const inMonth = d.getMonth() === cursor.getMonth();
-                const past = d < today;
-                const weekend = isWeekend(d);
-                const disabled = past || weekend || !inMonth;
-                const key = formatDateKey(d);
-                const dayAppts = apptsByDate.get(key) ?? [];
-                const totalSlots = TIME_SLOTS.length;
-                const occupied = dayAppts.filter(a => a.status === "confirmado").length;
-                const pending = dayAppts.filter(a => a.status === "pendiente").length;
-                const available = totalSlots - occupied - pending;
-                const isSelected = selectedDate && formatDateKey(selectedDate) === key;
-
-                return (
-                  <button
-                    key={i}
-                    disabled={disabled}
-                    onClick={() => { setSelectedDate(d); setSelectedTime(null); }}
-                    className={[
-                      "aspect-square rounded-xl text-sm transition-all flex flex-col items-center justify-center gap-1 p-1",
-                      disabled
-                        ? "cursor-not-allowed text-muted-foreground/40 bg-muted/30"
-                        : "hover:bg-[color:var(--primary-soft)] cursor-pointer text-foreground",
-                      isSelected && "!bg-primary !text-primary-foreground shadow-[var(--shadow-card)]",
-                    ].filter(Boolean).join(" ")}
-                  >
-                    <span className="font-semibold leading-none">{d.getDate()}</span>
-                    {!disabled && (
-                      <span className="flex gap-0.5">
-                        {available > 0 && <Dot color="--status-available" />}
-                        {pending > 0 && <Dot color="--status-pending" />}
-                        {occupied > 0 && <Dot color="--status-occupied" />}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {loading && (
-              <div className="mt-4 flex justify-center text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="mx-auto mt-10 max-w-2xl rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] sm:p-8">
+          {done ? (
+            <div className="flex flex-col items-center py-8 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]">
+                <CheckCircle2 className="h-8 w-8" />
               </div>
-            )}
-          </div>
-
-          {/* SLOTS */}
-          <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
-            {!selectedDate ? (
-              <div className="flex h-full min-h-64 flex-col items-center justify-center text-center text-muted-foreground">
-                <Info className="h-10 w-10 text-primary/40" />
-                <p className="mt-3 max-w-xs text-sm">
-                  Seleccioná un día en el calendario para ver los horarios disponibles.
-                </p>
-              </div>
-            ) : (
-              <>
-                <h3 className="font-display text-lg font-bold text-[color:var(--primary-deep)] capitalize">
-                  {selectedDate.toLocaleDateString("es-AR", {
-                    weekday: "long", day: "numeric", month: "long",
-                  })}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">Elegí un horario disponible</p>
-                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {slots.map((s) => (
-                    <button
-                      key={s.time}
-                      disabled={s.status !== "available"}
-                      onClick={() => { setSelectedTime(s.time); setFormOpen(true); }}
-                      className={[
-                        "rounded-xl px-3 py-3 text-sm font-semibold transition-all border",
-                        s.status === "available" && "bg-[color:var(--status-available-bg)] text-[color:var(--status-available)] border-[color:var(--status-available)]/30 hover:scale-[1.03] hover:shadow-md",
-                        s.status === "pending" && "bg-[color:var(--status-pending-bg)] text-[color:var(--status-pending)] border-[color:var(--status-pending)]/30 cursor-not-allowed",
-                        s.status === "occupied" && "bg-[color:var(--status-occupied-bg)] text-[color:var(--status-occupied)] border-[color:var(--status-occupied)]/30 cursor-not-allowed",
-                      ].filter(Boolean).join(" ")}
-                    >
-                      {s.time}
-                    </button>
-                  ))}
+              <h2 className="mt-4 text-2xl font-bold text-[color:var(--primary-deep)]">¡Solicitud enviada!</h2>
+              <p className="mt-2 max-w-md text-muted-foreground">
+                El equipo del CIMT te va a llamar al teléfono que dejaste para invitarte al próximo taller
+                informativo y coordinar los turnos.
+              </p>
+              <p className="mt-4 text-sm text-muted-foreground">
+                ¿Dudas? Llamá al <a href={CENTER.phoneHref} className="font-semibold text-foreground hover:underline">{CENTER.phoneDisplay}</a>
+              </p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <h2 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Datos de la persona que consulta</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Nombre" name="first_name" required />
+                <Field label="Apellido" name="last_name" required />
+                <Field label="DNI" name="dni" required inputMode="numeric" />
+                <Field label="Edad" name="age" required type="number" min={CENTER.minAge} max={120} />
+                <div className="space-y-1.5">
+                  <Label htmlFor="patient_type">Es<span className="text-destructive"> *</span></Label>
+                  <select id="patient_type" name="patient_type" required value={patientType}
+                    onChange={(e) => setPatientType(e.target.value)} className={selectClass}>
+                    <option value="" disabled>Seleccionar...</option>
+                    <option value="niño">Niño/a</option>
+                    <option value="adolescente">Adolescente</option>
+                    <option value="adulto">Adulto</option>
+                  </select>
                 </div>
-              </>
-            )}
-          </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="locality">Localidad<span className="text-destructive"> *</span></Label>
+                  <Input id="locality" name="locality" required list="locality-options" maxLength={80}
+                    placeholder="Ej: San Miguel de Tucumán" autoComplete="address-level2" />
+                  <datalist id="locality-options">
+                    {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
+                  </datalist>
+                </div>
+              </div>
+
+              <h2 className="pt-2 font-display text-xl font-bold text-[color:var(--primary-deep)]">Contacto</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {patientType && patientType !== "adulto" && (
+                  <div className="sm:col-span-2">
+                    <Field label="Nombre del adulto responsable" name="guardian_name" required />
+                  </div>
+                )}
+                {(!patientType || patientType === "adulto") && <input type="hidden" name="guardian_name" value="" />}
+                <Field label="Teléfono" name="phone" required inputMode="tel" />
+                <Field label="Email (opcional)" name="email" type="email" />
+              </div>
+
+              <h2 className="pt-2 font-display text-xl font-bold text-[color:var(--primary-deep)]">Consulta</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="preferred_modality">Modalidad preferida<span className="text-destructive"> *</span></Label>
+                  <select id="preferred_modality" name="preferred_modality" required defaultValue="presencial" className={selectClass}>
+                    <option value="presencial">Presencial (en el centro)</option>
+                    <option value="telemedicina">Telemedicina (a distancia)</option>
+                  </select>
+                </div>
+                <Field label="¿Quién lo deriva? (opcional)" name="referred_by" placeholder="Ej: escuela, pediatra" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="reason">Motivo de la consulta<span className="text-destructive"> *</span></Label>
+                <Textarea id="reason" name="reason" required maxLength={800} rows={4}
+                  placeholder="Ej: Mi hijo de 6 años repite sílabas al empezar a hablar desde hace unos meses..." />
+              </div>
+
+              <div className="flex flex-col-reverse items-center justify-between gap-3 pt-2 sm:flex-row">
+                <p className="text-xs text-muted-foreground">
+                  <Phone className="mr-1 inline h-3.5 w-3.5" />
+                  También podés pedirlo al {CENTER.phoneDisplay} (solo llamadas).
+                </p>
+                <Button type="submit" disabled={submitting}
+                  className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)] sm:w-auto">
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Enviar solicitud
+                </Button>
+              </div>
+            </form>
+          )}
         </div>
       </section>
-
-      <Dialog open={formOpen} onOpenChange={(o) => { if (!o) { setFormOpen(false); setSelectedTime(null); } }}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">
-              Datos de la solicitud
-            </DialogTitle>
-          </DialogHeader>
-          {selectedDate && selectedTime && (
-            <AppointmentForm
-              date={formatDateKey(selectedDate)}
-              time={selectedTime}
-              onSuccess={() => { setFormOpen(false); setSelectedTime(null); fetchAppts(); }}
-              onCancel={() => { setFormOpen(false); setSelectedTime(null); }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
     </Layout>
   );
 }
 
-function Dot({ color }: { color: string }) {
-  return <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `var(${color})` }} />;
+const selectClass =
+  "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
+
+function Step({ n, icon: Icon, title, text }: { n: number; icon: typeof Users; title: string; text: string }) {
+  return (
+    <li className="flex gap-3 rounded-2xl border border-border/60 bg-background p-5">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
+        <Icon className="h-5 w-5" />
+      </div>
+      <div>
+        <div className="text-xs font-bold uppercase tracking-wider text-primary">Paso {n}</div>
+        <h3 className="font-bold text-[color:var(--primary-deep)]">{title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+      </div>
+    </li>
+  );
 }
 
-function Legend() {
-  const items = [
-    { color: "--status-available", label: "Disponible" },
-    { color: "--status-pending", label: "Pendiente" },
-    { color: "--status-occupied", label: "Ocupado" },
-  ];
+function Field({ label, name, required, type = "text", ...rest }: {
+  label: string; name: string; required?: boolean; type?: string;
+  inputMode?: "numeric" | "tel"; min?: number; max?: number; placeholder?: string;
+}) {
   return (
-    <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
-      {items.map((i) => (
-        <div key={i.label} className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: `var(${i.color})` }} />
-          {i.label}
-        </div>
-      ))}
+    <div className="space-y-1.5">
+      <Label htmlFor={name}>{label}{required && <span className="text-destructive"> *</span>}</Label>
+      <Input id={name} name={name} type={type} required={required} {...rest} />
     </div>
   );
 }
 
-function buildMonthGrid(monthCursor: Date): (Date | null)[] {
-  const year = monthCursor.getFullYear();
-  const month = monthCursor.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  // Convert Sunday(0) -> 6, Mon(1) -> 0, etc. for Mon-first grid
-  const startOffset = (firstDay.getDay() + 6) % 7;
-  const cells: (Date | null)[] = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= lastDay.getDate(); d++) cells.push(new Date(year, month, d));
-  while (cells.length % 7 !== 0) cells.push(null);
-  return cells;
+function formatLong(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
 }

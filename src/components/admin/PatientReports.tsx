@@ -223,6 +223,7 @@ function printReport(r: Report, p: PatientRecord, pro: ProfessionalOption | unde
 <title>Informe — ${esc(fullName(p))} — ${formatShortDate(r.report_date)}</title>
 <style>
   @page { size: A4; margin: 20mm; }
+  html { color-scheme: light; background: #fff; }
   body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1a2b3c; font-size: 12pt; line-height: 1.5; margin: 0; }
   header { border-bottom: 2px solid #1d4f7a; padding-bottom: 10px; margin-bottom: 18px; }
   header strong { font-size: 16pt; color: #1d4f7a; }

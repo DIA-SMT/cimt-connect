@@ -34,6 +34,10 @@ type PatientAppt = {
   consultation_type: "primera_vez" | "seguimiento";
   modality: "presencial" | "telemedicina" | null;
   reason: string;
+  professional_id: string | null;
+  duration_minutes: number;
+  attendance: "presente" | "ausente" | "justificado" | null;
+  practice_number: number | null;
 };
 
 type Props = {
@@ -79,7 +83,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
       supabase.from("patient_followups").select("*").eq("patient_id", patientId)
         .order("note_date", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("appointments")
-        .select("id, appointment_date, appointment_time, status, consultation_type, modality, reason")
+        .select("id, appointment_date, appointment_time, status, consultation_type, modality, reason, professional_id, duration_minutes, attendance, practice_number")
         .eq("patient_id", patientId)
         .order("appointment_date", { ascending: false }),
       supabase.from("patient_reports").select("*").eq("patient_id", patientId)
@@ -343,24 +347,33 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 onChange={(f) => { setFollowups(f); changed.current = true; }}
               />
 
-              <Section icon={CalendarDays} title="Turnos">
+              <Section icon={CalendarDays} title="Turnos y asistencia">
+                <AttendanceSummary appts={appts} />
                 {appts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No tiene turnos registrados.</p>
+                  <p className="text-sm text-muted-foreground">No tiene turnos registrados. Se dan desde la pestaña Agenda.</p>
                 ) : (
                   <ul className="divide-y divide-border/60 rounded-2xl border border-border/60">
-                    {appts.map((a) => (
-                      <li key={a.id} className="p-3 text-sm">
-                        <div className="flex flex-wrap items-center gap-2 font-semibold">
-                          {formatShortDate(a.appointment_date)} · {formatTime(a.appointment_time)} hs
-                          <span className="text-xs font-normal text-muted-foreground">
-                            <span className="capitalize">{a.status}</span>
+                    {appts.map((a) => {
+                      const pro = professionals.find((p) => p.id === a.professional_id);
+                      return (
+                        <li key={a.id} className={`p-3 text-sm ${a.status === "cancelado" ? "opacity-60" : ""}`}>
+                          <div className="flex flex-wrap items-center gap-2 font-semibold">
+                            {formatShortDate(a.appointment_date)} · {formatTime(a.appointment_time)} hs
+                            {a.attendance && <AttendanceTag value={a.attendance} />}
+                            {a.status === "cancelado" && <span className="text-xs font-semibold text-[color:var(--status-occupied)]">Cancelado</span>}
+                            {a.practice_number && (
+                              <span className="ml-auto text-xs font-normal text-muted-foreground">Práctica N° {String(a.practice_number).padStart(6, "0")}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {pro ? pro.name : "Sin profesional"} · {a.duration_minutes} min
                             {" · "}{a.consultation_type === "primera_vez" ? "1ra vez" : "seguimiento"}
                             {a.modality === "telemedicina" && " · telemedicina"}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-muted-foreground">{a.reason}</p>
-                      </li>
-                    ))}
+                          </div>
+                          {a.reason && a.reason !== "Sesión" && <p className="mt-1 text-muted-foreground">{a.reason}</p>}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </Section>
@@ -371,6 +384,47 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ─── Asistencia (relevamiento, respuestas 7 y 34) ────────────────────────────
+
+function AttendanceSummary({ appts }: { appts: PatientAppt[] }) {
+  const present = appts.filter((a) => a.attendance === "presente").length;
+  const absent = appts.filter((a) => a.attendance === "ausente").length;
+  const justified = appts.filter((a) => a.attendance === "justificado").length;
+  if (present + absent + justified === 0) return null;
+  // Las ausencias justificadas no bajan el porcentaje
+  const rate = present + absent > 0 ? Math.round((present / (present + absent)) * 100) : null;
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <MiniStat label="Sesiones" value={present} />
+      <MiniStat label="Faltas" value={absent} tone={absent > 0 ? "bad" : undefined} />
+      <MiniStat label="Justificadas" value={justified} />
+      <MiniStat label="Asistencia" value={rate === null ? "—" : `${rate}%`} tone={rate !== null && rate < 70 ? "bad" : undefined} />
+    </div>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: number | string; tone?: "bad" }) {
+  return (
+    <div className="rounded-xl border border-border/60 p-2 text-center">
+      <div className={`text-xl font-extrabold ${tone === "bad" ? "text-[color:var(--status-occupied)]" : "text-[color:var(--primary-deep)]"}`}>{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function AttendanceTag({ value }: { value: "presente" | "ausente" | "justificado" }) {
+  const style = value === "presente"
+    ? "bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]"
+    : value === "ausente"
+      ? "bg-[color:var(--status-occupied-bg)] text-[color:var(--status-occupied)]"
+      : "bg-muted text-muted-foreground";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${style}`}>
+      {value === "justificado" ? "Justificado" : value}
+    </span>
   );
 }
 

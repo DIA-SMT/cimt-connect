@@ -79,6 +79,11 @@ export type Database = {
       }
       appointments: {
         Row: {
+          attendance: string | null
+          created_by_email: string | null
+          duration_minutes: number
+          practice_number: number | null
+          practice_registered_at: string | null
           modality: string
           appointment_date: string
           appointment_time: string
@@ -92,6 +97,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attendance?: string | null
+          created_by_email?: string | null
+          duration_minutes?: number
+          practice_number?: number | null
+          practice_registered_at?: string | null
           modality?: string
           appointment_date: string
           appointment_time: string
@@ -105,6 +115,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attendance?: string | null
+          created_by_email?: string | null
+          duration_minutes?: number
+          practice_number?: number | null
+          practice_registered_at?: string | null
           modality?: string
           appointment_date?: string
           appointment_time?: string
@@ -134,8 +149,78 @@ export type Database = {
           },
         ]
       }
+      intake_requests: {
+        Row: {
+          age: number
+          created_at: string
+          dni: string
+          email: string | null
+          first_name: string
+          guardian_name: string | null
+          id: string
+          last_name: string
+          locality: string | null
+          notes: string | null
+          patient_id: string | null
+          patient_type: Database["public"]["Enums"]["patient_type"]
+          phone: string
+          preferred_modality: string
+          reason: string
+          referred_by: string | null
+          status: string
+          updated_at: string
+          workshop_attended: boolean | null
+          workshop_id: string | null
+        }
+        Insert: {
+          age: number
+          created_at?: string
+          dni: string
+          email?: string | null
+          first_name: string
+          guardian_name?: string | null
+          id?: string
+          last_name: string
+          locality?: string | null
+          notes?: string | null
+          patient_id?: string | null
+          patient_type: Database["public"]["Enums"]["patient_type"]
+          phone: string
+          preferred_modality?: string
+          reason: string
+          referred_by?: string | null
+          status?: string
+          updated_at?: string
+          workshop_attended?: boolean | null
+          workshop_id?: string | null
+        }
+        Update: {
+          age?: number
+          created_at?: string
+          dni?: string
+          email?: string | null
+          first_name?: string
+          guardian_name?: string | null
+          id?: string
+          last_name?: string
+          locality?: string | null
+          notes?: string | null
+          patient_id?: string | null
+          patient_type?: Database["public"]["Enums"]["patient_type"]
+          phone?: string
+          preferred_modality?: string
+          reason?: string
+          referred_by?: string | null
+          status?: string
+          updated_at?: string
+          workshop_attended?: boolean | null
+          workshop_id?: string | null
+        }
+        Relationships: []
+      }
       patient_followups: {
         Row: {
+          appointment_id: string | null
           voided_at: string | null
           voided_by: string | null
           void_reason: string | null
@@ -147,6 +232,7 @@ export type Database = {
           patient_id: string
         }
         Insert: {
+          appointment_id?: string | null
           voided_at?: string | null
           voided_by?: string | null
           void_reason?: string | null
@@ -158,6 +244,7 @@ export type Database = {
           patient_id: string
         }
         Update: {
+          appointment_id?: string | null
           voided_at?: string | null
           voided_by?: string | null
           void_reason?: string | null
@@ -403,6 +490,7 @@ export type Database = {
       }
       professionals: {
         Row: {
+          session_minutes: number
           active: boolean
           license: string | null
           show_on_site: boolean
@@ -416,6 +504,7 @@ export type Database = {
           specialty: string
         }
         Insert: {
+          session_minutes?: number
           active?: boolean
           license?: string | null
           show_on_site?: boolean
@@ -429,6 +518,7 @@ export type Database = {
           specialty: string
         }
         Update: {
+          session_minutes?: number
           active?: boolean
           license?: string | null
           show_on_site?: boolean
@@ -443,6 +533,111 @@ export type Database = {
         }
         Relationships: []
       }
+      satisfaction_surveys: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          rating_attention: number
+          rating_communication: number
+          rating_overall: number
+          rating_treatment: number
+          respondent: string
+          would_recommend: boolean
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating_attention: number
+          rating_communication: number
+          rating_overall: number
+          rating_treatment: number
+          respondent: string
+          would_recommend: boolean
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating_attention?: number
+          rating_communication?: number
+          rating_overall?: number
+          rating_treatment?: number
+          respondent?: string
+          would_recommend?: boolean
+        }
+        Relationships: []
+      }
+      schedule_blocks: {
+        Row: {
+          active: boolean
+          block_date: string
+          created_at: string
+          created_by_email: string | null
+          end_time: string | null
+          id: string
+          professional_id: string | null
+          reason: string
+          start_time: string | null
+        }
+        Insert: {
+          active?: boolean
+          block_date: string
+          created_at?: string
+          created_by_email?: string | null
+          end_time?: string | null
+          id?: string
+          professional_id?: string | null
+          reason: string
+          start_time?: string | null
+        }
+        Update: {
+          active?: boolean
+          block_date?: string
+          created_at?: string
+          created_by_email?: string | null
+          end_time?: string | null
+          id?: string
+          professional_id?: string | null
+          reason?: string
+          start_time?: string | null
+        }
+        Relationships: []
+      }
+      workshops: {
+        Row: {
+          canceled: boolean
+          capacity: number | null
+          created_at: string
+          id: string
+          notes: string | null
+          place: string
+          start_time: string
+          workshop_date: string
+        }
+        Insert: {
+          canceled?: boolean
+          capacity?: number | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          place?: string
+          start_time?: string
+          workshop_date: string
+        }
+        Update: {
+          canceled?: boolean
+          capacity?: number | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          place?: string
+          start_time?: string
+          workshop_date?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -451,6 +646,10 @@ export type Database = {
       current_staff: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      get_upcoming_workshops: {
+        Args: Record<PropertyKey, never>
+        Returns: { workshop_date: string; start_time: string; place: string }[]
       }
       get_public_team: {
         Args: Record<PropertyKey, never>
@@ -496,6 +695,35 @@ export type Database = {
           p_time: string
           p_modality?: string
           p_locality?: string | null
+        }
+        Returns: string
+      }
+      submit_satisfaction_survey: {
+        Args: {
+          p_respondent: string
+          p_rating_attention: number
+          p_rating_communication: number
+          p_rating_treatment: number
+          p_rating_overall: number
+          p_would_recommend: boolean
+          p_comment: string | null
+        }
+        Returns: string
+      }
+      submit_intake_request: {
+        Args: {
+          p_first_name: string
+          p_last_name: string
+          p_dni: string
+          p_age: number
+          p_patient_type: Database["public"]["Enums"]["patient_type"]
+          p_phone: string
+          p_email: string | null
+          p_guardian_name: string | null
+          p_locality: string | null
+          p_preferred_modality: string
+          p_referred_by: string | null
+          p_reason: string
         }
         Returns: string
       }
