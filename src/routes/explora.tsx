@@ -332,7 +332,6 @@ function ExploraPage() {
       `}</style>
 
       <section className="relative flex flex-col" style={{ minHeight: "calc(100vh - 68px)" }}>
-        <div className="absolute inset-0 -z-10 bg-[var(--gradient-soft)]" />
 
         {/* ── Header ── */}
         <div className="sticky top-0 z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">

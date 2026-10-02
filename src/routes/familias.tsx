@@ -21,7 +21,6 @@ export const Route = createFileRoute("/familias")({
 function FamiliasPage() {
   return (
     <Layout>
-      <div className="bg-notebook">
       <section>
         <div className="container mx-auto px-4 py-14 text-center md:px-6 md:py-20">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
@@ -48,7 +47,6 @@ function FamiliasPage() {
             <Link to="/turnos">Solicitar turno <ArrowRight className="ml-1 h-4 w-4" /></Link>
           </Button>
         </div>
-      </div>
       </div>
     </Layout>
   );
