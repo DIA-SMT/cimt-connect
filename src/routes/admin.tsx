@@ -5,14 +5,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock, Users, FileText, BarChart3 } from "lucide-react";
+import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock, Users, FileText, BarChart3, UserCog, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { formatTime } from "@/lib/appointments";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
 import { StatsTab } from "@/components/admin/StatsTab";
 import { PatientRecordSheet } from "@/components/admin/PatientRecordSheet";
+import { TeamTab } from "@/components/admin/TeamTab";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
+import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
 
 type Patient = {
   first_name: string;
@@ -50,13 +53,13 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "turnos" | "pacientes" | "estadisticas" | "dashboard";
+type Tab = "turnos" | "pacientes" | "estadisticas" | "dashboard" | "equipo";
 
 type AuthState =
   | { kind: "loading" }
   | { kind: "signed_out" }
   | { kind: "forbidden"; email: string }
-  | { kind: "admin"; email: string }
+  | { kind: "admin"; staff: Staff }
   | { kind: "recovery" }; // entró desde el link de "olvidé mi contraseña"
 
 // Gate de acceso: requiere sesión de Supabase Auth y estar en la tabla admins.
@@ -82,9 +85,12 @@ function AdminPage() {
         return;
       }
       const email = session.user?.email ?? "";
-      const { data, error } = await supabase.rpc("is_admin");
+      // current_staff() devuelve rol, nombre y profesional vinculado (NULL si no es del panel)
+      const { data, error } = await supabase.rpc("current_staff");
       if (cancelled) return;
-      setAuth(!error && data === true ? { kind: "admin", email } : { kind: "forbidden", email });
+      setAuth(!error && data
+        ? { kind: "admin", staff: { ...(data as Staff), email: (data as Staff).email ?? email } }
+        : { kind: "forbidden", email });
     }
 
     supabase.auth.getSession().then(({ data }: { data: { session: unknown } }) => resolve(data.session));
@@ -115,7 +121,7 @@ function AdminPage() {
   if (auth.kind === "signed_out") return <AdminLogin />;
   if (auth.kind === "recovery") return <SetNewPassword />;
   if (auth.kind === "forbidden") return <AdminForbidden email={auth.email} onSignOut={signOut} />;
-  return <AdminPanel email={auth.email} onSignOut={signOut} />;
+  return <AdminPanel staff={auth.staff} onSignOut={signOut} />;
 }
 
 function AdminLogin() {
@@ -307,7 +313,7 @@ function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => 
           <ShieldAlert className="mx-auto h-10 w-10 text-[color:var(--status-occupied)]" />
           <h1 className="mt-3 font-display text-xl font-bold text-[color:var(--primary-deep)]">Sin permisos</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            La cuenta <strong>{email}</strong> no tiene acceso al panel. Pedile a un administrador que te habilite.
+            La cuenta <strong>{email}</strong> no tiene acceso al panel (o fue desactivada). Pedile a la Dirección que te habilite.
           </p>
           <Button variant="outline" className="mt-5" onClick={onSignOut}>
             <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
@@ -318,7 +324,7 @@ function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => 
   );
 }
 
-function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void }) {
   const [appts, setAppts] = useState<Appt[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | Appt["status"]>("all");
@@ -327,6 +333,12 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
   const [professionals, setProfessionals] = useState<ProfessionalOption[]>([]);
   const [openPatientId, setOpenPatientId] = useState<string | null>(null);
   const [patientsVersion, setPatientsVersion] = useState(0);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  function loadProfessionals() {
+    supabase.from("professionals").select("id, name, specialty, license, active").order("name", { ascending: true })
+      .then(({ data }: { data: ProfessionalOption[] | null }) => setProfessionals(data ?? []));
+  }
 
   async function fetchAppts({ silent = false } = {}) {
     if (!silent) setLoading(true);
@@ -342,8 +354,7 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
 
   useEffect(() => {
     fetchAppts();
-    supabase.from("professionals").select("id, name, specialty").order("name", { ascending: true })
-      .then(({ data }: { data: ProfessionalOption[] | null }) => setProfessionals(data ?? []));
+    loadProfessionals();
   }, []);
 
   // Al cerrar una ficha con cambios: recargar la planilla y los turnos (por si cambió el nombre)
@@ -389,8 +400,14 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
               Gestión y métricas del CIMT
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">{email}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="mr-1 text-right leading-tight">
+              <div className="text-sm font-semibold text-foreground">{staff.full_name || staff.email}</div>
+              <div className="text-xs text-muted-foreground">{ROLE_LABEL[staff.role]}</div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setChangingPassword(true)}>
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" /> Contraseña
+            </Button>
             <Button variant="outline" size="sm" onClick={onSignOut}>
               <LogOut className="mr-1.5 h-3.5 w-3.5" /> Cerrar sesión
             </Button>
@@ -423,6 +440,14 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
             icon={<LayoutDashboard className="h-4 w-4" />}
             label="Dashboard"
           />
+          {isDirector(staff.role) && (
+            <TabButton
+              active={activeTab === "equipo"}
+              onClick={() => setActiveTab("equipo")}
+              icon={<UserCog className="h-4 w-4" />}
+              label="Equipo"
+            />
+          )}
         </div>
 
         {loading ? (
@@ -433,6 +458,8 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
         ) : activeTab === "estadisticas" ? (
           <StatsTab key={patientsVersion} />
+        ) : activeTab === "equipo" && isDirector(staff.role) ? (
+          <TeamTab currentEmail={staff.email} onProfessionalsChanged={loadProfessionals} />
         ) : activeTab === "dashboard" ? (
           <div className="mt-6">
             <AdminDashboard appts={appts} professionals={professionals} />
@@ -554,13 +581,76 @@ function AdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void
         )}
       </section>
 
+      <ChangePasswordDialog open={changingPassword} onClose={() => setChangingPassword(false)} />
+
       <PatientRecordSheet
         patientId={openPatientId}
         professionals={professionals}
         onClose={() => setOpenPatientId(null)}
         onChanged={handlePatientChanged}
+        staff={staff}
       />
     </Layout>
+  );
+}
+
+// Cambiar la contraseña propia desde el panel (útil si la Dirección dio una inicial)
+function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function close() {
+    setPassword("");
+    setConfirm("");
+    onClose();
+  }
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (password.length < 8) { toast.error("La contraseña tiene que tener al menos 8 caracteres"); return; }
+    if (password !== confirm) { toast.error("Las contraseñas no coinciden"); return; }
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setSaving(false);
+    if (error) {
+      toast.error(error.code === "same_password"
+        ? "La contraseña nueva tiene que ser distinta a la anterior"
+        : "No se pudo cambiar la contraseña");
+      return;
+    }
+    toast.success("Contraseña actualizada");
+    close();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) close(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl text-[color:var(--primary-deep)]">Cambiar contraseña</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-new">Contraseña nueva</Label>
+            <Input id="cp-new" type="password" autoComplete="new-password" required minLength={8}
+              value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-confirm">Repetir contraseña</Label>
+            <Input id="cp-confirm" type="password" autoComplete="new-password" required minLength={8}
+              value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={close} disabled={saving}>Cancelar</Button>
+            <Button type="submit" disabled={saving}
+              className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+              {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

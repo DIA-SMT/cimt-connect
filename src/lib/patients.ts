@@ -50,7 +50,7 @@ export type Referral = {
   registered: boolean; // casilla "interconsulta registrada"
   created_by: string | null;
   created_at: string;
-};
+} & Voidable;
 
 export type Followup = {
   id: string;
@@ -59,7 +59,7 @@ export type Followup = {
   note: string;
   author_email: string | null;
   created_at: string;
-};
+} & Voidable;
 
 export type Report = {
   id: string;
@@ -71,9 +71,70 @@ export type Report = {
   therapy_evolution: string | null;
   author_email: string | null;
   created_at: string;
+} & Voidable;
+
+// Nadie borra registros clínicos: se anulan con motivo (Ley 26.529, la HC se conserva)
+export type Voidable = { voided_at?: string | null; voided_by?: string | null; void_reason?: string | null };
+
+export type ProfessionalOption = {
+  id: string;
+  name: string;
+  specialty: string;
+  license?: string | null; // matrícula (MP)
+  active?: boolean;
 };
 
-export type ProfessionalOption = { id: string; name: string; specialty: string };
+// "Lic. Ana Pérez — MP 1234" para firmas e informes
+export function professionalSignature(p: Pick<ProfessionalOption, "name" | "license">): string {
+  return p.license ? `${p.name} — MP ${p.license}` : p.name;
+}
+
+// ── Historial de cambios (tabla audit_log) ───────────────────────────────────
+
+export type AuditEntry = {
+  id: number;
+  table_name: string;
+  record_id: string | null;
+  action: "insert" | "update";
+  changes: Record<string, unknown>;
+  changed_by_email: string | null;
+  changed_at: string;
+};
+
+export const AUDIT_TABLE_LABEL: Record<string, string> = {
+  patients: "Ficha",
+  appointments: "Turno",
+  patient_referrals: "Derivación",
+  patient_followups: "Seguimiento",
+  patient_reports: "Informe",
+};
+
+// Nombres legibles de los campos que aparecen en el historial
+export const AUDIT_FIELD_LABEL: Record<string, string> = {
+  first_name: "Nombre", last_name: "Apellido", dni: "DNI", age: "Edad", phone: "Teléfono", email: "Email",
+  patient_type: "Tipo de paciente", notes: "Notas", case_status: "Estado del caso", professional_id: "Profesional a cargo",
+  referred_by: "Derivado por", main_diagnosis: "Diagnóstico", other_conditions: "Otras condiciones",
+  cud_status: "CUD", is_medicated: "Medicado", medication: "Medicación", has_health_insurance: "Obra social",
+  health_insurance: "Nombre de la obra social", school: "Escolaridad", guardian_name: "Tutor", guardian_phone: "Teléfono del tutor",
+  locality: "Localidad", therapy_modes: "Terapia",
+  status: "Estado", appointment_date: "Fecha", appointment_time: "Hora", modality: "Modalidad", reason: "Motivo",
+  consultation_type: "Tipo de consulta", patient_id: "Paciente",
+  kind: "Tipo", specialty: "Especialidad", destination: "Destino", referral_date: "Fecha", outcome: "Respuesta",
+  registered: "Registrada", note: "Nota", note_date: "Fecha", report_date: "Fecha", diagnosis: "Diagnóstico",
+  progress: "Progreso", therapy_evolution: "Evolución de la terapia",
+  voided_at: "Anulado", voided_by: "Anulado por", void_reason: "Motivo de anulación",
+};
+
+// Campos que no aportan en el historial (ids internos, autor ya mostrado aparte)
+export const AUDIT_HIDDEN_FIELDS = new Set(["id", "patient_id", "created_by", "author_email", "updated_at", "created_at", "voided_by"]);
+
+export function formatAuditValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Sí" : "No";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  const s = String(v);
+  return s.length > 120 ? `${s.slice(0, 117)}…` : s;
+}
 
 // ── Etiquetas ────────────────────────────────────────────────────────────────
 

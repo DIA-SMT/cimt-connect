@@ -9,7 +9,11 @@
  *   supabase.rpc("get_booked_slots" | "request_appointment" | "is_admin", args)
  *   supabase.auth.signInWithPassword / signOut (cualquier email/contraseña entra como admin)
  *
- * Tablas: professionals, appointments, patients, patient_referrals, patient_followups, patient_reports
+ * Tablas: professionals, appointments, patients, patient_referrals, patient_followups, patient_reports,
+ *         admins, audit_log
+ *
+ * Roles en demo: el rol sale del email con el que se ingresa
+ *   admin...@  → Administración · pro...@ → Profesional · cualquier otro → Dirección
  */
 
 import {
@@ -65,7 +69,9 @@ for (const a of MOCK_APPOINTMENTS) {
 }
 
 const store: Record<string, Row[]> = {
-  professionals: [...MOCK_PROFESSIONALS] as unknown as Row[],
+  professionals: MOCK_PROFESSIONALS.map((p, i) => ({
+    ...p, license: String(1000 + i * 137), active: true, show_on_site: false, user_id: null,
+  })) as unknown as Row[],
   patients: [...patientsByDni.values()],
   appointments: MOCK_APPOINTMENTS.map((a) => ({
     id: a.id,
@@ -83,7 +89,38 @@ const store: Record<string, Row[]> = {
   patient_referrals: [],
   patient_followups: [],
   patient_reports: [],
+  admins: [],
+  audit_log: [],
 };
+
+// Tablas con historial de cambios (como los triggers de 11_roles_equipo_historial.sql)
+const AUDITED = new Set(["patients", "appointments", "patient_referrals", "patient_followups", "patient_reports"]);
+let auditSeq = 1;
+
+function audit(table: string, action: "insert" | "update", row: Row, changes: Row) {
+  if (!AUDITED.has(table)) return;
+  store.audit_log.push({
+    id: auditSeq++,
+    table_name: table,
+    record_id: row.id,
+    patient_id: table === "patients" ? row.id : row.patient_id,
+    action,
+    changes,
+    changed_by_email: currentEmail(),
+    changed_at: new Date().toISOString(),
+  });
+}
+
+function staffRole(): string | null {
+  const row = store.admins.find((a) => a.user_id === session?.user.id && a.active);
+  return (row?.role as string) ?? null;
+}
+
+const CLINICAL_PATIENT_FIELDS = [
+  "case_status", "professional_id", "main_diagnosis", "other_conditions", "therapy_modes",
+  "cud_status", "is_medicated", "medication", "notes",
+];
+const CLINICAL_TABLES = new Set(["patient_referrals", "patient_followups", "patient_reports"]);
 
 // Una ficha de ejemplo con derivación y seguimiento, para ver la pantalla completa
 const demo = store.patients.find((p) => p.patient_type === "niño");
@@ -179,6 +216,10 @@ class MockQueryBuilder {
     return this;
   }
 
+  limit(_n: number) {
+    return this;
+  }
+
   order(col: string, opts?: { ascending?: boolean }) {
     this._orders.push({ key: col, asc: opts?.ascending !== false });
     return this;
@@ -214,6 +255,12 @@ class MockQueryBuilder {
   private _execute(): { data: Row[] | Row | null; error: { message: string; code?: string } | null } {
     const now = new Date().toISOString();
 
+    // Permisos por rol (mismas reglas que las policies de la base)
+    if ((this._insertPayload || this._updatePayload) && CLINICAL_TABLES.has(this._table)
+        && !["direccion", "profesional"].includes(staffRole() ?? "")) {
+      return { data: null, error: { message: "new row violates row-level security policy", code: "42501" } };
+    }
+
     // INSERT
     if (this._insertPayload !== null) {
       if (this._table === "patients" && this._store.some((p) => p.dni === this._insertPayload!.dni)) {
@@ -229,13 +276,43 @@ class MockQueryBuilder {
         ...this._insertPayload,
       };
       this._store.push(newRow);
+      const { id: _id, created_at: _c, updated_at: _u, ...inserted } = newRow;
+      audit(this._table, "insert", newRow, inserted);
       return { data: { ...newRow }, error: null };
     }
 
     // UPDATE
     if (this._updatePayload !== null) {
-      for (const row of this._store) {
-        if (this._filters.every((f) => f(row))) Object.assign(row, this._updatePayload, { updated_at: now });
+      const targets = this._store.filter((row) => this._filters.every((f) => f(row)));
+      const payload = this._updatePayload;
+
+      if (this._table === "patients" && staffRole() === "administracion") {
+        const touchesClinical = targets.some((row) => CLINICAL_PATIENT_FIELDS.some(
+          (k) => k in payload && JSON.stringify(payload[k]) !== JSON.stringify(row[k])));
+        if (touchesClinical) {
+          return { data: null, error: { message: "CLINICAL_ONLY: Solo los profesionales pueden modificar los datos clínicos" } };
+        }
+      }
+      if (this._table === "admins") {
+        // Cuántas Direcciones activas quedarían después del cambio
+        const remaining = store.admins.filter((a) => {
+          const changed = targets.includes(a);
+          const role = changed ? (payload.role ?? a.role) : a.role;
+          const active = changed ? (payload.active ?? a.active) : a.active;
+          return role === "direccion" && active;
+        }).length;
+        if (remaining === 0) {
+          return { data: null, error: { message: "LAST_DIRECTOR: Tiene que quedar al menos un usuario de Dirección activo" } };
+        }
+      }
+
+      for (const row of targets) {
+        const changes: Row = {};
+        for (const [k, v] of Object.entries(payload)) {
+          if (JSON.stringify(row[k]) !== JSON.stringify(v)) changes[k] = [row[k] ?? null, v];
+        }
+        Object.assign(row, payload, { updated_at: now });
+        if (Object.keys(changes).length) audit(this._table, "update", row, changes);
       }
       return { data: null, error: null };
     }
@@ -286,6 +363,23 @@ function setSession(next: MockSession, event: string) {
 // ─── RPCs ────────────────────────────────────────────────────────────────────
 
 function rpc(fn: string, args: Row = {}) {
+  if (fn === "current_staff") {
+    const row = store.admins.find((a) => a.user_id === session?.user.id && a.active);
+    if (!row) return Promise.resolve({ data: null, error: null });
+    const pro = store.professionals.find((p) => p.user_id === row.user_id);
+    return Promise.resolve({
+      data: { role: row.role, full_name: row.full_name, email: row.email, professional_id: pro?.id ?? null },
+      error: null,
+    });
+  }
+
+  if (fn === "get_public_team") {
+    const data = store.professionals
+      .filter((p) => p.active && p.show_on_site)
+      .map(({ name, specialty, description, photo_url }) => ({ name, specialty, description, photo_url }));
+    return Promise.resolve({ data, error: null });
+  }
+
   if (fn === "is_admin") {
     return Promise.resolve({ data: session !== null, error: null });
   }
@@ -361,15 +455,64 @@ function rpc(fn: string, args: Row = {}) {
 
 // ─── Mock Client ─────────────────────────────────────────────────────────────
 
+// Gestión de usuarios en demo (en producción lo hace server/api/admin/users.ts)
+function mockUsersApi(body: Row): Promise<{ ok: true; user_id?: string } | { error: string }> {
+  if (staffRole() !== "direccion") return Promise.resolve({ error: "Solo la Dirección puede gestionar usuarios" });
+  if (body.action === "create") {
+    const email = String(body.email).trim().toLowerCase();
+    if (store.admins.some((a) => a.email === email)) return Promise.resolve({ error: "Ya existe un usuario con ese email" });
+    if (String(body.password ?? "").length < 8) return Promise.resolve({ error: "La contraseña tiene que tener al menos 8 caracteres" });
+    const user_id = `mock-user-${Date.now()}`;
+    store.admins.push({ user_id, email, full_name: body.full_name ?? null, role: body.role, active: true, created_at: new Date().toISOString() });
+    if (body.professional_id) {
+      const pro = store.professionals.find((p) => p.id === body.professional_id);
+      if (pro) pro.user_id = user_id;
+    }
+    return Promise.resolve({ ok: true, user_id });
+  }
+  if (body.action === "set_active") {
+    const row = store.admins.find((a) => a.user_id === body.user_id);
+    if (row) row.active = body.active;
+    return Promise.resolve({ ok: true });
+  }
+  if (body.action === "set_password") return Promise.resolve({ ok: true });
+  return Promise.resolve({ error: "Acción inválida" });
+}
+
+// Storage en demo: las fotos quedan en memoria como object URLs
+const mockFiles = new Map<string, string>();
+const mockStorage = {
+  from(bucket: string) {
+    return {
+      upload: async (path: string, file: Blob) => {
+        mockFiles.set(`${bucket}/${path}`, URL.createObjectURL(file));
+        return { data: { path }, error: null };
+      },
+      getPublicUrl: (path: string) => ({ data: { publicUrl: mockFiles.get(`${bucket}/${path}`) ?? "" } }),
+    };
+  },
+};
+
 export const mockSupabase = {
   from(table: string) {
     return new MockQueryBuilder(table);
   },
   rpc,
+  storage: mockStorage,
+  __mockUsersApi: mockUsersApi,
   auth: {
     getSession: async () => ({ data: { session }, error: null }),
     signInWithPassword: async ({ email }: { email: string; password: string }) => {
-      setSession({ user: { id: "mock-admin", email } }, "SIGNED_IN");
+      // El rol de demo sale del email: admin... → Administración, pro... → Profesional
+      const lower = email.trim().toLowerCase();
+      let row = store.admins.find((a) => a.email === lower);
+      if (!row) {
+        const role = lower.startsWith("admin") ? "administracion" : lower.startsWith("pro") ? "profesional" : "direccion";
+        row = { user_id: `mock-${role}-${store.admins.length}`, email: lower, full_name: null, role, active: true, created_at: new Date().toISOString() };
+        store.admins.push(row);
+      }
+      if (!row.active) return { data: { session: null }, error: { message: "User is banned" } };
+      setSession({ user: { id: String(row.user_id), email: lower } }, "SIGNED_IN");
       return { data: { session }, error: null };
     },
     // Recuperación de contraseña: en mock no se manda ningún email

@@ -1,12 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Brain, GraduationCap, Hand, MessageCircle, Scale } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { ArrowRight, Brain, GraduationCap, Hand, MessageCircle, Scale, User2 } from "lucide-react";
 import { CENTER, DISCIPLINES } from "@/lib/center";
 import { ServicesGrid } from "@/components/ServicesGrid";
 
-// Por ahora se muestran las disciplinas del equipo, no personas: los nombres reales
-// de los profesionales todavía no están confirmados (ver relevamiento, pregunta 11).
+// Se muestran las disciplinas y, debajo, los profesionales que la Dirección marca
+// "en el sitio" desde el panel (Equipo). get_public_team() solo devuelve nombre,
+// especialidad, descripción y foto: nada privado del personal (relevamiento 42 y 44).
+
+type TeamMember = { name: string; specialty: string; description: string | null; photo_url: string | null };
 
 export const Route = createFileRoute("/profesionales")({
   head: () => ({
@@ -29,6 +34,12 @@ const DISCIPLINE_ICONS: Record<(typeof DISCIPLINES)[number]["name"], typeof Brai
 };
 
 function ProfesionalesPage() {
+  const [team, setTeam] = useState<TeamMember[]>([]);
+
+  useEffect(() => {
+    supabase.rpc("get_public_team").then(({ data }: { data: TeamMember[] | null }) => setTeam(data ?? []));
+  }, []);
+
   return (
     <Layout>
       <section className="container mx-auto px-4 py-14 md:px-6 md:py-20">
@@ -62,6 +73,35 @@ function ProfesionalesPage() {
             );
           })}
         </div>
+
+        {team.length > 0 && (
+          <>
+            <div className="mx-auto mt-16 max-w-2xl text-center">
+              <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)]">Profesionales</h2>
+            </div>
+            <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {team.map((m) => (
+                <article key={`${m.name}-${m.specialty}`}
+                  className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-[var(--shadow-card)]">
+                  <div className="flex h-44 items-center justify-center bg-[var(--gradient-hero)]">
+                    {m.photo_url ? (
+                      <img src={m.photo_url} alt={m.name} className="h-full w-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded-full bg-background/90 shadow-lg">
+                        <User2 className="h-10 w-10 text-primary" strokeWidth={1.5} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-6">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-primary">{m.specialty}</div>
+                    <h3 className="mt-1.5 text-lg font-bold text-[color:var(--primary-deep)]">{m.name}</h3>
+                    {m.description && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{m.description}</p>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="mx-auto mt-16 max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold text-[color:var(--primary-deep)]">Cómo trabajamos</h2>

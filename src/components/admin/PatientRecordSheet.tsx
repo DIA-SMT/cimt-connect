@@ -14,6 +14,9 @@ import {
 import { formatTime } from "@/lib/appointments";
 import { Chip, Section, TextAreaField, TextField, selectClass } from "./fields";
 import { ReportsSection } from "./PatientReports";
+import { PatientHistory } from "./PatientHistory";
+import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
+import { canEditClinical, type Staff } from "@/lib/staff";
 import { LOCALITY_OPTIONS } from "@/lib/center";
 import {
   CASE_STATUS_LABEL, CUD_LABEL, CONDITION_OPTIONS, PATIENT_TYPE_LABEL, REFERRAL_KIND_LABEL,
@@ -39,6 +42,8 @@ type Props = {
   onClose: () => void;
   /** Se llama al cerrar si hubo cambios (ficha, derivaciones o seguimiento) */
   onChanged: () => void;
+  /** Usuario actual: Administración ve lo clínico pero no lo modifica */
+  staff: Staff;
 };
 
 // Campos editables de la ficha (lo que se manda en el update)
@@ -50,7 +55,8 @@ const EDITABLE_FIELDS = [
 ] as const satisfies readonly (keyof PatientRecord)[];
 
 
-export function PatientRecordSheet({ patientId, professionals, onClose, onChanged }: Props) {
+export function PatientRecordSheet({ patientId, professionals, onClose, onChanged, staff }: Props) {
+  const clinical = canEditClinical(staff.role);
   const [patient, setPatient] = useState<PatientRecord | null>(null);
   const [draft, setDraft] = useState<PatientRecord | null>(null);
   const [referrals, setReferrals] = useState<Referral[]>([]);
@@ -125,7 +131,9 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
     const { error: dbError } = await supabase.from("patients").update(payload).eq("id", draft.id);
     setSaving(false);
     if (dbError) {
-      toast.error(dbError.code === "23505" ? "Ya existe otro paciente con ese DNI" : "No se pudo guardar la ficha");
+      toast.error(dbError.code === "23505" ? "Ya existe otro paciente con ese DNI"
+        : dbError.message?.includes("CLINICAL_ONLY") ? "Solo los profesionales pueden modificar los datos clínicos"
+        : "No se pudo guardar la ficha");
       return;
     }
     const saved = normalizePatient({ ...draft, ...payload } as PatientRecord);
@@ -167,6 +175,8 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
               <div className="flex flex-wrap items-center gap-2 pt-2">
                 <select
                   aria-label="Estado del caso"
+                  disabled={!clinical}
+                  title={clinical ? undefined : "Solo los profesionales pueden cambiar el estado del caso"}
                   value={draft.case_status}
                   onChange={(e) => set("case_status", e.target.value as CaseStatus)}
                   className={`${selectClass} h-9 w-auto`}
@@ -239,6 +249,12 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
               </Section>
 
               <Section icon={Stethoscope} title="Información clínica">
+                {!clinical && (
+                  <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                    Solo lectura: los datos clínicos los modifican los profesionales.
+                  </p>
+                )}
+                <fieldset disabled={!clinical} className="min-w-0 space-y-4 disabled:opacity-80">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField label="Derivado al CIMT por" value={draft.referred_by ?? ""}
                     onChange={(v) => set("referred_by", v)} placeholder="Ej: escuela, pediatra, consulta espontánea" />
@@ -247,7 +263,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                     <select id="professional_id" value={draft.professional_id ?? ""} className={selectClass}
                       onChange={(e) => set("professional_id", e.target.value || null)}>
                       <option value="">Sin asignar</option>
-                      {professionals.map((p) => (
+                      {professionals.filter((p) => p.active !== false || p.id === draft.professional_id).map((p) => (
                         <option key={p.id} value={p.id}>{p.name} — {p.specialty}</option>
                       ))}
                     </select>
@@ -299,11 +315,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 </div>
 
                 <TextAreaField label="Notas generales" value={draft.notes ?? ""} onChange={(v) => set("notes", v)} />
+                </fieldset>
               </Section>
 
               <ReferralsSection
                 patientId={draft.id}
                 referrals={referrals}
+                canEdit={clinical}
+                staffEmail={staff.email}
                 onChange={(r) => { setReferrals(r); changed.current = true; }}
               />
 
@@ -311,12 +330,16 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 patient={patient ?? draft}
                 professionals={professionals}
                 reports={reports}
+                canEdit={clinical}
+                staff={staff}
                 onChange={(r) => { setReports(r); changed.current = true; }}
               />
 
               <FollowupsSection
                 patientId={draft.id}
                 followups={followups}
+                canEdit={clinical}
+                staffEmail={staff.email}
                 onChange={(f) => { setFollowups(f); changed.current = true; }}
               />
 
@@ -341,6 +364,8 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   </ul>
                 )}
               </Section>
+
+              <PatientHistory key={draft.id} patientId={draft.id} professionals={professionals} />
             </div>
           </>
         )}
@@ -351,8 +376,8 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
 
 // ─── Derivaciones e interconsultas ───────────────────────────────────────────
 
-function ReferralsSection({ patientId, referrals, onChange }: {
-  patientId: string; referrals: Referral[]; onChange: (r: Referral[]) => void;
+function ReferralsSection({ patientId, referrals, canEdit, staffEmail, onChange }: {
+  patientId: string; referrals: Referral[]; canEdit: boolean; staffEmail: string; onChange: (r: Referral[]) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -383,17 +408,22 @@ function ReferralsSection({ patientId, referrals, onChange }: {
     return true;
   }
 
+  async function annul(id: string, reason: string) {
+    const patch = await voidRecord("patient_referrals", id, reason, staffEmail);
+    if (patch) onChange(referrals.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
   return (
     <Section
       icon={ArrowRightLeft}
       title="Derivaciones e interconsultas"
-      action={!adding && (
+      action={canEdit && !adding && (
         <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
           <Plus className="mr-1 h-3.5 w-3.5" /> Nueva
         </Button>
       )}
     >
-      {adding && (
+      {adding && canEdit && (
         <div className="space-y-4 rounded-2xl border border-primary/30 bg-[color:var(--primary-soft)]/40 p-4">
           <div className="flex flex-wrap gap-1.5">
             {(Object.keys(REFERRAL_KIND_LABEL) as ReferralKind[]).map((k) => (
@@ -439,29 +469,35 @@ function ReferralsSection({ patientId, referrals, onChange }: {
         <p className="text-sm text-muted-foreground">Sin derivaciones ni interconsultas registradas.</p>
       ) : (
         <ul className="space-y-3">
-          {referrals.map((r) => <ReferralCard key={r.id} referral={r} onUpdate={update} />)}
+          {referrals.map((r) => (
+            <ReferralCard key={r.id} referral={r} canEdit={canEdit && !r.voided_at} onUpdate={update}
+              onVoid={(reason) => annul(r.id, reason)} />
+          ))}
         </ul>
       )}
     </Section>
   );
 }
 
-function ReferralCard({ referral: r, onUpdate }: {
+function ReferralCard({ referral: r, canEdit, onUpdate, onVoid }: {
   referral: Referral;
+  canEdit: boolean;
   onUpdate: (id: string, patch: Partial<Pick<Referral, "status" | "outcome" | "registered">>) => Promise<boolean>;
+  onVoid: (reason: string) => Promise<unknown>;
 }) {
   const [outcome, setOutcome] = useState(r.outcome ?? "");
   const outcomeDirty = outcome.trim() !== (r.outcome ?? "");
 
   return (
-    <li className="rounded-2xl border border-border/60 p-4">
+    <li className={`rounded-2xl border border-border/60 p-4 ${r.voided_at ? "opacity-70" : ""}`}>
+      <fieldset disabled={!canEdit} className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">
               {REFERRAL_KIND_LABEL[r.kind]}
             </span>
-            <span className="font-bold">{r.specialty}</span>
+            <span className={`font-bold ${r.voided_at ? "line-through" : ""}`}>{r.specialty}</span>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {formatShortDate(r.referral_date)}{r.destination && ` · ${r.destination}`}
@@ -504,14 +540,21 @@ function ReferralCard({ referral: r, onUpdate }: {
           </div>
         )}
       </div>
+      </fieldset>
+      <VoidedBanner item={r} />
+      {canEdit && (
+        <div className="mt-2 flex justify-end">
+          <VoidButton what="la derivación" onConfirm={onVoid} />
+        </div>
+      )}
     </li>
   );
 }
 
 // ─── Seguimiento / evolución ─────────────────────────────────────────────────
 
-function FollowupsSection({ patientId, followups, onChange }: {
-  patientId: string; followups: Followup[]; onChange: (f: Followup[]) => void;
+function FollowupsSection({ patientId, followups, canEdit, staffEmail, onChange }: {
+  patientId: string; followups: Followup[]; canEdit: boolean; staffEmail: string; onChange: (f: Followup[]) => void;
 }) {
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayKey);
@@ -530,8 +573,14 @@ function FollowupsSection({ patientId, followups, onChange }: {
     setDate(todayKey());
   }
 
+  async function annul(id: string, reason: string) {
+    const patch = await voidRecord("patient_followups", id, reason, staffEmail);
+    if (patch) onChange(followups.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  }
+
   return (
     <Section icon={NotebookPen} title="Seguimiento / evolución">
+      {canEdit && (
       <div className="space-y-3 rounded-2xl border border-border/60 p-4">
         <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
           aria-label="Nueva nota de seguimiento"
@@ -546,6 +595,7 @@ function FollowupsSection({ patientId, followups, onChange }: {
           </Button>
         </div>
       </div>
+      )}
 
       {followups.length === 0 ? (
         <p className="text-sm text-muted-foreground">Todavía no hay notas de seguimiento.</p>
@@ -558,7 +608,9 @@ function FollowupsSection({ patientId, followups, onChange }: {
                 {formatShortDate(f.note_date)}
                 {f.author_email && <span className="font-normal text-muted-foreground"> · {f.author_email}</span>}
               </div>
-              <p className="mt-1 whitespace-pre-wrap text-sm">{f.note}</p>
+              <p className={`mt-1 whitespace-pre-wrap text-sm ${f.voided_at ? "text-muted-foreground line-through" : ""}`}>{f.note}</p>
+              <VoidedBanner item={f} />
+              {canEdit && !f.voided_at && <VoidButton what="la nota" onConfirm={(reason) => annul(f.id, reason)} />}
             </li>
           ))}
         </ol>
