@@ -1,18 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, CheckCircle2, XCircle, Clock3, Filter, LayoutDashboard, List, LogOut, Lock, Users, FileText, BarChart3, UserCog, KeyRound } from "lucide-react";
+import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox } from "lucide-react";
 import { toast } from "sonner";
-import { formatTime } from "@/lib/appointments";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
 import { StatsTab } from "@/components/admin/StatsTab";
 import { PatientRecordSheet } from "@/components/admin/PatientRecordSheet";
 import { TeamTab } from "@/components/admin/TeamTab";
+import { AgendaTab } from "@/components/admin/AgendaTab";
+import { IntakeTab } from "@/components/admin/IntakeTab";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
 import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
@@ -53,7 +54,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "turnos" | "pacientes" | "estadisticas" | "dashboard" | "equipo";
+type Tab = "agenda" | "solicitudes" | "pacientes" | "estadisticas" | "dashboard" | "equipo";
 
 type AuthState =
   | { kind: "loading" }
@@ -326,22 +327,20 @@ function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => 
 
 function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void }) {
   const [appts, setAppts] = useState<Appt[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<"all" | Appt["status"]>("all");
-  const [dateFilter, setDateFilter] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<Tab>("turnos");
+  const [activeTab, setActiveTab] = useState<Tab>("agenda");
   const [professionals, setProfessionals] = useState<ProfessionalOption[]>([]);
   const [openPatientId, setOpenPatientId] = useState<string | null>(null);
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [newRequests, setNewRequests] = useState(0);
 
   function loadProfessionals() {
-    supabase.from("professionals").select("id, name, specialty, license, active").order("name", { ascending: true })
+    supabase.from("professionals").select("id, name, specialty, license, active, session_minutes").order("name", { ascending: true })
       .then(({ data }: { data: ProfessionalOption[] | null }) => setProfessionals(data ?? []));
   }
 
-  async function fetchAppts({ silent = false } = {}) {
-    if (!silent) setLoading(true);
+  // Turnos para el Dashboard (la agenda carga los suyos por día)
+  async function fetchAppts() {
     const { data, error } = await supabase
       .from("appointments")
       .select("*, patients(first_name, last_name, dni, age, phone, email, patient_type, professional_id, locality)")
@@ -349,43 +348,21 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
       .order("appointment_time", { ascending: true });
     if (error) toast.error("No se pudieron cargar los turnos");
     setAppts((data ?? []) as Appt[]);
-    setLoading(false);
   }
 
   useEffect(() => {
     fetchAppts();
     loadProfessionals();
+    // Contador de solicitudes nuevas para la pestaña
+    supabase.from("intake_requests").select("id").eq("status", "nueva")
+      .then(({ data }: { data: { id: string }[] | null }) => setNewRequests(data?.length ?? 0));
   }, []);
 
   // Al cerrar una ficha con cambios: recargar la planilla y los turnos (por si cambió el nombre)
   function handlePatientChanged() {
     setPatientsVersion((v) => v + 1);
-    fetchAppts({ silent: true });
+    fetchAppts();
   }
-
-  async function updateStatus(id: string, status: Appt["status"]) {
-    const { error } = await supabase.from("appointments").update({ status }).eq("id", id);
-    if (error) {
-      toast.error("No se pudo actualizar");
-      return;
-    }
-    toast.success(`Turno ${status}`);
-    setAppts((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
-  }
-
-  const filtered = useMemo(() => {
-    return appts.filter((a) => {
-      if (statusFilter !== "all" && a.status !== statusFilter) return false;
-      if (dateFilter && a.appointment_date !== dateFilter) return false;
-      return true;
-    });
-  }, [appts, statusFilter, dateFilter]);
-
-  const counts = useMemo(() => ({
-    pendiente: appts.filter(a => a.status === "pendiente").length,
-    confirmado: appts.filter(a => a.status === "confirmado").length,
-    cancelado: appts.filter(a => a.status === "cancelado").length,
-  }), [appts]);
 
   return (
     <Layout>
@@ -416,168 +393,37 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
 
         {/* Tabs */}
         <div className="mt-6 flex w-fit flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
-          <TabButton
-            active={activeTab === "turnos"}
-            onClick={() => setActiveTab("turnos")}
-            icon={<List className="h-4 w-4" />}
-            label="Turnos"
-          />
-          <TabButton
-            active={activeTab === "pacientes"}
-            onClick={() => setActiveTab("pacientes")}
-            icon={<Users className="h-4 w-4" />}
-            label="Pacientes"
-          />
-          <TabButton
-            active={activeTab === "estadisticas"}
-            onClick={() => setActiveTab("estadisticas")}
-            icon={<BarChart3 className="h-4 w-4" />}
-            label="Estadísticas"
-          />
-          <TabButton
-            active={activeTab === "dashboard"}
-            onClick={() => setActiveTab("dashboard")}
-            icon={<LayoutDashboard className="h-4 w-4" />}
-            label="Dashboard"
-          />
+          <TabButton active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")}
+            icon={<CalendarDays className="h-4 w-4" />} label="Agenda" />
+          <TabButton active={activeTab === "solicitudes"} onClick={() => setActiveTab("solicitudes")}
+            icon={<Inbox className="h-4 w-4" />} label="Solicitudes" badge={newRequests} />
+          <TabButton active={activeTab === "pacientes"} onClick={() => setActiveTab("pacientes")}
+            icon={<Users className="h-4 w-4" />} label="Pacientes" />
+          <TabButton active={activeTab === "estadisticas"} onClick={() => setActiveTab("estadisticas")}
+            icon={<BarChart3 className="h-4 w-4" />} label="Estadísticas" />
+          <TabButton active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")}
+            icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
           {isDirector(staff.role) && (
-            <TabButton
-              active={activeTab === "equipo"}
-              onClick={() => setActiveTab("equipo")}
-              icon={<UserCog className="h-4 w-4" />}
-              label="Equipo"
-            />
+            <TabButton active={activeTab === "equipo"} onClick={() => setActiveTab("equipo")}
+              icon={<UserCog className="h-4 w-4" />} label="Equipo" />
           )}
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-24">
-            <Loader2 className="h-7 w-7 animate-spin text-primary" />
-          </div>
+        {activeTab === "agenda" ? (
+          <AgendaTab professionals={professionals} staff={staff} onOpenPatient={setOpenPatientId} />
+        ) : activeTab === "solicitudes" ? (
+          <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
+            onCountChange={setNewRequests} />
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
         ) : activeTab === "estadisticas" ? (
           <StatsTab key={patientsVersion} />
         ) : activeTab === "equipo" && isDirector(staff.role) ? (
           <TeamTab currentEmail={staff.email} onProfessionalsChanged={loadProfessionals} />
-        ) : activeTab === "dashboard" ? (
+        ) : (
           <div className="mt-6">
             <AdminDashboard appts={appts} professionals={professionals} />
           </div>
-        ) : (
-          <>
-            {/* Stat cards */}
-            <div className="mt-6 grid grid-cols-3 gap-3">
-              <Stat label="Pendientes" value={counts.pendiente} color="--status-pending" />
-              <Stat label="Confirmados" value={counts.confirmado} color="--status-available" />
-              <Stat label="Cancelados" value={counts.cancelado} color="--status-occupied" />
-            </div>
-
-            {/* Filters */}
-            <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card p-4">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-semibold text-muted-foreground">Filtrar:</span>
-              <div className="flex flex-wrap gap-1.5">
-                {(["all", "pendiente", "confirmado", "cancelado"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
-                    className={[
-                      "rounded-full px-3 py-1 text-xs font-semibold capitalize transition-colors",
-                      statusFilter === s
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground hover:bg-[color:var(--primary-soft)]",
-                    ].join(" ")}
-                  >
-                    {s === "all" ? "Todos" : s}
-                  </button>
-                ))}
-              </div>
-              <div className="ml-auto flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="h-9 w-auto"
-                />
-                {dateFilter && (
-                  <Button variant="outline" size="sm" onClick={() => setDateFilter("")}>
-                    Limpiar
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="mt-6 overflow-hidden rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)]">
-              {filtered.length === 0 ? (
-                <div className="py-16 text-center text-muted-foreground">No hay solicitudes para mostrar.</div>
-              ) : (
-                <div className="divide-y divide-border/60">
-                  {filtered.map((a) => (
-                    <div key={a.id} className="grid gap-3 p-5 md:grid-cols-[auto_1fr_auto] md:items-center">
-                      <div className="rounded-2xl bg-[color:var(--primary-soft)] px-4 py-3 text-center md:w-32">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">
-                          {formatDate(a.appointment_date, "weekday")}
-                        </div>
-                        <div className="text-2xl font-extrabold text-[color:var(--primary-deep)]">
-                          {formatDate(a.appointment_date, "day")}
-                        </div>
-                        <div className="text-xs font-semibold text-[color:var(--primary-deep)] capitalize">
-                          {formatDate(a.appointment_date, "month")} · {formatTime(a.appointment_time)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="font-bold text-foreground">
-                            {a.patients?.first_name} {a.patients?.last_name}
-                          </h3>
-                          <StatusBadge status={a.status} />
-                          <span className="rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                            {a.patients?.patient_type} · {a.consultation_type === "primera_vez" ? "1ra vez" : "seguimiento"}
-                          </span>
-                          {a.modality === "telemedicina" && (
-                            <span className="rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[color:var(--primary-deep)]">
-                              Telemedicina
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          DNI {a.patients?.dni} · {a.patients?.age} años · {a.patients?.phone}{a.patients?.email && ` · ${a.patients.email}`}
-                          {a.patients?.locality && ` · ${a.patients.locality}`}
-                        </div>
-                        <p className="mt-2 text-sm text-foreground/80 line-clamp-2">{a.reason}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 md:flex-col md:items-end">
-                        {a.patient_id && (
-                          <Button size="sm" variant="outline" onClick={() => setOpenPatientId(a.patient_id)}>
-                            <FileText className="mr-1 h-3.5 w-3.5" /> Ficha
-                          </Button>
-                        )}
-                        <Button size="sm" variant="outline"
-                          disabled={a.status === "confirmado"}
-                          onClick={() => updateStatus(a.id, "confirmado")}
-                          className="border-[color:var(--status-available)]/40 text-[color:var(--status-available)] hover:bg-[color:var(--status-available-bg)]">
-                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Confirmar
-                        </Button>
-                        <Button size="sm" variant="outline"
-                          disabled={a.status === "pendiente"}
-                          onClick={() => updateStatus(a.id, "pendiente")}>
-                          <Clock3 className="mr-1 h-3.5 w-3.5" /> Pendiente
-                        </Button>
-                        <Button size="sm" variant="outline"
-                          disabled={a.status === "cancelado"}
-                          onClick={() => updateStatus(a.id, "cancelado")}
-                          className="border-[color:var(--status-occupied)]/40 text-[color:var(--status-occupied)] hover:bg-[color:var(--status-occupied-bg)]">
-                          <XCircle className="mr-1 h-3.5 w-3.5" /> Cancelar
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
         )}
       </section>
 
@@ -657,8 +503,8 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function TabButton({
-  active, onClick, icon, label,
-}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  active, onClick, icon, label, badge = 0,
+}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number }) {
   return (
     <button
       onClick={onClick}
@@ -671,43 +517,9 @@ function TabButton({
     >
       {icon}
       {label}
+      {badge > 0 && (
+        <span className="rounded-full bg-[color:var(--status-pending)] px-1.5 text-[10px] font-bold text-white">{badge}</span>
+      )}
     </button>
   );
-}
-
-function Stat({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: `var(${color})` }} />
-        {label}
-      </div>
-      <div className="mt-2 text-3xl font-extrabold text-[color:var(--primary-deep)]">{value}</div>
-    </div>
-  );
-}
-
-function StatusBadge({ status }: { status: "pendiente" | "confirmado" | "cancelado" }) {
-  const map = {
-    pendiente:  { bg: "var(--status-pending-bg)",   fg: "var(--status-pending)" },
-    confirmado: { bg: "var(--status-available-bg)", fg: "var(--status-available)" },
-    cancelado:  { bg: "var(--status-occupied-bg)",  fg: "var(--status-occupied)" },
-  } as const;
-  const c = map[status];
-  return (
-    <span
-      className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
-      style={{ backgroundColor: c.bg, color: c.fg }}
-    >
-      {status}
-    </span>
-  );
-}
-
-function formatDate(iso: string, part: "weekday" | "day" | "month"): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  if (part === "weekday") return date.toLocaleDateString("es-AR", { weekday: "short" });
-  if (part === "day") return String(date.getDate());
-  return date.toLocaleDateString("es-AR", { month: "short" });
 }

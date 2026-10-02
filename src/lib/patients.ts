@@ -82,6 +82,7 @@ export type ProfessionalOption = {
   specialty: string;
   license?: string | null; // matrícula (MP)
   active?: boolean;
+  session_minutes?: number; // duración de la sesión (30 o 40 min según disciplina)
 };
 
 // "Lic. Ana Pérez — MP 1234" para firmas e informes
