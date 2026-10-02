@@ -395,6 +395,27 @@ export type Database = {
       }
       patients: {
         Row: {
+          birth_date: string | null
+          address: string | null
+          school_shift: string | null
+          school_grade: string | null
+          lives_with: string | null
+          siblings: string | null
+          main_caregiver: string | null
+          parents_dedication: string | null
+          arrival_route: string | null
+          stutter_onset_age: string | null
+          stutter_onset_form: string | null
+          stutter_situations: string | null
+          previous_treatments: string | null
+          family_history: string | null
+          diagnosis_code: string | null
+          consent_date: string | null
+          discharge_date: string | null
+          discharge_notes: string | null
+          avoids_speaking: boolean | null
+          frustration_communicating: boolean | null
+          consent_signed: boolean
           therapy_modes: string[]
           case_status: Database["public"]["Enums"]["case_status"]
           cud_status: string | null
@@ -423,6 +444,27 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          birth_date?: string | null
+          address?: string | null
+          school_shift?: string | null
+          school_grade?: string | null
+          lives_with?: string | null
+          siblings?: string | null
+          main_caregiver?: string | null
+          parents_dedication?: string | null
+          arrival_route?: string | null
+          stutter_onset_age?: string | null
+          stutter_onset_form?: string | null
+          stutter_situations?: string | null
+          previous_treatments?: string | null
+          family_history?: string | null
+          diagnosis_code?: string | null
+          consent_date?: string | null
+          discharge_date?: string | null
+          discharge_notes?: string | null
+          avoids_speaking?: boolean | null
+          frustration_communicating?: boolean | null
+          consent_signed?: boolean
           locality?: string | null
           therapy_modes?: string[]
           case_status?: Database["public"]["Enums"]["case_status"]
@@ -451,6 +493,27 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          birth_date?: string | null
+          address?: string | null
+          school_shift?: string | null
+          school_grade?: string | null
+          lives_with?: string | null
+          siblings?: string | null
+          main_caregiver?: string | null
+          parents_dedication?: string | null
+          arrival_route?: string | null
+          stutter_onset_age?: string | null
+          stutter_onset_form?: string | null
+          stutter_situations?: string | null
+          previous_treatments?: string | null
+          family_history?: string | null
+          diagnosis_code?: string | null
+          consent_date?: string | null
+          discharge_date?: string | null
+          discharge_notes?: string | null
+          avoids_speaking?: boolean | null
+          frustration_communicating?: boolean | null
+          consent_signed?: boolean
           locality?: string | null
           therapy_modes?: string[]
           case_status?: Database["public"]["Enums"]["case_status"]

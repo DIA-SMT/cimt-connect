@@ -33,6 +33,28 @@ export type PatientRecord = {
   guardian_phone: string | null;
   locality: string | null;
   therapy_modes: TherapyMode[];
+  // Fase 3: filiación, contexto familiar, ingreso, antecedentes, CIE-10, consentimiento y alta
+  birth_date: string | null;
+  address: string | null;
+  school_shift: "mañana" | "tarde" | null;
+  school_grade: string | null;
+  lives_with: string | null;
+  siblings: string | null;
+  main_caregiver: string | null;
+  parents_dedication: string | null;
+  arrival_route: string | null;
+  stutter_onset_age: string | null;
+  stutter_onset_form: string | null;
+  stutter_situations: string | null;
+  previous_treatments: string | null;
+  family_history: string | null;
+  avoids_speaking: boolean | null;
+  frustration_communicating: boolean | null;
+  diagnosis_code: string | null;
+  consent_signed: boolean;
+  consent_date: string | null;
+  discharge_date: string | null;
+  discharge_notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -108,6 +130,9 @@ export const AUDIT_TABLE_LABEL: Record<string, string> = {
   patient_referrals: "Derivación",
   patient_followups: "Seguimiento",
   patient_reports: "Informe",
+  patient_guardians: "Adulto responsable",
+  clinical_forms: "Historia clínica por área",
+  patient_files: "Adjunto",
 };
 
 // Nombres legibles de los campos que aparecen en el historial
@@ -124,15 +149,30 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   registered: "Registrada", note: "Nota", note_date: "Fecha", report_date: "Fecha", diagnosis: "Diagnóstico",
   progress: "Progreso", therapy_evolution: "Evolución de la terapia",
   voided_at: "Anulado", voided_by: "Anulado por", void_reason: "Motivo de anulación",
+  // Fase 3
+  birth_date: "Fecha de nacimiento", address: "Domicilio", school_shift: "Turno", school_grade: "Grado / sala",
+  lives_with: "Con quién vive", siblings: "Hermanos", main_caregiver: "Principal cuidador",
+  parents_dedication: "Dedicación de los padres", arrival_route: "Cómo llega al CIMT",
+  stutter_onset_age: "Edad de inicio de la tartamudez", stutter_onset_form: "Forma de inicio",
+  stutter_situations: "Situaciones donde aparece más", previous_treatments: "Tratamientos previos",
+  family_history: "Antecedentes familiares", avoids_speaking: "Evita hablar",
+  frustration_communicating: "Se frustra al comunicarse", diagnosis_code: "CIE-10",
+  consent_signed: "Consentimiento firmado", consent_date: "Fecha del consentimiento",
+  discharge_date: "Fecha de alta", discharge_notes: "Observaciones del alta",
+  full_name: "Nombre", relationship: "Vínculo", lives_with_patient: "Convive", is_primary: "Contacto principal",
+  active: "Activo", area: "Área", answers: "Respuestas", form_date: "Fecha",
+  file_name: "Archivo", category: "Tipo", description: "Descripción", mime_type: "Formato", size_bytes: "Tamaño (bytes)",
 };
 
 // Campos que no aportan en el historial (ids internos, autor ya mostrado aparte)
-export const AUDIT_HIDDEN_FIELDS = new Set(["id", "patient_id", "created_by", "author_email", "updated_at", "created_at", "voided_by"]);
+export const AUDIT_HIDDEN_FIELDS = new Set(["id", "patient_id", "created_by", "author_email", "updated_at", "created_at", "voided_by",
+  "template_id", "storage_path", "uploaded_by_email"]);
 
 export function formatAuditValue(v: unknown): string {
   if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "boolean") return v ? "Sí" : "No";
   if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  if (typeof v === "object") return `${Object.keys(v).length} respuestas`;
   const s = String(v);
   return s.length > 120 ? `${s.slice(0, 117)}…` : s;
 }
@@ -205,6 +245,73 @@ export const CONDITION_OPTIONS = [
   "Epilepsia",
 ] as const;
 
+// Códigos CIE-10 frecuentes (relevamiento 18: "F98.5 (disfemia) y otros").
+// Se puede escribir cualquier otro código.
+export const CIE10_OPTIONS = [
+  { code: "F98.5", label: "Tartamudez (espasmofemia)" },
+  { code: "F98.6", label: "Farfulleo" },
+  { code: "F80.0", label: "Trastorno específico de la pronunciación" },
+  { code: "F80.1", label: "Trastorno de la expresión del lenguaje" },
+  { code: "F80.2", label: "Trastorno de la comprensión del lenguaje" },
+  { code: "F81.0", label: "Trastorno específico de la lectura" },
+  { code: "F84.0", label: "Autismo en la niñez" },
+  { code: "F90.0", label: "Perturbación de la actividad y de la atención" },
+  { code: "F93.8", label: "Otros trastornos emocionales de la niñez" },
+] as const;
+
+export function cie10Label(code: string | null): string {
+  if (!code) return "";
+  const known = CIE10_OPTIONS.find((o) => o.code === code.trim().toUpperCase());
+  return known ? `${known.code} — ${known.label}` : code;
+}
+
+export type Guardian = {
+  id: string;
+  patient_id: string;
+  full_name: string;
+  relationship: string | null;
+  dni: string | null;
+  phone: string | null;
+  email: string | null;
+  lives_with_patient: boolean | null;
+  is_primary: boolean;
+  notes: string | null;
+  active: boolean;
+};
+
+export const GUARDIAN_RELATIONSHIPS = ["Madre", "Padre", "Abuela", "Abuelo", "Tía / tío", "Hermana / hermano", "Tutor legal", "Otro"];
+
+export type FileCategory = "consentimiento" | "informe_interconsulta" | "estudio" | "otro";
+export const FILE_CATEGORY_LABEL: Record<FileCategory, string> = {
+  consentimiento: "Consentimiento informado",
+  informe_interconsulta: "Informe de interconsulta",
+  estudio: "Estudio",
+  otro: "Otro",
+};
+
+export type PatientFile = {
+  id: string;
+  patient_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  category: FileCategory;
+  description: string | null;
+  uploaded_by_email: string | null;
+  created_at: string;
+} & Voidable;
+
+// Edad a partir de la fecha de nacimiento (la base hace lo mismo con un trigger)
+export function ageFromBirth(birth: string | null): number | null {
+  if (!birth) return null;
+  const [y, m, d] = birth.split("-").map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+  return age >= 0 ? age : null;
+}
+
 export const SPECIALTY_OPTIONS = [
   "Neurología",
   "Neuropediatría",
@@ -229,6 +336,7 @@ export function normalizePatient(p: PatientRecord): PatientRecord {
     is_medicated: !!p.is_medicated,
     has_health_insurance: p.has_health_insurance ?? null,
     locality: p.locality ?? null,
+    consent_signed: !!p.consent_signed,
   };
 }
 
@@ -264,22 +372,26 @@ export function exportPatientsCsv(
 ) {
   const proName = new Map(professionals.map((p) => [p.id, p.name]));
   const header = [
-    "Apellido", "Nombre", "DNI", "Edad", "Tipo", "Teléfono", "Email", "Localidad",
-    "Tutor/responsable", "Tel. tutor", "Escolaridad", "¿Obra social?", "Obra social",
-    "Estado", "Profesional a cargo", "Terapia", "Derivado por", "Diagnóstico / motivo",
+    "Apellido", "Nombre", "DNI", "Fecha de nacimiento", "Edad", "Tipo", "Teléfono", "Email", "Domicilio", "Localidad",
+    "Escuela", "Turno", "Grado / sala", "¿Obra social?", "Obra social",
+    "Estado", "Profesional a cargo", "Terapia", "Derivado por", "CIE-10", "Diagnóstico / motivo",
+    "Consentimiento", "Alta",
     "Otras condiciones", "CUD", "Medicado", "Medicación",
     "Derivaciones pendientes", "Interconsultas registradas", "Último informe", "Último seguimiento", "Notas",
   ];
   const rows = patients.map((p) => {
     const st = stats.get(p.id);
     return [
-      p.last_name, p.first_name, p.dni, p.age, PATIENT_TYPE_LABEL[p.patient_type], p.phone, p.email, p.locality,
-      p.guardian_name, p.guardian_phone, p.school,
+      p.last_name, p.first_name, p.dni, p.birth_date ? formatShortDate(p.birth_date) : "", p.age,
+      PATIENT_TYPE_LABEL[p.patient_type], p.phone, p.email, p.address, p.locality,
+      p.school, p.school_shift, p.school_grade,
       p.has_health_insurance === null ? "" : p.has_health_insurance ? "Con obra social" : "Sin obra social",
       p.has_health_insurance ? p.health_insurance : "",
       CASE_STATUS_LABEL[p.case_status], p.professional_id ? proName.get(p.professional_id) : "",
       p.therapy_modes.map((m) => THERAPY_MODE_LABEL[m]).join(", "),
-      p.referred_by, p.main_diagnosis,
+      p.referred_by, p.diagnosis_code, p.main_diagnosis,
+      p.consent_signed ? `Firmado${p.consent_date ? ` (${formatShortDate(p.consent_date)})` : ""}` : "No",
+      p.discharge_date ? formatShortDate(p.discharge_date) : "",
       p.other_conditions.join(", "), p.cud_status ? CUD_LABEL[p.cud_status] : "",
       p.is_medicated ? "Sí" : "No", p.medication,
       st?.pendingReferrals ?? 0,

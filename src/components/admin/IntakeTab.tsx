@@ -84,9 +84,16 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
         locality: r.locality,
         referred_by: r.referred_by,
         guardian_name: r.guardian_name,
+        guardian_phone: r.guardian_name ? r.phone : null,
       }).select().single();
       if (error || !data) { toast.error("No se pudo crear la ficha del paciente"); return; }
       patientId = (data as { id: string }).id;
+      // El adulto responsable de la solicitud pasa a la ficha como contacto principal
+      if (r.guardian_name) {
+        await supabase.from("patient_guardians").insert({
+          patient_id: patientId, full_name: r.guardian_name, phone: r.phone, is_primary: true,
+        });
+      }
     }
     const ok = await update(r.id, { status: "admitida", patient_id: patientId }, "Paciente admitido");
     if (ok) {

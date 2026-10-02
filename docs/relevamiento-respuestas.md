@@ -318,3 +318,16 @@ Ver el resumen por fases en la conversación del 2026-10-02. Orden sugerido:
    diagnóstico, tiempo de espera, ausentismo, encuesta de satisfacción, mapa.
 6. **Sitio y LIA.** Reglas y preguntas frecuentes en LIA, sección de preguntas
    frecuentes, equipo con fotos, taller de padres, política de privacidad.
+
+### Estado (2026-10-02)
+
+- Fases 1, 2 y 5 publicadas; LIA (FAQ y reglas) y Rincón social publicados.
+- Fase 3 implementada (script `15_ficha_completa.sql`): filiación con edad
+  automática, escuela/turno/grado, adultos responsables (varios, con contacto
+  principal), contexto familiar, antecedentes de tartamudez, CIE-10,
+  consentimiento y alta, adjuntos en almacenamiento privado e **historia
+  clínica por área** a partir del formulario en papel de Terapia Ocupacional
+  (`src/lib/clinicalForms.ts`). Falta: formularios de Fonoaudiología,
+  Psicología y Psicopedagogía (pedírselos al centro) y N° de registro en las
+  derivaciones.
+- Fase 4 pendiente: espera la foto de un informe oficial.

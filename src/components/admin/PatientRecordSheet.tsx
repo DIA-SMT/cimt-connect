@@ -10,16 +10,20 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Loader2, Save, User, Stethoscope, ArrowRightLeft, NotebookPen, CalendarDays, Plus, X,
+  Home, History, FileCheck2,
 } from "lucide-react";
 import { formatTime } from "@/lib/appointments";
 import { Chip, Section, TextAreaField, TextField, selectClass } from "./fields";
 import { ReportsSection } from "./PatientReports";
 import { PatientHistory } from "./PatientHistory";
+import { GuardiansSection } from "./GuardiansSection";
+import { ClinicalFormsSection } from "./ClinicalFormsSection";
+import { AttachmentsSection } from "./AttachmentsSection";
 import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { LOCALITY_OPTIONS } from "@/lib/center";
 import {
-  CASE_STATUS_LABEL, CUD_LABEL, CONDITION_OPTIONS, PATIENT_TYPE_LABEL, REFERRAL_KIND_LABEL,
+  CASE_STATUS_LABEL, CIE10_OPTIONS, CUD_LABEL, CONDITION_OPTIONS, ageFromBirth, PATIENT_TYPE_LABEL, REFERRAL_KIND_LABEL,
   REFERRAL_STATUS_LABEL, SPECIALTY_OPTIONS, THERAPY_MODE_LABEL, formatShortDate, fullName, normalizePatient, todayKey,
   type TherapyMode,
   type CaseStatus, type CudStatus, type Followup, type PatientRecord, type PatientType,
@@ -55,7 +59,13 @@ const EDITABLE_FIELDS = [
   "first_name", "last_name", "dni", "age", "phone", "email", "patient_type", "notes",
   "case_status", "professional_id", "referred_by", "main_diagnosis", "other_conditions",
   "cud_status", "is_medicated", "medication", "has_health_insurance", "health_insurance", "school",
-  "guardian_name", "guardian_phone", "locality", "therapy_modes",
+  "locality", "therapy_modes",
+  // Fase 3
+  "birth_date", "address", "school_shift", "school_grade",
+  "lives_with", "siblings", "main_caregiver", "parents_dedication",
+  "arrival_route", "stutter_onset_age", "stutter_onset_form", "stutter_situations",
+  "previous_treatments", "family_history", "avoids_speaking", "frustration_communicating",
+  "diagnosis_code", "consent_signed", "consent_date", "discharge_date", "discharge_notes",
 ] as const satisfies readonly (keyof PatientRecord)[];
 
 
@@ -113,7 +123,15 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
   );
 
   function set<K extends keyof PatientRecord>(key: K, value: PatientRecord[K]) {
-    setDraft((d) => (d ? { ...d, [key]: value } : d));
+    setDraft((d) => {
+      if (!d) return d;
+      const next = { ...d, [key]: value };
+      if (key === "birth_date") {
+        const age = ageFromBirth(value as string | null);
+        if (age !== null) next.age = age;
+      }
+      return next;
+    });
   }
 
   function requestClose() {
@@ -132,6 +150,8 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
     setSaving(true);
     const payload = Object.fromEntries(EDITABLE_FIELDS.map((k) => [k, emptyToNull(draft[k])]));
     if (draft.has_health_insurance !== true) payload.health_insurance = null;
+    if (!draft.consent_signed) payload.consent_date = null;
+    if (payload.diagnosis_code) payload.diagnosis_code = String(payload.diagnosis_code).toUpperCase();
     const { error: dbError } = await supabase.from("patients").update(payload).eq("id", draft.id);
     setSaving(false);
     if (dbError) {
@@ -207,8 +227,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   <TextField label="Nombre" value={draft.first_name} onChange={(v) => set("first_name", v)} />
                   <TextField label="Apellido" value={draft.last_name} onChange={(v) => set("last_name", v)} />
                   <TextField label="DNI" value={draft.dni} onChange={(v) => set("dni", v)} inputMode="numeric" />
-                  <TextField label="Edad" value={String(draft.age)} type="number"
-                    onChange={(v) => set("age", Number(v))} />
+                  <TextField label="Fecha de nacimiento" type="date" value={draft.birth_date ?? ""}
+                    onChange={(v) => set("birth_date", v || null)} />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="f-edad">Edad</Label>
+                    <Input id="f-edad" type="number" value={String(draft.age)} disabled={!!draft.birth_date}
+                      title={draft.birth_date ? "Se calcula con la fecha de nacimiento" : undefined}
+                      onChange={(e) => set("age", Number(e.target.value))} />
+                  </div>
                   <TextField label="Teléfono" value={draft.phone} onChange={(v) => set("phone", v)} inputMode="tel" />
                   <TextField label="Email" value={draft.email ?? ""} type="email" onChange={(v) => set("email", v)} />
                   <div className="space-y-1.5">
@@ -233,11 +259,9 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                         placeholder="¿Cuál? Ej: Subsidio de Salud, PAMI, OSDE" className="mt-1.5" />
                     )}
                   </div>
-                  <TextField label="Tutor / responsable" value={draft.guardian_name ?? ""}
-                    onChange={(v) => set("guardian_name", v)} placeholder="Para menores de edad" />
-                  <TextField label="Teléfono del tutor" value={draft.guardian_phone ?? ""}
-                    onChange={(v) => set("guardian_phone", v)} inputMode="tel" />
-                  <div className="space-y-1.5 sm:col-span-2">
+                  <TextField label="Domicilio" value={draft.address ?? ""}
+                    onChange={(v) => set("address", v)} placeholder="Calle, número, barrio" />
+                  <div className="space-y-1.5">
                     <Label htmlFor="locality">Localidad</Label>
                     <Input id="locality" list="ficha-locality-options" value={draft.locality ?? ""}
                       onChange={(e) => set("locality", e.target.value)} placeholder="Ej: San Miguel de Tucumán" />
@@ -246,9 +270,35 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                     </datalist>
                   </div>
                   <div className="sm:col-span-2">
-                    <TextField label="Escolaridad / institución" value={draft.school ?? ""}
-                      onChange={(v) => set("school", v)} placeholder="Ej: 1er grado, Escuela N° 123" />
+                    <TextField label="Escuela / institución" value={draft.school ?? ""}
+                      onChange={(v) => set("school", v)} placeholder="Ej: Escuela N° 123" />
                   </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="school_shift">Turno</Label>
+                    <select id="school_shift" value={draft.school_shift ?? ""} className={selectClass}
+                      onChange={(e) => set("school_shift", (e.target.value || null) as PatientRecord["school_shift"])}>
+                      <option value="">Sin dato</option>
+                      <option value="mañana">Mañana</option>
+                      <option value="tarde">Tarde</option>
+                    </select>
+                  </div>
+                  <TextField label="Grado / sala" value={draft.school_grade ?? ""}
+                    onChange={(v) => set("school_grade", v)} placeholder="Ej: 2do grado, sala de 5" />
+                </div>
+              </Section>
+
+              <GuardiansSection patientId={draft.id} onChanged={() => { changed.current = true; }} />
+
+              <Section icon={Home} title="Contexto familiar y convivencia">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField label="¿Con quién vive?" value={draft.lives_with ?? ""}
+                    onChange={(v) => set("lives_with", v)} placeholder="Ej: mamá, abuela y hermano" />
+                  <TextField label="Hermanos (cuántos, edades)" value={draft.siblings ?? ""}
+                    onChange={(v) => set("siblings", v)} placeholder="Ej: 2 — 4 y 11 años" />
+                  <TextField label="Principal cuidador" value={draft.main_caregiver ?? ""}
+                    onChange={(v) => set("main_caregiver", v)} />
+                  <TextField label="Dedicación de los padres" value={draft.parents_dedication ?? ""}
+                    onChange={(v) => set("parents_dedication", v)} placeholder="Trabajo, horarios" />
                 </div>
               </Section>
 
@@ -260,8 +310,10 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 )}
                 <fieldset disabled={!clinical} className="min-w-0 space-y-4 disabled:opacity-80">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField label="Derivado al CIMT por" value={draft.referred_by ?? ""}
+                  <TextField label="¿Quién sugiere la consulta?" value={draft.referred_by ?? ""}
                     onChange={(v) => set("referred_by", v)} placeholder="Ej: escuela, pediatra, consulta espontánea" />
+                  <TextField label="¿Cómo llega al CIMT?" value={draft.arrival_route ?? ""}
+                    onChange={(v) => set("arrival_route", v)} placeholder="Ej: lo vieron en redes, se lo contó otra familia" />
                   <div className="space-y-1.5">
                     <Label htmlFor="professional_id">Profesional a cargo</Label>
                     <select id="professional_id" value={draft.professional_id ?? ""} className={selectClass}
@@ -271,6 +323,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                         <option key={p.id} value={p.id}>{p.name} — {p.specialty}</option>
                       ))}
                     </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="diagnosis_code">Diagnóstico CIE-10</Label>
+                    <Input id="diagnosis_code" list="cie10-options" value={draft.diagnosis_code ?? ""}
+                      onChange={(e) => set("diagnosis_code", e.target.value)} placeholder="Ej: F98.5" />
+                    <datalist id="cie10-options">
+                      {CIE10_OPTIONS.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
+                    </datalist>
                   </div>
                   <div className="sm:col-span-2">
                     <TextAreaField label="Diagnóstico / motivo principal" value={draft.main_diagnosis ?? ""}
@@ -321,6 +381,37 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 <TextAreaField label="Notas generales" value={draft.notes ?? ""} onChange={(v) => set("notes", v)} />
                 </fieldset>
               </Section>
+
+              <Section icon={History} title="Antecedentes de tartamudez">
+                <fieldset disabled={!clinical} className="min-w-0 space-y-4 disabled:opacity-80">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <TextField label="Edad de inicio" value={draft.stutter_onset_age ?? ""}
+                      onChange={(v) => set("stutter_onset_age", v)} placeholder="Ej: 3 años" />
+                    <TextField label="Forma de inicio" value={draft.stutter_onset_form ?? ""}
+                      onChange={(v) => set("stutter_onset_form", v)} placeholder="Ej: repentina, gradual" />
+                    <div className="sm:col-span-2">
+                      <TextAreaField label="Situaciones donde aparece más" value={draft.stutter_situations ?? ""}
+                        onChange={(v) => set("stutter_situations", v)} />
+                    </div>
+                    <TextAreaField label="Tratamientos previos o actuales" value={draft.previous_treatments ?? ""}
+                      onChange={(v) => set("previous_treatments", v)} />
+                    <TextAreaField label="Antecedentes familiares" value={draft.family_history ?? ""}
+                      onChange={(v) => set("family_history", v)} placeholder="¿Alguien más en la familia tartamudea?" />
+                  </div>
+                  <YesNoField label="¿Evita hablar en algunas situaciones?" value={draft.avoids_speaking}
+                    onChange={(v) => set("avoids_speaking", v)} />
+                  <YesNoField label="¿Se frustra o angustia al comunicarse?" value={draft.frustration_communicating}
+                    onChange={(v) => set("frustration_communicating", v)} />
+                </fieldset>
+              </Section>
+
+              <ClinicalFormsSection
+                patient={patient ?? draft}
+                professionals={professionals}
+                staff={staff}
+                canEdit={clinical}
+                onChanged={() => { changed.current = true; }}
+              />
 
               <ReferralsSection
                 patientId={draft.id}
@@ -377,6 +468,35 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   </ul>
                 )}
               </Section>
+
+              <Section icon={FileCheck2} title="Consentimiento y alta">
+                <div className="space-y-3 rounded-2xl border border-border/60 p-4">
+                  <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-semibold">
+                    <Checkbox checked={draft.consent_signed}
+                      onCheckedChange={(v) => {
+                        set("consent_signed", v === true);
+                        if (v === true && !draft.consent_date) set("consent_date", todayKey());
+                      }} />
+                    Consentimiento informado firmado
+                  </label>
+                  {draft.consent_signed ? (
+                    <div className="max-w-xs">
+                      <TextField label="Fecha de firma" type="date" value={draft.consent_date ?? ""}
+                        onChange={(v) => set("consent_date", v || null)} />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[color:var(--status-pending)]">Falta el consentimiento firmado. Escanealo y subilo en Adjuntos.</p>
+                  )}
+                </div>
+                <fieldset disabled={!clinical} className="grid min-w-0 gap-4 disabled:opacity-80 sm:grid-cols-[200px_1fr]">
+                  <TextField label="Fecha de alta" type="date" value={draft.discharge_date ?? ""}
+                    onChange={(v) => set("discharge_date", v || null)} />
+                  <TextAreaField label="Motivo / observaciones del alta" value={draft.discharge_notes ?? ""}
+                    onChange={(v) => set("discharge_notes", v)} />
+                </fieldset>
+              </Section>
+
+              <AttachmentsSection patientId={draft.id} staff={staff} onChanged={() => { changed.current = true; }} />
 
               <PatientHistory key={draft.id} patientId={draft.id} professionals={professionals} />
             </div>
@@ -673,6 +793,21 @@ function FollowupsSection({ patientId, followups, canEdit, staffEmail, onChange 
   );
 }
 
+// ─── Sí / No / Sin dato ──────────────────────────────────────────────────────
+
+function YesNoField({ label, value, onChange }: { label: string; value: boolean | null; onChange: (v: boolean | null) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <div className="flex flex-wrap gap-1.5">
+        <Chip active={value === null} onClick={() => onChange(null)}>Sin dato</Chip>
+        <Chip active={value === true} onClick={() => onChange(true)}>Sí</Chip>
+        <Chip active={value === false} onClick={() => onChange(false)}>No</Chip>
+      </div>
+    </div>
+  );
+}
+
 // ─── Otras condiciones (chips + texto libre) ─────────────────────────────────
 
 function ConditionsField({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
@@ -731,7 +866,9 @@ function emptyToNull(v: unknown) {
 function validate(p: PatientRecord): string | null {
   if (p.first_name.trim().length < 2 || p.last_name.trim().length < 2) return "Nombre y apellido son obligatorios";
   if (!/^\d{6,10}$/.test(p.dni.trim())) return "DNI inválido";
+  if (p.birth_date && p.birth_date > todayKey()) return "La fecha de nacimiento no puede ser futura";
   if (!Number.isInteger(p.age) || p.age < 1 || p.age > 120) return "Edad inválida";
+  if (p.discharge_date && p.discharge_date > todayKey()) return "La fecha de alta no puede ser futura";
   if (p.phone.trim().length < 6) return "Teléfono inválido";
   return null;
 }
