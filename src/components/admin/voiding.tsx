@@ -10,7 +10,7 @@ import { formatShortDate, type Voidable } from "@/lib/patients";
 // Anular en lugar de borrar: la historia clínica se conserva (Ley 26.529).
 // El registro queda visible, tachado, con quién lo anuló y por qué.
 
-type VoidableTable = "patient_referrals" | "patient_followups" | "patient_reports";
+type VoidableTable = "patient_referrals" | "patient_followups" | "patient_reports" | "clinical_forms" | "patient_files";
 
 export async function voidRecord(table: VoidableTable, id: string, reason: string, email: string): Promise<Voidable | null> {
   const patch = { voided_at: new Date().toISOString(), voided_by: email, void_reason: reason };

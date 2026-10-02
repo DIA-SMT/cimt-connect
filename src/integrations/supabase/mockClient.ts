@@ -10,7 +10,8 @@
  *   supabase.auth.signInWithPassword / signOut (cualquier email/contraseña entra como admin)
  *
  * Tablas: professionals, appointments, patients, patient_referrals, patient_followups, patient_reports,
- *         admins, audit_log, intake_requests, workshops, schedule_blocks, satisfaction_surveys
+ *         admins, audit_log, intake_requests, workshops, schedule_blocks, satisfaction_surveys,
+ *         patient_guardians, clinical_forms, patient_files
  *
  * Roles en demo: el rol sale del email con el que se ingresa
  *   admin...@  → Administración · pro...@ → Profesional · cualquier otro → Dirección
@@ -44,6 +45,11 @@ const PATIENT_DEFAULTS: Row = {
   guardian_phone: null,
   locality: null,
   therapy_modes: [],
+  birth_date: null, address: null, school_shift: null, school_grade: null,
+  lives_with: null, siblings: null, main_caregiver: null, parents_dedication: null,
+  arrival_route: null, stutter_onset_age: null, stutter_onset_form: null, stutter_situations: null,
+  previous_treatments: null, family_history: null, avoids_speaking: null, frustration_communicating: null,
+  diagnosis_code: null, consent_signed: false, consent_date: null, discharge_date: null, discharge_notes: null,
 };
 
 // Localidades de ejemplo para que la pestaña Estadísticas muestre algo en demo
@@ -101,6 +107,9 @@ const store: Record<string, Row[]> = {
   schedule_blocks: [],
   satisfaction_surveys: [],
   social_corner_items: [],
+  patient_guardians: [],
+  clinical_forms: [],
+  patient_files: [],
 };
 
 // ── Datos de ejemplo de la fase 2: taller, solicitudes y agenda del día ──
@@ -206,7 +215,8 @@ function agendaRuleError(row: Row): string | null {
 }
 
 // Tablas con historial de cambios (como los triggers de 11_roles_equipo_historial.sql)
-const AUDITED = new Set(["patients", "appointments", "patient_referrals", "patient_followups", "patient_reports", "intake_requests"]);
+const AUDITED = new Set(["patients", "appointments", "patient_referrals", "patient_followups", "patient_reports", "intake_requests",
+  "patient_guardians", "clinical_forms", "patient_files"]);
 let auditSeq = 1;
 
 function audit(table: string, action: "insert" | "update", row: Row, changes: Row) {
@@ -230,9 +240,11 @@ function staffRole(): string | null {
 
 const CLINICAL_PATIENT_FIELDS = [
   "case_status", "professional_id", "main_diagnosis", "other_conditions", "therapy_modes",
-  "cud_status", "is_medicated", "medication", "notes",
+  "cud_status", "is_medicated", "medication", "notes", "diagnosis_code",
+  "stutter_onset_age", "stutter_onset_form", "stutter_situations", "previous_treatments", "family_history",
+  "avoids_speaking", "frustration_communicating", "discharge_date", "discharge_notes",
 ];
-const CLINICAL_TABLES = new Set(["patient_referrals", "patient_followups", "patient_reports"]);
+const CLINICAL_TABLES = new Set(["patient_referrals", "patient_followups", "patient_reports", "clinical_forms"]);
 
 // Una ficha de ejemplo con derivación y seguimiento, para ver la pantalla completa
 const demo = store.patients.find((p) => p.patient_type === "niño");
@@ -245,10 +257,22 @@ if (demo) {
     cud_status: "en_tramite",
     is_medicated: true,
     medication: "Metilfenidato 10 mg/día — indicado por neuropediatría",
-    guardian_name: "Madre",
+    guardian_name: "Laura Gómez",
+    guardian_phone: "381 555-1234",
     therapy_modes: ["individual", "familia"],
+    diagnosis_code: "F98.5",
+    school: "Escuela N° 123",
+    school_shift: "mañana",
+    school_grade: "2do grado",
+    lives_with: "Mamá y hermano",
+    stutter_onset_age: "3 años",
     has_health_insurance: true,
     health_insurance: "Subsidio de Salud",
+  });
+  store.patient_guardians.push({
+    id: "gua-demo-1", patient_id: demo.id, full_name: "Laura Gómez", relationship: "Madre", dni: null,
+    phone: "381 555-1234", email: null, lives_with_patient: true, is_primary: true, notes: null, active: true,
+    created_at: String(demo.created_at), updated_at: String(demo.created_at),
   });
   store.patient_referrals.push({
     id: "ref-demo-1", patient_id: demo.id, kind: "interconsulta", specialty: "Neuropediatría",
@@ -279,6 +303,9 @@ const INSERT_DEFAULTS: Record<string, Row> = {
   patient_referrals: { status: "pendiente", outcome: null, destination: null, reason: null, registered: false },
   patient_followups: {},
   patient_reports: { professional_id: null, diagnosis: null, progress: null, therapy_evolution: null },
+  patient_guardians: { relationship: null, dni: null, phone: null, email: null, lives_with_patient: null, is_primary: false, notes: null, active: true },
+  clinical_forms: { answers: {}, status: "borrador", professional_id: null },
+  patient_files: { mime_type: null, size_bytes: null, category: "otro", description: null },
 };
 
 function currentEmail(): string | null {
@@ -387,7 +414,8 @@ class MockQueryBuilder {
         updated_at: now,
         ...INSERT_DEFAULTS[this._table],
         ...(this._table === "patient_referrals" ? { created_by: currentEmail() } : {}),
-        ...(["patient_followups", "patient_reports"].includes(this._table) ? { author_email: currentEmail() } : {}),
+        ...(["patient_followups", "patient_reports", "clinical_forms"].includes(this._table) ? { author_email: currentEmail() } : {}),
+        ...(this._table === "patient_files" ? { uploaded_by_email: currentEmail() } : {}),
         ...this._insertPayload,
       };
       if (this._table === "appointments") {
@@ -670,6 +698,10 @@ const mockStorage = {
         return { data: { path }, error: null };
       },
       getPublicUrl: (path: string) => ({ data: { publicUrl: mockFiles.get(`${bucket}/${path}`) ?? "" } }),
+      createSignedUrl: async (path: string, _expiresIn: number) => {
+        const url = mockFiles.get(`${bucket}/${path}`);
+        return url ? { data: { signedUrl: url }, error: null } : { data: null, error: { message: "Object not found" } };
+      },
     };
   },
 };
