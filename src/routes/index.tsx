@@ -213,9 +213,29 @@ function Index() {
         {/* Cómo trabajamos: modalidades de atención */}
         <ServicesGrid className="mt-6" />
 
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {/* Para familias */}
+        <Link to="/familias"
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+              <HeartHandshake className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Para familias</h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Consejos para acompañar en casa y cómo trabaja cada área del centro con la tartamudez.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary group-hover:underline">
+            Ver consejos <ArrowRight className="h-4 w-4" />
+          </span>
+        </Link>
+
         {/* Rincón social */}
         <Link to="/rincon"
-          className="group mt-6 flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
               <Sparkles className="h-6 w-6" />
@@ -231,6 +251,7 @@ function Index() {
             Conocé el rincón <ArrowRight className="h-4 w-4" />
           </span>
         </Link>
+        </div>
       </section>
 
       {/* MAP + CONTACT */}
