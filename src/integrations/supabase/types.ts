@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      admins: {
+        Row: {
+          active: boolean
+          created_at: string
+          email: string | null
+          full_name: string | null
+          role: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          role?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      audit_log: {
+        Row: {
+          action: string
+          changed_at: string
+          changed_by: string | null
+          changed_by_email: string | null
+          changes: Json | null
+          id: number
+          patient_id: string | null
+          record_id: string | null
+          table_name: string
+        }
+        Insert: {
+          action: string
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_email?: string | null
+          changes?: Json | null
+          id?: number
+          patient_id?: string | null
+          record_id?: string | null
+          table_name: string
+        }
+        Update: {
+          action?: string
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_email?: string | null
+          changes?: Json | null
+          id?: number
+          patient_id?: string | null
+          record_id?: string | null
+          table_name?: string
+        }
+        Relationships: []
+      }
       appointments: {
         Row: {
           modality: string
@@ -73,6 +136,9 @@ export type Database = {
       }
       patient_followups: {
         Row: {
+          voided_at: string | null
+          voided_by: string | null
+          void_reason: string | null
           author_email: string | null
           created_at: string
           id: string
@@ -81,6 +147,9 @@ export type Database = {
           patient_id: string
         }
         Insert: {
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
           author_email?: string | null
           created_at?: string
           id?: string
@@ -89,6 +158,9 @@ export type Database = {
           patient_id: string
         }
         Update: {
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
           author_email?: string | null
           created_at?: string
           id?: string
@@ -108,6 +180,9 @@ export type Database = {
       }
       patient_referrals: {
         Row: {
+          voided_at: string | null
+          voided_by: string | null
+          void_reason: string | null
           created_at: string
           created_by: string | null
           destination: string | null
@@ -123,6 +198,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
           created_at?: string
           created_by?: string | null
           destination?: string | null
@@ -138,6 +216,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
           created_at?: string
           created_by?: string | null
           destination?: string | null
@@ -164,6 +245,9 @@ export type Database = {
       }
       patient_reports: {
         Row: {
+          voided_at: string | null
+          voided_by: string | null
+          void_reason: string | null
           author_email: string | null
           created_at: string
           diagnosis: string | null
@@ -176,6 +260,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
           author_email?: string | null
           created_at?: string
           diagnosis?: string | null
@@ -188,6 +275,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          voided_at?: string | null
+          voided_by?: string | null
+          void_reason?: string | null
           author_email?: string | null
           created_at?: string
           diagnosis?: string | null
@@ -313,27 +403,39 @@ export type Database = {
       }
       professionals: {
         Row: {
+          active: boolean
+          license: string | null
+          show_on_site: boolean
+          user_id: string | null
           created_at: string
-          days: string
-          description: string
+          days: string | null
+          description: string | null
           id: string
           name: string
           photo_url: string | null
           specialty: string
         }
         Insert: {
+          active?: boolean
+          license?: string | null
+          show_on_site?: boolean
+          user_id?: string | null
           created_at?: string
-          days: string
-          description: string
+          days: string | null
+          description: string | null
           id?: string
           name: string
           photo_url?: string | null
           specialty: string
         }
         Update: {
+          active?: boolean
+          license?: string | null
+          show_on_site?: boolean
+          user_id?: string | null
           created_at?: string
-          days?: string
-          description?: string
+          days?: string | null
+          description?: string | null
           id?: string
           name?: string
           photo_url?: string | null
@@ -346,6 +448,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      current_staff: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      get_public_team: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          name: string
+          specialty: string
+          description: string | null
+          photo_url: string | null
+        }[]
+      }
       get_booked_slots: {
         Args: { p_start: string; p_end: string }
         Returns: {
@@ -355,6 +470,14 @@ export type Database = {
         }[]
       }
       is_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      is_clinical: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      is_director: {
         Args: Record<PropertyKey, never>
         Returns: boolean
       }
@@ -375,6 +498,10 @@ export type Database = {
           p_locality?: string | null
         }
         Returns: string
+      }
+      staff_role: {
+        Args: Record<PropertyKey, never>
+        Returns: string | null
       }
     }
     Enums: {

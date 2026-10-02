@@ -5,18 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { FileText, Loader2, Pencil, Plus, Printer } from "lucide-react";
 import { Section, TextAreaField, TextField, selectClass } from "./fields";
+import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
+import type { Staff } from "@/lib/staff";
 import {
-  PATIENT_TYPE_LABEL, formatShortDate, fullName, insuranceLabel, todayKey,
+  PATIENT_TYPE_LABEL, formatShortDate, fullName, insuranceLabel, professionalSignature, todayKey,
   type PatientRecord, type ProfessionalOption, type Report,
 } from "@/lib/patients";
 
 type ReportDraft = Pick<Report, "report_date" | "professional_id" | "diagnosis" | "progress" | "therapy_evolution">;
 
 // Informes profesionales: diagnóstico, progreso y evolución de la terapia
-export function ReportsSection({ patient, professionals, reports, onChange }: {
+export function ReportsSection({ patient, professionals, reports, canEdit, staff, onChange }: {
   patient: PatientRecord;
   professionals: ProfessionalOption[];
   reports: Report[];
+  /** Solo Profesional y Dirección escriben informes (relevamiento, respuesta 14) */
+  canEdit: boolean;
+  staff: Staff;
   onChange: (r: Report[]) => void;
 }) {
   // null = cerrado, "new" = informe nuevo, id = editando ese informe
@@ -25,7 +30,9 @@ export function ReportsSection({ patient, professionals, reports, onChange }: {
   function newDraft(): ReportDraft {
     return {
       report_date: todayKey(),
-      professional_id: patient.professional_id ?? reports[0]?.professional_id ?? null,
+      // Quien escribe firma el informe; si su usuario no tiene profesional vinculado,
+      // se usa el profesional a cargo o el del último informe
+      professional_id: staff.professional_id ?? patient.professional_id ?? reports[0]?.professional_id ?? null,
       // Arranca con el último diagnóstico cargado, que suele repetirse entre informes
       diagnosis: reports[0]?.diagnosis ?? patient.main_diagnosis ?? "",
       progress: "",
@@ -63,11 +70,16 @@ export function ReportsSection({ patient, professionals, reports, onChange }: {
 
   const proById = new Map(professionals.map((p) => [p.id, p]));
 
+  async function annul(id: string, reason: string) {
+    const patch = await voidRecord("patient_reports", id, reason, staff.email);
+    if (patch) onChange(reports.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
   return (
     <Section
       icon={FileText}
       title="Informes profesionales"
-      action={editing === null && (
+      action={canEdit && editing === null && (
         <Button size="sm" variant="outline" onClick={() => setEditing("new")}>
           <Plus className="mr-1 h-3.5 w-3.5" /> Nuevo informe
         </Button>
@@ -87,31 +99,41 @@ export function ReportsSection({ patient, professionals, reports, onChange }: {
                 <ReportForm initial={r} professionals={professionals} onSave={save} onCancel={() => setEditing(null)} />
               </li>
             ) : (
-              <li key={r.id} className="rounded-2xl border border-border/60 p-4">
+              <li key={r.id} className={`rounded-2xl border border-border/60 p-4 ${r.voided_at ? "opacity-70" : ""}`}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <div className="font-bold">Informe del {formatShortDate(r.report_date)}</div>
+                    <div className={`font-bold ${r.voided_at ? "line-through" : ""}`}>Informe del {formatShortDate(r.report_date)}</div>
                     <div className="text-xs text-muted-foreground">
                       {r.professional_id && proById.has(r.professional_id)
-                        ? `${proById.get(r.professional_id)!.name} — ${proById.get(r.professional_id)!.specialty}`
+                        ? `${professionalSignature(proById.get(r.professional_id)!)} · ${proById.get(r.professional_id)!.specialty}`
                         : "Sin profesional asignado"}
                     </div>
                   </div>
-                  <div className="flex gap-1.5">
-                    <Button size="sm" variant="outline" disabled={editing !== null} onClick={() => setEditing(r.id)}>
-                      <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
-                    </Button>
-                    <Button size="sm" variant="outline"
-                      onClick={() => printReport(r, patient, r.professional_id ? proById.get(r.professional_id) : undefined)}>
-                      <Printer className="mr-1 h-3.5 w-3.5" /> Imprimir
-                    </Button>
-                  </div>
+                  {!r.voided_at && (
+                    <div className="flex gap-1.5">
+                      {canEdit && (
+                        <Button size="sm" variant="outline" disabled={editing !== null} onClick={() => setEditing(r.id)}>
+                          <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline"
+                        onClick={() => printReport(r, patient, r.professional_id ? proById.get(r.professional_id) : undefined)}>
+                        <Printer className="mr-1 h-3.5 w-3.5" /> Imprimir
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <dl className="mt-3 space-y-2 text-sm">
                   <ReportField label="Diagnóstico" value={r.diagnosis} />
                   <ReportField label="Progreso" value={r.progress} />
                   <ReportField label="Evolución de la terapia" value={r.therapy_evolution} />
                 </dl>
+                <VoidedBanner item={r} />
+                {canEdit && !r.voided_at && (
+                  <div className="mt-2 flex justify-end">
+                    <VoidButton what="el informe" onConfirm={(reason) => annul(r.id, reason)} />
+                  </div>
+                )}
               </li>
             ),
           )}
@@ -147,7 +169,7 @@ function ReportForm({ initial, professionals, onSave, onCancel }: {
           <select id="report_professional" value={draft.professional_id ?? ""} className={selectClass}
             onChange={(e) => set("professional_id", e.target.value || null)}>
             <option value="">Sin asignar</option>
-            {professionals.map((p) => (
+            {professionals.filter((p) => p.active !== false || p.id === draft.professional_id).map((p) => (
               <option key={p.id} value={p.id}>{p.name} — {p.specialty}</option>
             ))}
           </select>
@@ -231,7 +253,9 @@ function printReport(r: Report, p: PatientRecord, pro: ProfessionalOption | unde
   ${block("Diagnóstico", r.diagnosis)}
   ${block("Progreso", r.progress)}
   ${block("Evolución de la terapia", r.therapy_evolution)}
-  <div class="firma">${pro ? `${esc(pro.name)}<br>${esc(pro.specialty)}` : "Firma y sello del profesional"}</div>
+  <div class="firma">${pro
+      ? `${esc(pro.name)}<br>${esc(pro.specialty)}${pro.license ? `<br>MP ${esc(pro.license)}` : ""}`
+      : "Firma y sello del profesional"}</div>
   <footer>Documento de uso interno — contiene información de salud confidencial.</footer>
   <script>window.onload = () => { window.print(); };</script>
 </body></html>`;
