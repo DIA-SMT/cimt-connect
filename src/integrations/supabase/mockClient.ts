@@ -100,6 +100,7 @@ const store: Record<string, Row[]> = {
   workshops: [],
   schedule_blocks: [],
   satisfaction_surveys: [],
+  social_corner_items: [],
 };
 
 // ── Datos de ejemplo de la fase 2: taller, solicitudes y agenda del día ──
@@ -152,6 +153,27 @@ function demoDay(offset: number): string {
   });
 }
 let practiceSeq = 2;
+
+// Rincón social de ejemplo (el contenido real lo carga 14_rincon_social.sql)
+store.social_corner_items.push(
+  { id: "sc-1", slug: "yo-y-la-tartamudez", category: "libros", title: "Yo y la tartamudez",
+    subtitle: "Libro de la Municipalidad de San Miguel de Tucumán",
+    description: "Relatos de familias y de personas con tartamudez que se atienden en el CIMT.",
+    link_url: "https://smt.gob.ar/nota/yo-y-la-tartamudez/101", link_label: "Leer en la Biblioteca Digital",
+    image_url: null, featured: true, published: true, sort_order: 1 },
+  { id: "sc-2", slug: "el-discurso-del-rey", category: "peliculas", title: "El discurso del rey", subtitle: "Película, 2010",
+    description: "El rey Jorge VI trabajó su tartamudez junto a su terapeuta para poder hablarle a su país.",
+    link_url: "https://es.wikipedia.org/wiki/El_discurso_del_rey", link_label: "Más información",
+    image_url: null, featured: false, published: true, sort_order: 10 },
+  { id: "sc-3", slug: "emily-blunt", category: "artistas", title: "Emily Blunt", subtitle: "Actriz",
+    description: "Tartamudeaba de chica; la actuación la ayudó a ganar confianza para hablar.",
+    link_url: "https://es.wikipedia.org/wiki/Emily_Blunt", link_label: "Más información",
+    image_url: null, featured: false, published: true, sort_order: 30 },
+  { id: "sc-4", slug: "tiger-woods", category: "deportistas", title: "Tiger Woods", subtitle: "Golfista",
+    description: "Tartamudeaba de niño y practicaba hablando en voz alta hasta sentirse más seguro.",
+    link_url: "https://es.wikipedia.org/wiki/Tiger_Woods", link_label: "Más información",
+    image_url: null, featured: false, published: false, sort_order: 40 },
+);
 
 // Encuestas de satisfacción de ejemplo (fase 5)
 {

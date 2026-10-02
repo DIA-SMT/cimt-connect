@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox } from "lucide-react";
+import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
@@ -14,6 +14,7 @@ import { PatientRecordSheet } from "@/components/admin/PatientRecordSheet";
 import { TeamTab } from "@/components/admin/TeamTab";
 import { AgendaTab } from "@/components/admin/AgendaTab";
 import { IntakeTab } from "@/components/admin/IntakeTab";
+import { SocialCornerTab } from "@/components/admin/SocialCornerTab";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
 import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
@@ -54,7 +55,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "agenda" | "solicitudes" | "pacientes" | "estadisticas" | "dashboard" | "equipo";
+type Tab = "agenda" | "solicitudes" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
 
 type AuthState =
   | { kind: "loading" }
@@ -403,6 +404,8 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             icon={<BarChart3 className="h-4 w-4" />} label="Estadísticas" />
           <TabButton active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")}
             icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
+          <TabButton active={activeTab === "rincon"} onClick={() => setActiveTab("rincon")}
+            icon={<Sparkles className="h-4 w-4" />} label="Rincón social" />
           {isDirector(staff.role) && (
             <TabButton active={activeTab === "equipo"} onClick={() => setActiveTab("equipo")}
               icon={<UserCog className="h-4 w-4" />} label="Equipo" />
@@ -418,6 +421,8 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
         ) : activeTab === "estadisticas" ? (
           <StatsTab key={patientsVersion} professionals={professionals} />
+        ) : activeTab === "rincon" ? (
+          <SocialCornerTab />
         ) : activeTab === "equipo" && isDirector(staff.role) ? (
           <TeamTab currentEmail={staff.email} onProfessionalsChanged={loadProfessionals} />
         ) : (

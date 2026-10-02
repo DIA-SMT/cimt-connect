@@ -605,6 +605,60 @@ export type Database = {
         }
         Relationships: []
       }
+      social_corner_items: {
+        Row: {
+          category: string
+          created_at: string
+          created_by_email: string | null
+          description: string
+          featured: boolean
+          id: string
+          image_url: string | null
+          link_label: string | null
+          link_url: string | null
+          published: boolean
+          slug: string | null
+          sort_order: number
+          subtitle: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          created_by_email?: string | null
+          description: string
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          link_label?: string | null
+          link_url?: string | null
+          published?: boolean
+          slug?: string | null
+          sort_order?: number
+          subtitle?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          created_by_email?: string | null
+          description?: string
+          featured?: boolean
+          id?: string
+          image_url?: string | null
+          link_label?: string | null
+          link_url?: string | null
+          published?: boolean
+          slug?: string | null
+          sort_order?: number
+          subtitle?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       workshops: {
         Row: {
           canceled: boolean
