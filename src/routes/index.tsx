@@ -221,9 +221,9 @@ function Index() {
               <HeartHandshake className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Para familias</h3>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Para familias y escuelas</h3>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Consejos para acompañar en casa y cómo trabaja cada área del centro con la tartamudez.
+                Consejos para acompañar en casa y en el aula, y cómo prevenir el bullying.
               </p>
             </div>
           </div>
