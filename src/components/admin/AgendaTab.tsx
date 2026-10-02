@@ -727,7 +727,7 @@ function TomorrowDialog({ professionals, onClose }: { professionals: Professiona
     const w = window.open("", "_blank");
     if (!w) { toast.error("Permití las ventanas emergentes para imprimir"); return; }
     w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Turnos del ${formatShortDate(day)}</title>
-      <style>body{font-family:system-ui,sans-serif;margin:24px;font-size:12pt}h1{font-size:15pt}table{border-collapse:collapse;width:100%}
+      <style>html{color-scheme:light;background:#fff}body{font-family:system-ui,sans-serif;margin:24px;font-size:12pt;color:#1a2b3c}h1{font-size:15pt}table{border-collapse:collapse;width:100%}
       td,th{border:1px solid #ccd;padding:6px;text-align:left}th{background:#eef3f8}</style></head><body>
       <h1>CIMT — Turnos del ${esc(longDate(day))}</h1><table><tr><th>Hora</th><th>Paciente</th><th>Teléfono</th><th>Profesional</th><th>Modalidad</th><th>Avisado</th></tr>${rows}</table>
       <script>window.onload=()=>window.print()</script></body></html>`);

@@ -417,7 +417,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
         ) : activeTab === "estadisticas" ? (
-          <StatsTab key={patientsVersion} />
+          <StatsTab key={patientsVersion} professionals={professionals} />
         ) : activeTab === "equipo" && isDirector(staff.role) ? (
           <TeamTab currentEmail={staff.email} onProfessionalsChanged={loadProfessionals} />
         ) : (

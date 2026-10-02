@@ -2,31 +2,29 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowRightLeft, ClipboardX, Download, Loader2, UserPlus, Users, CalendarCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
-  CASE_STATUS_LABEL, PATIENT_TYPE_LABEL, THERAPY_MODE_LABEL, todayKey,
-  type CaseStatus, type PatientType, type TherapyMode,
-} from "@/lib/patients";
+  ArrowRightLeft, CalendarCheck, ClipboardX, Copy, Download, FileText, Hourglass, Inbox, Loader2, Smile, UserPlus, Users, UserX,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
+import {
+  computeStats, fmt1, weekOf,
+  type Range, type Row, type Stats, type StatsData, type StatAppt, type StatIntake, type StatPatient,
+  type StatReferral, type StatSurvey, type StatWorkshop,
+} from "@/lib/stats";
+import { exportStatsCsv, printWeeklyReport } from "./weeklyReport";
 
-// Estadísticas para reportar (relevamiento: cantidad de pacientes, ingresos,
-// localidad, derivaciones). "Situación actual" no depende del período; el resto
-// cuenta solo lo que pasó dentro del período elegido.
+// Estadísticas para reportar (relevamiento 38–39). "Situación actual" no
+// depende del período; el resto cuenta solo lo que pasó dentro del período.
+// El informe semanal para la Gerencia de Datos usa el mismo cálculo.
 
-type StatPatient = {
-  id: string;
-  created_at: string;
-  locality: string | null;
-  patient_type: PatientType;
-  case_status: CaseStatus;
-  has_health_insurance: boolean | null;
-  therapy_modes: TherapyMode[] | null;
-};
-type StatReferral = { kind: string; specialty: string; status: string; registered: boolean; referral_date: string };
-type StatAppt = { appointment_date: string; status: string; modality: string | null };
-
-type Period = "mes" | "3m" | "anio" | "12m" | "todo";
+type Period = "semana" | "semana_pasada" | "mes" | "3m" | "anio" | "12m" | "todo";
 const PERIOD_LABEL: Record<Period, string> = {
+  semana: "Esta semana",
+  semana_pasada: "Semana pasada",
   mes: "Este mes",
   "3m": "Últimos 3 meses",
   anio: "Este año",
@@ -34,104 +32,65 @@ const PERIOD_LABEL: Record<Period, string> = {
   todo: "Todo",
 };
 
-type Row = { name: string; value: number };
-
 const BAR_COLOR = "hsl(200 78% 42%)";
 const GRID = "hsl(215 20% 92%)";
 const TICK = { fontSize: 11, fill: "hsl(215 16% 45%)" };
 
-export function StatsTab() {
-  const [patients, setPatients] = useState<StatPatient[]>([]);
-  const [referrals, setReferrals] = useState<StatReferral[]>([]);
-  const [appts, setAppts] = useState<StatAppt[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<Period>("12m");
+export function StatsTab({ professionals }: { professionals: ProfessionalOption[] }) {
+  const [data, setData] = useState<Omit<StatsData, "professionals"> | null>(null);
+  const [period, setPeriod] = useState<Period>("mes");
+  const [weekly, setWeekly] = useState(false);
 
   useEffect(() => {
     Promise.all([
-      supabase.from("patients")
-        .select("id, created_at, locality, patient_type, case_status, has_health_insurance, therapy_modes"),
-      supabase.from("patient_referrals").select("kind, specialty, status, registered, referral_date"),
-      supabase.from("appointments").select("appointment_date, status, modality"),
-    ]).then(([p, r, a]) => {
-      if (p.error || r.error || a.error) toast.error("No se pudieron cargar todas las estadísticas");
-      setPatients((p.data ?? []) as StatPatient[]);
-      setReferrals((r.data ?? []) as StatReferral[]);
-      setAppts((a.data ?? []) as StatAppt[]);
-      setLoading(false);
+      supabase.from("patients").select("id, created_at, locality, patient_type, case_status, has_health_insurance, therapy_modes, other_conditions, age"),
+      supabase.from("patient_referrals").select("specialty, status, registered, referral_date, voided_at"),
+      supabase.from("appointments").select("patient_id, professional_id, appointment_date, status, modality, attendance"),
+      supabase.from("intake_requests").select("created_at, status, workshop_id, workshop_attended, patient_id"),
+      supabase.from("workshops").select("id, workshop_date, canceled"),
+      supabase.from("satisfaction_surveys").select("*"),
+    ]).then(([p, r, a, i, w, s]) => {
+      if ([p, r, a, i, w, s].some((x) => x.error)) toast.error("No se pudieron cargar todas las estadísticas");
+      setData({
+        patients: (p.data ?? []) as StatPatient[],
+        referrals: (r.data ?? []) as StatReferral[],
+        appts: (a.data ?? []) as StatAppt[],
+        intake: (i.data ?? []) as StatIntake[],
+        workshops: (w.data ?? []) as StatWorkshop[],
+        surveys: (s.data ?? []) as StatSurvey[],
+      });
     });
   }, []);
 
-  const stats = useMemo(() => {
-    const start = periodStart(period);
-    const inPeriod = (isoDate: string) => !start || isoDate.slice(0, 10) >= start;
+  const stats = useMemo(
+    () => (data ? computeStats({ ...data, professionals }, periodRange(period)) : null),
+    [data, professionals, period],
+  );
 
-    // Situación actual
-    const active = patients.filter((p) => p.case_status === "en_evaluacion" || p.case_status === "en_tratamiento").length;
-    const pendingReferrals = referrals.filter((r) => r.status === "pendiente").length;
-    const unregistered = referrals.filter((r) => !r.registered && r.status !== "cancelada").length;
-    const byStatus = (Object.keys(CASE_STATUS_LABEL) as CaseStatus[])
-      .map((s) => ({ name: CASE_STATUS_LABEL[s], value: patients.filter((p) => p.case_status === s).length }));
-    const byTherapy = (Object.keys(THERAPY_MODE_LABEL) as TherapyMode[])
-      .map((m) => ({ name: THERAPY_MODE_LABEL[m], value: patients.filter((p) => p.therapy_modes?.includes(m)).length }));
-
-    // Período
-    const newPatients = patients.filter((p) => inPeriod(localDateKey(p.created_at)));
-    const periodReferrals = referrals.filter((r) => inPeriod(r.referral_date));
-    const periodAppts = appts.filter((a) => a.status !== "cancelado" && inPeriod(a.appointment_date));
-    const telemed = periodAppts.filter((a) => a.modality === "telemedicina").length;
-
-    return {
-      start,
-      total: patients.length,
-      active,
-      pendingReferrals,
-      unregistered,
-      byStatus,
-      byTherapy,
-      newCount: newPatients.length,
-      byMonth: countByMonth(newPatients.map((p) => localDateKey(p.created_at)), start),
-      byLocality: topN(groupLocalities(newPatients.map((p) => p.locality)), 10),
-      byType: (Object.keys(PATIENT_TYPE_LABEL) as PatientType[])
-        .map((t) => ({ name: PATIENT_TYPE_LABEL[t], value: newPatients.filter((p) => p.patient_type === t).length })),
-      byInsurance: [
-        { name: "Con obra social", value: newPatients.filter((p) => p.has_health_insurance === true).length },
-        { name: "Sin obra social", value: newPatients.filter((p) => p.has_health_insurance === false).length },
-        { name: "Sin dato", value: newPatients.filter((p) => p.has_health_insurance === null).length },
-      ],
-      referralCount: periodReferrals.length,
-      referralRegistered: periodReferrals.filter((r) => r.registered).length,
-      bySpecialty: topN(countBy(periodReferrals.map((r) => r.specialty.trim() || "Sin especialidad")), 10),
-      apptCount: periodAppts.length,
-      telemed,
-    };
-  }, [patients, referrals, appts, period]);
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-7 w-7 animate-spin text-primary" />
-      </div>
-    );
+  if (!data || !stats) {
+    return <div className="flex justify-center py-24"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>;
   }
 
-  const periodText = period === "todo" ? "desde el inicio" : PERIOD_LABEL[period].toLowerCase();
-
+  const s = stats;
   return (
     <div className="mt-6 space-y-8">
       {/* Situación actual */}
       <section className="space-y-4">
-        <h2 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Situación actual</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Situación actual</h2>
+          <Button onClick={() => setWeekly(true)} className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+            <FileText className="mr-1.5 h-4 w-4" /> Informe semanal
+          </Button>
+        </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Tile icon={Users} label="Pacientes registrados" value={stats.total} />
-          <Tile icon={Users} label="Activos" value={stats.active} sub="En evaluación o en tratamiento" />
-          <Tile icon={ArrowRightLeft} label="Derivaciones pendientes" value={stats.pendingReferrals} />
-          <Tile icon={ClipboardX} label="Sin registrar" value={stats.unregistered} sub="Derivaciones / interconsultas" />
+          <Tile icon={Users} label="Pacientes registrados" value={s.current.total} />
+          <Tile icon={Users} label="Activos" value={s.current.active} sub="En evaluación o en tratamiento" />
+          <Tile icon={ArrowRightLeft} label="Derivaciones pendientes" value={s.current.pendingReferrals} />
+          <Tile icon={ClipboardX} label="Sin registrar" value={s.current.unregistered} sub="Derivaciones / interconsultas" />
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
-          <HBarCard title="Pacientes por estado del caso" data={stats.byStatus} />
-          <HBarCard title="Pacientes por tipo de terapia" data={stats.byTherapy}
-            note="Un paciente puede estar en más de una." />
+          <HBarCard title="Pacientes por estado del caso" data={s.current.byStatus} />
+          <HBarCard title="Pacientes por tipo de terapia" data={s.current.byTherapy} note="Un paciente puede estar en más de una." />
         </div>
       </section>
 
@@ -149,24 +108,63 @@ export function StatsTab() {
                 {PERIOD_LABEL[p]}
               </button>
             ))}
-            <Button size="sm" variant="outline" className="ml-1" onClick={() => exportStatsCsv(stats, period)}>
-              <Download className="mr-1.5 h-3.5 w-3.5" /> Exportar a Excel
+            <Button size="sm" variant="outline" className="ml-1" onClick={() => exportStatsCsv(s, PERIOD_LABEL[period])}>
+              <Download className="mr-1.5 h-3.5 w-3.5" /> Excel
             </Button>
           </div>
         </div>
+        {s.range.start && (
+          <p className="-mt-2 text-xs text-muted-foreground">
+            Del {formatShortDate(s.range.start)} al {formatShortDate(s.range.end ?? todayKey())}
+          </p>
+        )}
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <Tile icon={UserPlus} label="Ingresos" value={stats.newCount} sub={`Pacientes nuevos ${periodText}`} />
-          <Tile icon={ArrowRightLeft} label="Derivaciones" value={stats.referralCount}
-            sub={stats.referralCount ? `${stats.referralRegistered} registradas` : "Derivaciones e interconsultas"} />
-          <Tile icon={CalendarCheck} label="Turnos" value={stats.apptCount}
-            sub={stats.apptCount ? `${stats.telemed} por telemedicina` : "Sin contar cancelados"} />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Tile icon={UserPlus} label="Ingresos" value={s.admissions.count} sub="Pacientes nuevos" />
+          <Tile icon={Inbox} label="Solicitudes" value={s.intake.received} sub="Recibidas desde el sitio" />
+          <Tile icon={CalendarCheck} label="Prácticas" value={s.attention.practices}
+            sub={`${s.attention.scheduled} turnos · ${s.attention.telemed} telemedicina`} />
+          <Tile icon={UserX} label="Ausentismo" value={s.attention.absenteeism === null ? "—" : `${s.attention.absenteeism}%`}
+            sub={`${s.attention.absent} ausentes · ${s.attention.justified} justificados`} />
+          <Tile icon={ArrowRightLeft} label="Derivaciones" value={s.referrals.count} sub={`${s.referrals.registered} registradas`} />
+          <Tile icon={Hourglass} label="Tiempo de espera" value={s.intake.waitMedian === null ? "—" : `${fmt1(s.intake.waitMedian)} d`}
+            sub={s.intake.waitCount ? `Mediana de ${s.intake.waitCount} · solicitud → 1ª sesión` : "Solicitud → primera sesión"} />
+          <Tile icon={Smile} label="Satisfacción" value={s.satisfaction.overall === null ? "—" : `${fmt1(s.satisfaction.overall)} / 5`}
+            sub={`${s.satisfaction.count} encuesta${s.satisfaction.count === 1 ? "" : "s"}`} />
+          <Tile icon={Users} label="Talleres" value={s.intake.workshops}
+            sub={`${s.intake.workshopAttended} de ${s.intake.workshopEnrolled} familias asistieron`} />
         </div>
 
-        <ChartCard title="Ingresos por mes">
-          {stats.byMonth.every((m) => m.value === 0) ? <Empty /> : (
+        {/* Atención por profesional */}
+        <Card title="Atención por profesional" note="Prácticas = turnos marcados como presentes.">
+          {s.attention.byProfessional.length === 0 ? <Empty /> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr><th className="py-1.5 pr-3">Profesional</th><th className="px-2 text-right">Turnos</th><th className="px-2 text-right">Prácticas</th>
+                    <th className="px-2 text-right">Ausentes</th><th className="px-2 text-right">Justif.</th><th className="pl-2 text-right">Asistencia</th></tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {s.attention.byProfessional.map((r) => (
+                    <tr key={r.name}>
+                      <td className="py-1.5 pr-3 font-medium">{r.name}</td>
+                      <td className="px-2 text-right tabular-nums">{r.scheduled}</td>
+                      <td className="px-2 text-right tabular-nums">{r.present}</td>
+                      <td className="px-2 text-right tabular-nums">{r.absent}</td>
+                      <td className="px-2 text-right tabular-nums">{r.justified}</td>
+                      <td className="pl-2 text-right tabular-nums">{r.present + r.absent ? `${Math.round((r.present / (r.present + r.absent)) * 100)}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Ingresos por mes">
+          {s.admissions.byMonth.every((m) => m.value === 0) ? <Empty /> : (
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={stats.byMonth} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+              <BarChart data={s.admissions.byMonth} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                 <CartesianGrid stroke={GRID} vertical={false} />
                 <XAxis dataKey="name" tick={TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                 <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -175,34 +173,163 @@ export function StatsTab() {
               </BarChart>
             </ResponsiveContainer>
           )}
-        </ChartCard>
+        </Card>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <HBarCard title="Ingresos por localidad" data={stats.byLocality} />
-          <HBarCard title="Derivaciones por especialidad" data={stats.bySpecialty} unit="derivaciones" />
-          <HBarCard title="Ingresos por edad" data={stats.byType} />
-          <HBarCard title="Ingresos por obra social" data={stats.byInsurance} />
+          <HBarCard title="Ingresos por localidad" data={s.admissions.byLocality} />
+          <HBarCard title="Ingresos por edad" data={s.admissions.byAge} />
+          <HBarCard title="Condiciones asociadas (ingresos)" data={s.admissions.byCondition} />
+          <HBarCard title="Ingresos por obra social" data={s.admissions.byInsurance} />
+          <HBarCard title="Solicitudes por estado" data={s.intake.byStatus} unit="solicitudes" />
+          <HBarCard title="Derivaciones por especialidad" data={s.referrals.bySpecialty} unit="derivaciones" />
         </div>
+
+        <SatisfactionCard stats={s} />
       </section>
+
+      {weekly && <WeeklyDialog data={{ ...data, professionals }} onClose={() => setWeekly(false)} />}
     </div>
+  );
+}
+
+function periodRange(p: Period): Range {
+  const today = todayKey();
+  const now = new Date();
+  const first = (monthsBack: number) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  };
+  if (p === "semana") return weekOf(today);
+  if (p === "semana_pasada") {
+    const last = new Date(now); last.setDate(now.getDate() - 7);
+    return weekOf(`${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`);
+  }
+  if (p === "mes") return { start: first(0), end: null };
+  if (p === "3m") return { start: first(2), end: null };
+  if (p === "12m") return { start: first(11), end: null };
+  if (p === "anio") return { start: `${now.getFullYear()}-01-01`, end: null };
+  return { start: null, end: null };
+}
+
+// ─── Satisfacción ────────────────────────────────────────────────────────────
+
+function SatisfactionCard({ stats: s }: { stats: Stats }) {
+  const url = typeof window !== "undefined" ? `${window.location.origin}/encuesta` : "/encuesta";
+  const items: [string, number | null][] = [
+    ["Calidad de la atención", s.satisfaction.attention],
+    ["Claridad de las explicaciones", s.satisfaction.communication],
+    ["Trato del equipo", s.satisfaction.treatment],
+    ["Satisfacción general", s.satisfaction.overall],
+  ];
+  return (
+    <Card title="Satisfacción (encuesta anónima)" note="Promedios de 1 a 5 de las encuestas respondidas en el período.">
+      <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
+        <div className="space-y-3">
+          {s.satisfaction.count === 0 ? (
+            <p className="text-sm text-muted-foreground">Todavía no hay encuestas en este período.</p>
+          ) : (
+            <>
+              {items.map(([label, v]) => (
+                <div key={label}>
+                  <div className="flex justify-between text-sm"><span>{label}</span><strong className="tabular-nums">{fmt1(v)}</strong></div>
+                  <div className="mt-1 h-2 rounded-full bg-muted">
+                    <div className="h-2 rounded-full" style={{ width: `${((v ?? 0) / 5) * 100}%`, backgroundColor: BAR_COLOR }} />
+                  </div>
+                </div>
+              ))}
+              <p className="text-sm"><strong>{s.satisfaction.recommend}%</strong> recomendaría el CIMT.</p>
+            </>
+          )}
+          <div className="rounded-xl bg-[color:var(--primary-soft)] p-3 text-sm">
+            <div className="font-semibold text-[color:var(--primary-deep)]">Link para compartir la encuesta</div>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="truncate rounded bg-background px-2 py-1 text-xs">{url}</code>
+              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard?.writeText(url); toast.success("Link copiado"); }}>
+                <Copy className="mr-1 h-3.5 w-3.5" /> Copiar
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-sm font-semibold">Comentarios recientes</div>
+          {s.satisfaction.comments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin comentarios.</p>
+          ) : (
+            <ul className="space-y-2">
+              {s.satisfaction.comments.map((c, i) => (
+                <li key={i} className="rounded-xl border border-border/60 p-2.5 text-sm">
+                  <p className="whitespace-pre-wrap">“{c.text}”</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatShortDate(c.date)} · {c.respondent}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Informe semanal ─────────────────────────────────────────────────────────
+
+function WeeklyDialog({ data, onClose }: { data: StatsData; onClose: () => void }) {
+  const [day, setDay] = useState(() => {
+    // Por defecto, la semana pasada (la que se reporta)
+    const d = new Date(); d.setDate(d.getDate() - 7);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const week = weekOf(day);
+  const stats = useMemo(() => computeStats(data, week), [data, week.start]); // eslint-disable-line react-hooks/exhaustive-deps
+  const label = `Semana del ${formatShortDate(week.start)} al ${formatShortDate(week.end)}`;
+
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">Informe semanal</DialogTitle>
+          <DialogDescription>Para la Gerencia de Datos. Lunes a domingo.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="week-day">Cualquier día de la semana a reportar</Label>
+          <Input id="week-day" type="date" value={day} onChange={(e) => e.target.value && setDay(e.target.value)} />
+          <p className="text-sm font-semibold text-[color:var(--primary-deep)]">{label}</p>
+        </div>
+        <ul className="grid grid-cols-2 gap-2 text-sm">
+          <li>Ingresos: <strong>{stats.admissions.count}</strong></li>
+          <li>Solicitudes: <strong>{stats.intake.received}</strong></li>
+          <li>Prácticas: <strong>{stats.attention.practices}</strong></li>
+          <li>Ausentismo: <strong>{stats.attention.absenteeism === null ? "—" : `${stats.attention.absenteeism}%`}</strong></li>
+          <li>Derivaciones: <strong>{stats.referrals.count}</strong></li>
+          <li>Encuestas: <strong>{stats.satisfaction.count}</strong></li>
+        </ul>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={() => exportStatsCsv(stats, label)}>
+            <Download className="mr-1.5 h-4 w-4" /> Excel
+          </Button>
+          <Button onClick={() => printWeeklyReport(stats, label)} className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+            <FileText className="mr-1.5 h-4 w-4" /> Imprimir / PDF
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 // ─── Piezas ──────────────────────────────────────────────────────────────────
 
-function Tile({ icon: Icon, label, value, sub }: { icon: typeof Users; label: string; value: number; sub?: string }) {
+function Tile({ icon: Icon, label, value, sub }: { icon: typeof Users; label: string; value: number | string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <Icon className="h-4 w-4 text-primary" /> {label}
       </div>
-      <div className="mt-2 text-3xl font-extrabold text-[color:var(--primary-deep)]">{value}</div>
+      <div className="mt-2 text-3xl font-extrabold tabular-nums text-[color:var(--primary-deep)]">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>}
     </div>
   );
 }
 
-function ChartCard({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+function Card({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-[var(--shadow-card)]">
       <h3 className="text-base font-bold text-[color:var(--primary-deep)]">{title}</h3>
@@ -212,11 +339,11 @@ function ChartCard({ title, note, children }: { title: string; note?: string; ch
   );
 }
 
-// Barras horizontales: sirven para categorías con nombres largos (localidades, especialidades)
+// Barras horizontales: categorías con nombres largos (localidades, especialidades)
 function HBarCard({ title, data, note, unit = "pacientes" }: { title: string; data: Row[]; note?: string; unit?: string }) {
   const height = Math.max(120, data.length * 34 + 16);
   return (
-    <ChartCard title={title} note={note}>
+    <Card title={title} note={note}>
       {data.every((d) => d.value === 0) ? <Empty /> : (
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} layout="vertical" margin={{ top: 0, right: 36, left: 4, bottom: 0 }}>
@@ -229,7 +356,7 @@ function HBarCard({ title, data, note, unit = "pacientes" }: { title: string; da
           </BarChart>
         </ResponsiveContainer>
       )}
-    </ChartCard>
+    </Card>
   );
 }
 
@@ -247,140 +374,4 @@ function StatTooltip({ active, payload, label, unit }: {
 
 function Empty() {
   return <p className="py-8 text-center text-sm text-muted-foreground">Sin datos en este período.</p>;
-}
-
-// ─── Cálculos ────────────────────────────────────────────────────────────────
-
-const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-
-// created_at viene en UTC: se pasa a fecha local para no correr los ingresos de las 21 hs al día siguiente
-function localDateKey(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// Primer día del período (null = sin límite)
-function periodStart(period: Period): string | null {
-  const now = new Date();
-  const first = (monthsBack: number) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-  };
-  if (period === "mes") return first(0);
-  if (period === "3m") return first(2);
-  if (period === "12m") return first(11);
-  if (period === "anio") return `${now.getFullYear()}-01-01`;
-  return null;
-}
-
-function countByMonth(dates: string[], start: string | null): Row[] {
-  const today = todayKey();
-  const from = start ?? (dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : today);
-  const counts = new Map<string, number>();
-  for (const d of dates) counts.set(d.slice(0, 7), (counts.get(d.slice(0, 7)) ?? 0) + 1);
-
-  const rows: Row[] = [];
-  let [y, m] = from.slice(0, 7).split("-").map(Number);
-  const [ey, em] = today.slice(0, 7).split("-").map(Number);
-  while (y < ey || (y === ey && m <= em)) {
-    const key = `${y}-${String(m).padStart(2, "0")}`;
-    rows.push({ name: `${MONTHS[m - 1]} ${String(y).slice(2)}`, value: counts.get(key) ?? 0 });
-    m++;
-    if (m > 12) { m = 1; y++; }
-  }
-  return rows;
-}
-
-function countBy(values: string[]): Row[] {
-  const map = new Map<string, number>();
-  for (const v of values) map.set(v, (map.get(v) ?? 0) + 1);
-  return [...map.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-}
-
-// Agrupa localidades escritas distinto ("yerba buena", "Yerba Buena ") bajo la forma más usada
-function groupLocalities(values: (string | null)[]): Row[] {
-  const groups = new Map<string, { count: number; spellings: Map<string, number> }>();
-  let missing = 0;
-  for (const raw of values) {
-    const v = raw?.trim().replace(/\s+/g, " ");
-    if (!v) { missing++; continue; }
-    const key = v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-    const g = groups.get(key) ?? { count: 0, spellings: new Map() };
-    g.count++;
-    g.spellings.set(v, (g.spellings.get(v) ?? 0) + 1);
-    groups.set(key, g);
-  }
-  const rows = [...groups.values()].map((g) => ({
-    name: [...g.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0],
-    value: g.count,
-  })).sort((a, b) => b.value - a.value);
-  if (missing) rows.push({ name: "Sin dato", value: missing });
-  return rows;
-}
-
-// Las primeras N y el resto sumado en "Otras" ("Sin dato" siempre queda aparte, al final)
-function topN(rows: Row[], n: number): Row[] {
-  const missing = rows.find((r) => r.name === "Sin dato");
-  const rest = rows.filter((r) => r !== missing);
-  const out = rest.slice(0, n);
-  const others = rest.slice(n).reduce((sum, r) => sum + r.value, 0);
-  if (others) out.push({ name: "Otras", value: others });
-  if (missing) out.push(missing);
-  return out;
-}
-
-// ─── Exportación ─────────────────────────────────────────────────────────────
-
-type Stats = {
-  start: string | null; total: number; active: number; pendingReferrals: number; unregistered: number;
-  byStatus: Row[]; byTherapy: Row[]; newCount: number; byMonth: Row[]; byLocality: Row[]; byType: Row[];
-  byInsurance: Row[]; referralCount: number; referralRegistered: number; bySpecialty: Row[];
-  apptCount: number; telemed: number;
-};
-
-function exportStatsCsv(s: Stats, period: Period) {
-  const rows: (string | number)[][] = [
-    ["Estadísticas CIMT"],
-    ["Generado", todayKey()],
-    ["Período", PERIOD_LABEL[period] + (s.start ? ` (desde ${s.start})` : "")],
-    [],
-    ["SITUACIÓN ACTUAL"],
-    ["Pacientes registrados", s.total],
-    ["Pacientes activos", s.active],
-    ["Derivaciones pendientes", s.pendingReferrals],
-    ["Derivaciones sin registrar", s.unregistered],
-    [],
-    ["Estado del caso", "Pacientes"], ...s.byStatus.map((r) => [r.name, r.value]),
-    [],
-    ["Tipo de terapia", "Pacientes"], ...s.byTherapy.map((r) => [r.name, r.value]),
-    [],
-    ["EN EL PERÍODO"],
-    ["Ingresos (pacientes nuevos)", s.newCount],
-    ["Derivaciones e interconsultas", s.referralCount],
-    ["Derivaciones registradas", s.referralRegistered],
-    ["Turnos (sin cancelados)", s.apptCount],
-    ["Turnos por telemedicina", s.telemed],
-    [],
-    ["Mes", "Ingresos"], ...s.byMonth.map((r) => [r.name, r.value]),
-    [],
-    ["Localidad", "Ingresos"], ...s.byLocality.map((r) => [r.name, r.value]),
-    [],
-    ["Edad", "Ingresos"], ...s.byType.map((r) => [r.name, r.value]),
-    [],
-    ["Obra social", "Ingresos"], ...s.byInsurance.map((r) => [r.name, r.value]),
-    [],
-    ["Especialidad", "Derivaciones"], ...s.bySpecialty.map((r) => [r.name, r.value]),
-  ];
-  const escape = (v: unknown) => {
-    const str = v === undefined || v === null ? "" : String(v);
-    return /[;"\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-  };
-  const csv = rows.map((r) => r.map(escape).join(";")).join("\r\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `estadisticas-cimt-${todayKey()}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
 }

@@ -533,6 +533,42 @@ export type Database = {
         }
         Relationships: []
       }
+      satisfaction_surveys: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          rating_attention: number
+          rating_communication: number
+          rating_overall: number
+          rating_treatment: number
+          respondent: string
+          would_recommend: boolean
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating_attention: number
+          rating_communication: number
+          rating_overall: number
+          rating_treatment: number
+          respondent: string
+          would_recommend: boolean
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating_attention?: number
+          rating_communication?: number
+          rating_overall?: number
+          rating_treatment?: number
+          respondent?: string
+          would_recommend?: boolean
+        }
+        Relationships: []
+      }
       schedule_blocks: {
         Row: {
           active: boolean
@@ -659,6 +695,18 @@ export type Database = {
           p_time: string
           p_modality?: string
           p_locality?: string | null
+        }
+        Returns: string
+      }
+      submit_satisfaction_survey: {
+        Args: {
+          p_respondent: string
+          p_rating_attention: number
+          p_rating_communication: number
+          p_rating_treatment: number
+          p_rating_overall: number
+          p_would_recommend: boolean
+          p_comment: string | null
         }
         Returns: string
       }

@@ -10,7 +10,7 @@
  *   supabase.auth.signInWithPassword / signOut (cualquier email/contraseña entra como admin)
  *
  * Tablas: professionals, appointments, patients, patient_referrals, patient_followups, patient_reports,
- *         admins, audit_log, intake_requests, workshops, schedule_blocks
+ *         admins, audit_log, intake_requests, workshops, schedule_blocks, satisfaction_surveys
  *
  * Roles en demo: el rol sale del email con el que se ingresa
  *   admin...@  → Administración · pro...@ → Profesional · cualquier otro → Dirección
@@ -99,6 +99,7 @@ const store: Record<string, Row[]> = {
   intake_requests: [],
   workshops: [],
   schedule_blocks: [],
+  satisfaction_surveys: [],
 };
 
 // ── Datos de ejemplo de la fase 2: taller, solicitudes y agenda del día ──
@@ -151,6 +152,19 @@ function demoDay(offset: number): string {
   });
 }
 let practiceSeq = 2;
+
+// Encuestas de satisfacción de ejemplo (fase 5)
+{
+  const ago = (days: number) => new Date(Date.now() - days * 86400000).toISOString();
+  store.satisfaction_surveys.push(
+    { id: "sv-1", respondent: "familiar", rating_attention: 5, rating_communication: 4, rating_treatment: 5, rating_overall: 5,
+      would_recommend: true, comment: "Muy buena atención, mi hijo va contento a las sesiones.", created_at: ago(1) },
+    { id: "sv-2", respondent: "paciente", rating_attention: 4, rating_communication: 4, rating_treatment: 5, rating_overall: 4,
+      would_recommend: true, comment: null, created_at: ago(3) },
+    { id: "sv-3", respondent: "familiar", rating_attention: 3, rating_communication: 2, rating_treatment: 4, rating_overall: 3,
+      would_recommend: true, comment: "Costó conseguir el primer turno, pero el equipo es muy amable.", created_at: ago(9) },
+  );
+}
 
 // Reglas de agenda (como el trigger appointments_agenda_rules del script 12)
 function agendaRuleError(row: Row): string | null {
@@ -467,6 +481,21 @@ function rpc(fn: string, args: Row = {}) {
       data: { role: row.role, full_name: row.full_name, email: row.email, professional_id: pro?.id ?? null },
       error: null,
     });
+  }
+
+  if (fn === "submit_satisfaction_survey") {
+    const ratings = [args.p_rating_attention, args.p_rating_communication, args.p_rating_treatment, args.p_rating_overall].map(Number);
+    if (!["paciente", "familiar"].includes(String(args.p_respondent)) || ratings.some((r) => !(r >= 1 && r <= 5))
+        || typeof args.p_would_recommend !== "boolean") {
+      return Promise.resolve({ data: null, error: { message: "INVALID_DATA: Respondé todas las preguntas" } });
+    }
+    const row: Row = {
+      id: `sv-${Date.now()}`, respondent: args.p_respondent, rating_attention: ratings[0], rating_communication: ratings[1],
+      rating_treatment: ratings[2], rating_overall: ratings[3], would_recommend: args.p_would_recommend,
+      comment: String(args.p_comment ?? "").trim().slice(0, 600) || null, created_at: new Date().toISOString(),
+    };
+    store.satisfaction_surveys.push(row);
+    return Promise.resolve({ data: row.id, error: null });
   }
 
   if (fn === "get_upcoming_workshops") {
