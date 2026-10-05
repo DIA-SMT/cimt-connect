@@ -1,6 +1,6 @@
-// Folletos del CIMT pasados a texto (página /familias), para que se lean bien
-// en el celular, sean accesibles y LIA pueda recomendarlos. Los originales
-// quedan en public/folletos/ para ver, descargar o imprimir.
+// Folletos y textos del CIMT para la página /familias, pasados a texto para que
+// se lean bien en el celular, sean accesibles y LIA pueda recomendarlos. Los
+// folletos originales quedan en public/folletos/ para ver, descargar o imprimir.
 //
 // Para sumar un folleto: agregar un Guide a GUIDES con los bloques que tenga.
 
@@ -12,12 +12,15 @@ export type GuideBlock = {
    * tips: consejos, en recuadro celeste
    * list: lista común en recuadro blanco
    * alert: recuadro de atención (bullying)
+   * text: párrafos en recuadro blanco (items = párrafos)
    */
-  kind: "numbered" | "tips" | "list" | "alert";
+  kind: "numbered" | "tips" | "list" | "alert" | "text";
   title: string;
   items: GuideItem[];
   /** Sublistas con título dentro del mismo recuadro */
   groups?: { title: string; items: GuideItem[] }[];
+  /** Enlace a otra sección de la página (por ejemplo, del bullying al Área legal) */
+  link?: { href: string; text: string; label: string };
 };
 
 export type Guide = {
@@ -27,11 +30,13 @@ export type Guide = {
   audience: string;
   title: string;
   subtitle?: string;
-  intro?: { title: string; text: string };
+  intro?: { title?: string; text: string };
   blocks: GuideBlock[];
   keyMessage?: string;
+  /** Muestra al final cómo comunicarse con el centro para consultar */
+  contact?: boolean;
   /** Imágenes del folleto original y, si hay, el PDF para descargar */
-  original: { images: { src: string; alt: string; width: number; height: number }[]; pdf?: string };
+  original?: { images: { src: string; alt: string; width: number; height: number }[]; pdf?: string };
 };
 
 export const GUIDES: Guide[] = [
@@ -144,6 +149,11 @@ export const GUIDES: Guide[] = [
           { title: "Reforzar fortalezas", text: "Destacar los logros académicos y personales del alumno." },
           { title: "Trabajo en red", text: "Articular con docentes, familia y equipo de orientación para generar un ambiente seguro y protector." },
         ],
+        link: {
+          href: "#area-legal",
+          text: "Si un chico sufre burlas u hostigamiento por su forma de hablar, el Área Legal del centro también puede orientar a la familia.",
+          label: "Conocé el Área Legal",
+        },
       },
     ],
     original: {
@@ -153,5 +163,43 @@ export const GUIDES: Guide[] = [
       ],
       pdf: "/folletos/psicopedagogia.pdf",
     },
+  },
+  {
+    // Texto de la Dirección del CIMT (Área Legal, propuesta para canales digitales)
+    id: "area-legal",
+    area: "Área legal",
+    audience: "Para pacientes y familias",
+    title: "¿Sabías que el Centro también cuenta con Área Legal?",
+    intro: {
+      text: "La tartamudez no ocurre solamente dentro del consultorio. A veces, la forma de hablar puede dar lugar a burlas, hostigamiento, discriminación, exclusión o dificultades para participar plenamente en la escuela, el trabajo u otros espacios. Por eso, el abordaje integral también contempla la orientación jurídica.",
+    },
+    blocks: [
+      {
+        kind: "tips",
+        title: "¿Cuándo podés consultar?",
+        items: [
+          "Si vos o un familiar con tartamudez atraviesan una situación de discriminación o trato desigual.",
+          "Si existen burlas, imitaciones, hostigamiento, bullying o ciberbullying vinculados con la forma de hablar.",
+          "Si no sabés cómo actuar, qué derechos están involucrados o a qué institución recurrir.",
+          "Si necesitás orientación ante una situación escolar, laboral o institucional relacionada con la tartamudez.",
+        ],
+      },
+      {
+        kind: "text",
+        title: "Consultar no es denunciar",
+        items: [
+          "Acercarte al Área Legal no significa que tengas que iniciar una denuncia o un reclamo. Podés consultar para informarte, ser escuchado, conocer tus derechos y recibir orientación sobre los pasos o canales disponibles. Si la situación requiere la intervención de otro organismo, también podemos orientarte sobre dónde recurrir.",
+        ],
+      },
+      {
+        kind: "text",
+        title: "Un abordaje interdisciplinario",
+        items: [
+          "El Área Legal trabaja junto con las demás disciplinas de la Dirección. Cada situación es diferente y puede requerir distintas miradas. La orientación jurídica se suma al acompañamiento integral de la persona con tartamudez y su familia.",
+        ],
+      },
+    ],
+    keyMessage: "Informarte también es cuidar tus derechos.",
+    contact: true,
   },
 ];
