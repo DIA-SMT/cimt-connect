@@ -28,14 +28,24 @@ type Props = {
   onOpenPatient: (patientId: string) => void;
 };
 
-const PX_PER_MIN = 1.4;
+const PX_PER_MIN = 1.6;
 const GRID_HEIGHT = (AGENDA_END_MIN - AGENDA_START_MIN) * PX_PER_MIN;
+const HEADER_H = "h-16";
+// En computadora la grilla usa el scroll de la página: la fila de profesionales
+// queda fija debajo de la barra del sitio (h-16 + borde). En celular la grilla
+// se desplaza de costado y la columna de horas queda fija.
+const STICKY_TOP = "top-0 lg:top-[65px]";
 const UNASSIGNED = "__sin_asignar__";
 
 const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone)";
 
 function firstWorkdayFrom(dateKey: string): string {
   return isWeekendKey(dateKey) ? nextWorkday(dateKey) : dateKey;
+}
+
+function nowMinutes(): number {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
@@ -47,6 +57,13 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
   const [openApptId, setOpenApptId] = useState<string | null>(null);
   const [blocking, setBlocking] = useState(false);
   const [showTomorrow, setShowTomorrow] = useState(false);
+  const [now, setNow] = useState(nowMinutes);
+
+  // Línea de "ahora": se actualiza cada minuto
+  useEffect(() => {
+    const t = setInterval(() => setNow(nowMinutes()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   async function load(d = date) {
     setLoading(true);
@@ -79,6 +96,8 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
 
   const openAppt = appts.find((a) => a.id === openApptId) ?? null;
   const weekend = isWeekendKey(date);
+  const isToday = date === todayKey();
+  const showNow = isToday && now >= AGENDA_START_MIN && now <= AGENDA_END_MIN;
 
   function clickColumn(colId: string, e: React.MouseEvent<HTMLDivElement>) {
     if (colId === UNASSIGNED) return;
@@ -134,21 +153,28 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
           No hay profesionales activos. Cargalos en la pestaña <strong>Equipo</strong> (lo hace la Dirección).
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)]">
-          <div className="flex min-w-fit">
+        <div className="relative overflow-x-auto rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)] lg:overflow-visible">
+          <div className={`flex min-w-full pb-3 ${weekend ? "opacity-60" : ""}`}>
             {/* Eje de horas */}
-            <div className="sticky left-0 z-20 w-14 shrink-0 border-r border-border/60 bg-card">
-              <div className="h-14 border-b border-border/60" />
+            <div className="sticky left-0 z-20 w-16 shrink-0 border-r border-border/60 bg-card">
+              <div className={`sticky ${STICKY_TOP} z-30 ${HEADER_H} rounded-tl-2xl border-b border-border/60 bg-card`} />
               <div className="relative" style={{ height: GRID_HEIGHT }}>
-                {Array.from({ length: (AGENDA_END_MIN - AGENDA_START_MIN) / 30 + 1 }, (_, i) => {
-                  const min = AGENDA_START_MIN + i * 30;
+                {Array.from({ length: (AGENDA_END_MIN - AGENDA_START_MIN) / 60 + 1 }, (_, i) => {
+                  const min = AGENDA_START_MIN + i * 60;
                   return (
-                    <div key={min} className="absolute right-2 -translate-y-1/2 text-[11px] text-muted-foreground"
+                    <div key={min}
+                      className={`absolute right-2 text-xs font-medium tabular-nums text-muted-foreground ${i === 0 ? "translate-y-1" : "-translate-y-1/2"}`}
                       style={{ top: (min - AGENDA_START_MIN) * PX_PER_MIN }}>
-                      {min % 60 === 0 ? fromMinutes(min) : ""}
+                      {fromMinutes(min)}
                     </div>
                   );
                 })}
+                {showNow && (
+                  <div className="absolute right-0 z-10 -translate-y-1/2 rounded-l-full bg-[color:var(--status-occupied)] px-1.5 py-px text-[10px] font-bold tabular-nums text-white"
+                    style={{ top: (now - AGENDA_START_MIN) * PX_PER_MIN }}>
+                    {fromMinutes(now)}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -156,17 +182,28 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
               const colAppts = active.filter((a) => (a.professional_id ?? UNASSIGNED) === col.id);
               const colBlocks = blocks.filter((b) => !b.professional_id || b.professional_id === col.id);
               return (
-                <div key={col.id} className="w-48 shrink-0 border-r border-border/60 last:border-r-0">
-                  <div className="h-14 border-b border-border/60 px-2 py-1.5">
-                    <div className="truncate text-sm font-bold text-[color:var(--primary-deep)]" title={col.title}>{col.title}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{col.subtitle}</div>
+                <div key={col.id} className="group/col min-w-[11.5rem] flex-1 basis-0 border-r border-border/60 last:border-r-0 lg:min-w-0">
+                  <div className={`sticky ${STICKY_TOP} z-10 ${HEADER_H} border-b border-border/60 bg-card/95 px-3 py-2 backdrop-blur group-last/col:rounded-tr-2xl`}>
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-bold text-[color:var(--primary-deep)]" title={col.title}>{col.title}</div>
+                        <div className="truncate text-xs text-muted-foreground">{col.subtitle}</div>
+                      </div>
+                      {colAppts.length > 0 && (
+                        <span className="shrink-0 rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[color:var(--primary-deep)]"
+                          title={`${colAppts.length} turno${colAppts.length === 1 ? "" : "s"}`}>
+                          {colAppts.length}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className={`relative ${col.id === UNASSIGNED ? "" : "cursor-copy"}`} style={{ height: GRID_HEIGHT }}
+                  <div className={`relative ${col.id === UNASSIGNED ? "bg-muted/30" : "cursor-copy transition-colors hover:bg-primary/[0.03]"}`}
+                    style={{ height: GRID_HEIGHT }}
                     onClick={(e) => clickColumn(col.id, e)}
                     title={col.id === UNASSIGNED ? undefined : "Clic en un horario libre para dar un turno"}>
                     {/* Líneas de cada media hora */}
                     {Array.from({ length: (AGENDA_END_MIN - AGENDA_START_MIN) / 30 }, (_, i) => (
-                      <div key={i} className={`absolute inset-x-0 border-t ${i % 2 === 0 ? "border-border/70" : "border-border/30"}`}
+                      <div key={i} className={`absolute inset-x-0 border-t ${i % 2 === 0 ? "border-border/80" : "border-dashed border-border/40"}`}
                         style={{ top: i * 30 * PX_PER_MIN }} />
                     ))}
                     {colBlocks.map((b) => {
@@ -183,6 +220,10 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
                         </div>
                       );
                     })}
+                    {showNow && (
+                      <div className="pointer-events-none absolute inset-x-0 z-[5] border-t-2 border-[color:var(--status-occupied)]"
+                        style={{ top: (now - AGENDA_START_MIN) * PX_PER_MIN }} />
+                    )}
                     {colAppts.map((a) => (
                       <ApptBlock key={a.id} appt={a} onClick={(e) => { e.stopPropagation(); setOpenApptId(a.id); }} />
                     ))}
@@ -191,7 +232,11 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
               );
             })}
           </div>
-          {loading && <div className="flex justify-center py-3"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>}
+          {loading && (
+            <div className="pointer-events-none absolute inset-x-0 top-20 flex justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            </div>
+          )}
         </div>
       )}
 
@@ -226,21 +271,38 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
 
 function ApptBlock({ appt: a, onClick }: { appt: AgendaAppointment; onClick: (e: React.MouseEvent) => void }) {
   const start = toMinutes(a.appointment_time);
-  const style = a.attendance === "presente" ? "bg-[color:var(--status-available-bg)] border-[color:var(--status-available)]/50"
-    : a.attendance === "ausente" ? "bg-[color:var(--status-occupied-bg)] border-[color:var(--status-occupied)]/50"
-    : a.attendance === "justificado" ? "bg-muted border-border"
-    : a.status === "pendiente" ? "bg-[color:var(--status-pending-bg)] border-[color:var(--status-pending)]/50"
-    : "bg-[color:var(--primary-soft)] border-primary/40";
+  const height = Math.max(a.duration_minutes * PX_PER_MIN - 3, 20);
+  const compact = height < 44;
+  const style = a.attendance === "presente" ? "bg-[color:var(--status-available-bg)] border-l-[color:var(--status-available)]"
+    : a.attendance === "ausente" ? "bg-[color:var(--status-occupied-bg)] border-l-[color:var(--status-occupied)]"
+    : a.attendance === "justificado" ? "bg-muted border-l-muted-foreground/50"
+    : a.status === "pendiente" ? "bg-[color:var(--status-pending-bg)] border-l-[color:var(--status-pending)]"
+    : "bg-[color:var(--primary-soft)] border-l-primary";
+  const name = a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "Sin paciente";
+  const time = `${a.appointment_time.slice(0, 5)}–${fromMinutes(start + a.duration_minutes)}`;
   return (
-    <button onClick={onClick}
-      className={`absolute inset-x-1 overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-[11px] leading-tight shadow-sm hover:z-10 hover:shadow-md ${style}`}
-      style={{ top: (start - AGENDA_START_MIN) * PX_PER_MIN + 1, height: Math.max(a.duration_minutes * PX_PER_MIN - 2, 18) }}>
-      <div className="flex items-center gap-1 font-semibold">
-        {a.appointment_time.slice(0, 5)}
-        {a.modality === "telemedicina" && <Video className="h-3 w-3" aria-label="Telemedicina" />}
-        {a.attendance && <span className="ml-auto text-[10px] uppercase">{a.attendance === "justificado" ? "just." : a.attendance}</span>}
-      </div>
-      <div className="truncate">{a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "Sin paciente"}</div>
+    <button onClick={onClick} title={`${time} · ${name}`}
+      className={`absolute inset-x-1.5 z-[6] overflow-hidden rounded-lg border border-black/5 border-l-4 px-2 text-left leading-tight shadow-sm transition hover:z-20 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${compact ? "py-0.5" : "py-1"} ${style}`}
+      style={{ top: (start - AGENDA_START_MIN) * PX_PER_MIN + 1.5, height }}>
+      {compact ? (
+        <div className="flex items-center gap-1.5 truncate text-xs">
+          <span className="font-semibold tabular-nums">{a.appointment_time.slice(0, 5)}</span>
+          <span className="truncate font-medium">{name}</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1 text-[11px] font-semibold tabular-nums text-foreground/70">
+            {time}
+            {a.modality === "telemedicina" && <Video className="h-3 w-3" aria-label="Telemedicina" />}
+            {a.attendance && (
+              <span className="ml-auto rounded bg-white/60 px-1 text-[9px] font-bold uppercase tracking-wide">
+                {a.attendance === "justificado" ? "just." : a.attendance}
+              </span>
+            )}
+          </div>
+          <div className="truncate text-[13px] font-semibold text-foreground">{name}</div>
+        </>
+      )}
     </button>
   );
 }
