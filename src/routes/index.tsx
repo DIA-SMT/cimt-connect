@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   MapPin, Clock, Phone, Mail, CalendarCheck, Stethoscope,
   HeartHandshake, Users, ShieldCheck, Sparkles, ArrowRight,
-  Info, AlertCircle, Baby, Activity, CheckCircle2,
+  Info, AlertCircle, Baby, Activity, CheckCircle2, Scale,
 } from "lucide-react";
 import heroImg from "@/assets/hero.jpg";
 import { CENTER } from "@/lib/center";
@@ -212,10 +212,10 @@ function Index() {
         {/* Cómo trabajamos: modalidades de atención */}
         <ServicesGrid className="mt-6" />
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
         {/* Para familias */}
         <Link to="/familias"
-          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] md:p-7">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
               <HeartHandshake className="h-6 w-6" />
@@ -232,9 +232,28 @@ function Index() {
           </span>
         </Link>
 
+        {/* Área legal */}
+        <a href="/familias#area-legal"
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] md:p-7">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
+              <Scale className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">También tenemos Área Legal</h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                Orientación ante burlas, bullying o discriminación por la forma de hablar. Consultar no es denunciar.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary group-hover:underline">
+            Saber más <ArrowRight className="h-4 w-4" />
+          </span>
+        </a>
+
         {/* Rincón social */}
         <Link to="/rincon"
-          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] sm:flex-row sm:items-center sm:justify-between md:p-7">
+          className="group flex flex-col items-start gap-4 rounded-3xl border border-primary/20 bg-[var(--gradient-soft)] p-6 transition-shadow hover:shadow-[var(--shadow-elegant)] md:p-7">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[var(--shadow-card)]">
               <Sparkles className="h-6 w-6" />

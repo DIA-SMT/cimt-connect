@@ -33,7 +33,7 @@ export const DISCIPLINES = [
   },
   {
     name: "Asesoría legal",
-    description: "Orientación sobre derechos y trámites vinculados a la discapacidad.",
+    description: "Orientación jurídica ante discriminación, burlas o bullying vinculados con la tartamudez, y sobre derechos y trámites.",
   },
 ] as const;
 

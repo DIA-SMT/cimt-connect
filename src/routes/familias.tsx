@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, ArrowRight, Download, FileText, Heart, HeartHandshake, Lightbulb, Quote } from "lucide-react";
+import { AlertTriangle, ArrowRight, Download, FileText, Heart, HeartHandshake, Lightbulb, MapPin, Phone, Quote } from "lucide-react";
 import { GUIDES, type Guide, type GuideBlock, type GuideItem } from "@/lib/guides";
+import { CENTER } from "@/lib/center";
 
 // Para familias y escuelas: los folletos de las áreas del CIMT (src/lib/guides.ts)
 
@@ -10,9 +11,9 @@ export const Route = createFileRoute("/familias")({
   head: () => ({
     meta: [
       { title: "Para familias y escuelas — CIMT" },
-      { name: "description", content: "Consejos del Centro Integral Municipal de Tartamudez para acompañar en casa y en la escuela, y cómo prevenir el bullying." },
+      { name: "description", content: "Consejos del Centro Integral Municipal de Tartamudez para acompañar en casa y en la escuela, cómo prevenir el bullying y orientación legal." },
       { property: "og:title", content: "Para familias y escuelas — CIMT" },
-      { property: "og:description", content: "Consejos para la familia, para docentes y cómo prevenir el bullying." },
+      { property: "og:description", content: "Consejos para la familia, para docentes, cómo prevenir el bullying y orientación legal." },
     ],
   }),
   component: FamiliasPage,
@@ -30,7 +31,7 @@ function FamiliasPage() {
             Acompañar también es parte de la terapia
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-            Consejos del equipo del CIMT para acompañar en casa y en la escuela.
+            Consejos del equipo del CIMT para acompañar en casa y en la escuela, y orientación sobre tus derechos.
           </p>
           {GUIDES.length > 1 && (
             <nav aria-label="Folletos" className="mt-7 flex flex-wrap justify-center gap-2">
@@ -66,6 +67,7 @@ function GuideSection({ guide: g }: { guide: Guide }) {
   const numbered = g.blocks.filter((b) => b.kind === "numbered");
   const boxes = g.blocks.filter((b) => b.kind === "tips" || b.kind === "list");
   const alerts = g.blocks.filter((b) => b.kind === "alert");
+  const texts = g.blocks.filter((b) => b.kind === "text");
   return (
     <section id={g.id} className="scroll-mt-24 space-y-8">
       <div className="text-center">
@@ -76,8 +78,8 @@ function GuideSection({ guide: g }: { guide: Guide }) {
 
       {g.intro && (
         <div className="mx-auto max-w-3xl rounded-3xl border border-border/60 bg-card p-6 text-center shadow-[var(--shadow-card)] md:p-7">
-          <h3 className="font-hand text-3xl text-[color:var(--primary-deep)]">{g.intro.title}</h3>
-          <p className="mt-2 leading-relaxed text-foreground/85 md:text-lg">{g.intro.text}</p>
+          {g.intro.title && <h3 className="font-hand mb-2 text-3xl text-[color:var(--primary-deep)]">{g.intro.title}</h3>}
+          <p className="leading-relaxed text-foreground/85 md:text-lg">{g.intro.text}</p>
         </div>
       )}
 
@@ -91,6 +93,19 @@ function GuideSection({ guide: g }: { guide: Guide }) {
 
       {alerts.map((b) => <AlertBlock key={b.title} block={b} />)}
 
+      {texts.length > 0 && (
+        <div className={`grid gap-6 ${texts.length > 1 ? "md:grid-cols-2" : "mx-auto max-w-3xl"}`}>
+          {texts.map((b) => (
+            <div key={b.title} className="rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] md:p-7">
+              <h3 className="font-hand text-3xl text-[color:var(--primary-deep)]">{b.title}</h3>
+              {b.items.map((p) => (
+                <p key={splitItem(p).title} className="mt-3 leading-relaxed text-foreground/85">{splitItem(p).title}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
       {g.keyMessage && (
         <figure className="mx-auto max-w-3xl rounded-3xl border-2 border-[color:var(--primary-deep)]/30 bg-card p-6 text-center md:p-8">
           <Quote className="mx-auto h-6 w-6 text-primary" aria-hidden />
@@ -101,7 +116,9 @@ function GuideSection({ guide: g }: { guide: Guide }) {
         </figure>
       )}
 
-      <OriginalFolleto guide={g} />
+      {g.contact && <ContactBox />}
+
+      {g.original && <OriginalFolleto guide={g} />}
     </section>
   );
 }
@@ -171,6 +188,31 @@ function AlertBlock({ block }: { block: GuideBlock }) {
           );
         })}
       </ul>
+      {block.link && (
+        <p className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t border-border/60 pt-4 text-center text-sm text-muted-foreground">
+          {block.link.text}
+          <a href={block.link.href} className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
+            {block.link.label} <ArrowRight className="h-3.5 w-3.5" />
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ContactBox() {
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 rounded-3xl border border-primary/20 bg-[color:var(--primary-soft)] p-6 text-center md:p-7">
+      <h3 className="font-hand text-3xl text-[color:var(--primary-deep)]">¿Querés hacer una consulta?</h3>
+      <p className="text-foreground/85">Comunicate con el centro y te orientamos.</p>
+      <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
+        <a href={CENTER.phoneHref} className="inline-flex items-center gap-1.5 font-semibold text-[color:var(--primary-deep)] hover:underline">
+          <Phone className="h-4 w-4" /> {CENTER.phoneDisplay} <span className="font-normal text-muted-foreground">({CENTER.phoneNote.toLowerCase()})</span>
+        </a>
+        <span className="inline-flex items-center gap-1.5 text-foreground/85">
+          <MapPin className="h-4 w-4 text-primary" /> {CENTER.address} · {CENTER.hoursLong}
+        </span>
+      </div>
     </div>
   );
 }
@@ -192,6 +234,7 @@ function ItemList({ items }: { items: GuideItem[] }) {
 }
 
 function OriginalFolleto({ guide: g }: { guide: Guide }) {
+  if (!g.original) return null;
   const { images, pdf } = g.original;
   const download = pdf ?? images[0]?.src;
   return (
