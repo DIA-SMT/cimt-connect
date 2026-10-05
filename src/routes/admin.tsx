@@ -418,7 +418,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
             onCountChange={setNewRequests} />
         ) : activeTab === "pacientes" ? (
-          <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} />
+          <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} staff={staff} />
         ) : activeTab === "estadisticas" ? (
           <StatsTab key={patientsVersion} professionals={professionals} />
         ) : activeTab === "rincon" ? (
