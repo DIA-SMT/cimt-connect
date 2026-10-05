@@ -10,6 +10,8 @@ import {
   Ban, CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, Loader2, Phone, Printer, Video,
 } from "lucide-react";
 import { selectClass } from "./fields";
+import { useMine } from "./useMine";
+import { ScopeToggle } from "./ScopeToggle";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
 import {
@@ -43,6 +45,17 @@ function firstWorkdayFrom(dateKey: string): string {
   return isWeekendKey(dateKey) ? nextWorkday(dateKey) : dateKey;
 }
 
+// Lunes de la semana de una fecha (AAAA-MM-DD)
+function mondayOf(dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const offset = (new Date(y, m - 1, d).getDay() + 6) % 7;
+  return addDays(dateKey, -offset);
+}
+
+const WEEKDAY = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+
+type Column = { id: string; title: string; subtitle: string; proId: string; date: string };
+
 function nowMinutes(): number {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
@@ -53,11 +66,12 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
   const [appts, setAppts] = useState<AgendaAppointment[]>([]);
   const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState<{ professional_id: string; time: string } | null>(null);
+  const [creating, setCreating] = useState<{ professional_id: string; time: string; date: string } | null>(null);
   const [openApptId, setOpenApptId] = useState<string | null>(null);
   const [blocking, setBlocking] = useState(false);
   const [showTomorrow, setShowTomorrow] = useState(false);
   const [now, setNow] = useState(nowMinutes);
+  const mine = useMine("agenda", staff);
 
   // Línea de "ahora": se actualiza cada minuto
   useEffect(() => {
@@ -65,12 +79,25 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
     return () => clearInterval(t);
   }, []);
 
-  async function load(d = date) {
+  // "Mis turnos" muestra la semana (lunes a viernes) del profesional del usuario
+  const weekMode = mine.on && !!mine.professionalId;
+  const weekDays = useMemo(() => {
+    const monday = mondayOf(date);
+    return [0, 1, 2, 3, 4].map((i) => addDays(monday, i));
+  }, [date]);
+
+  async function load() {
     setLoading(true);
-    const [a, b] = await Promise.all([
-      supabase.from("appointments").select(APPT_SELECT).eq("appointment_date", d).order("appointment_time"),
-      supabase.from("schedule_blocks").select("*").eq("block_date", d).eq("active", true),
-    ]);
+    let qa = supabase.from("appointments").select(APPT_SELECT);
+    let qb = supabase.from("schedule_blocks").select("*").eq("active", true);
+    if (weekMode) {
+      qa = qa.gte("appointment_date", weekDays[0]).lte("appointment_date", weekDays[4]).eq("professional_id", mine.professionalId!);
+      qb = qb.gte("block_date", weekDays[0]).lte("block_date", weekDays[4]);
+    } else {
+      qa = qa.eq("appointment_date", date);
+      qb = qb.eq("block_date", date);
+    }
+    const [a, b] = await Promise.all([qa.order("appointment_time"), qb]);
     if (a.error || b.error) toast.error("No se pudo cargar la agenda");
     setAppts((a.data ?? []) as AgendaAppointment[]);
     setBlocks((b.data ?? []) as ScheduleBlock[]);
@@ -78,56 +105,77 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(date); }, [date]);
+  useEffect(() => { load(); }, [date, weekMode]);
 
   const active = appts.filter((a) => a.status !== "cancelado");
   const canceledCount = appts.length - active.length;
+  const myPro = professionals.find((p) => p.id === mine.professionalId);
+  const today = todayKey();
 
-  const columns = useMemo(() => {
-    const cols: { id: string; title: string; subtitle: string }[] = professionals
+  // Día: una columna por profesional. Semana ("Mis turnos"): una columna por día.
+  const columns = useMemo<Column[]>(() => {
+    if (weekMode) {
+      return weekDays.map((d, i) => ({
+        id: d, proId: mine.professionalId!, date: d,
+        title: `${WEEKDAY[i]} ${formatShortDate(d).slice(0, 5)}`,
+        subtitle: d === today ? "Hoy" : "",
+      }));
+    }
+    const cols: Column[] = professionals
       .filter((p) => p.active !== false || active.some((a) => a.professional_id === p.id))
       .sort((a, b) => a.specialty.localeCompare(b.specialty) || a.name.localeCompare(b.name))
-      .map((p) => ({ id: p.id, title: p.name, subtitle: `${p.specialty} · ${p.session_minutes ?? 30} min` }));
+      .map((p) => ({ id: p.id, proId: p.id, date, title: p.name, subtitle: `${p.specialty} · ${p.session_minutes ?? 30} min` }));
     if (active.some((a) => !a.professional_id)) {
-      cols.push({ id: UNASSIGNED, title: "Sin profesional", subtitle: "Pedidos del sitio anterior" });
+      cols.push({ id: UNASSIGNED, proId: UNASSIGNED, date, title: "Sin profesional", subtitle: "Pedidos del sitio anterior" });
     }
     return cols;
-  }, [professionals, active]);
+  }, [professionals, active, weekMode, weekDays, mine.professionalId, date, today]);
 
   const openAppt = appts.find((a) => a.id === openApptId) ?? null;
-  const weekend = isWeekendKey(date);
-  const isToday = date === todayKey();
-  const showNow = isToday && now >= AGENDA_START_MIN && now <= AGENDA_END_MIN;
+  const weekend = !weekMode && isWeekendKey(date);
+  const nowInRange = now >= AGENDA_START_MIN && now <= AGENDA_END_MIN;
+  const showNow = nowInRange && columns.some((c) => c.date === today);
+  const step = weekMode ? 7 : 1;
 
-  function clickColumn(colId: string, e: React.MouseEvent<HTMLDivElement>) {
-    if (colId === UNASSIGNED) return;
+  function clickColumn(col: Column, e: React.MouseEvent<HTMLDivElement>) {
+    if (col.proId === UNASSIGNED) return;
     const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
     const min = AGENDA_START_MIN + Math.floor(y / PX_PER_MIN / 10) * 10;
-    setCreating({ professional_id: colId, time: fromMinutes(Math.min(min, AGENDA_END_MIN - 10)) });
+    setCreating({ professional_id: col.proId, date: col.date, time: fromMinutes(Math.min(min, AGENDA_END_MIN - 10)) });
   }
 
   return (
     <div className="mt-6 space-y-4">
       {/* Barra */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="icon" variant="outline" aria-label="Día anterior" onClick={() => setDate(addDays(date, -1))}>
+        <Button size="icon" variant="outline" aria-label={weekMode ? "Semana anterior" : "Día anterior"} onClick={() => setDate(addDays(date, -step))}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <Input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)}
           aria-label="Fecha de la agenda" className="h-10 w-auto" />
-        <Button size="icon" variant="outline" aria-label="Día siguiente" onClick={() => setDate(addDays(date, 1))}>
+        <Button size="icon" variant="outline" aria-label={weekMode ? "Semana siguiente" : "Día siguiente"} onClick={() => setDate(addDays(date, step))}>
           <ChevronRight className="h-4 w-4" />
         </Button>
         <Button variant="outline" onClick={() => setDate(firstWorkdayFrom(todayKey()))}>Hoy</Button>
-        <h2 className="ml-1 font-display text-lg font-bold capitalize text-[color:var(--primary-deep)]">{longDate(date)}</h2>
-        <div className="ml-auto flex flex-wrap gap-2">
+        <h2 className="ml-1 font-display text-lg font-bold text-[color:var(--primary-deep)]">
+          {weekMode ? (
+            <>
+              Semana del {formatShortDate(weekDays[0]).slice(0, 5)} al {formatShortDate(weekDays[4]).slice(0, 5)}
+              {myPro && <span className="ml-2 text-sm font-medium text-muted-foreground">{myPro.name}</span>}
+            </>
+          ) : <span className="capitalize">{longDate(date)}</span>}
+        </h2>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {mine.available && (
+            <ScopeToggle on={mine.on} onChange={mine.setOn} allLabel="Todo el equipo" mineLabel="Mis turnos" />
+          )}
           <Button variant="outline" onClick={() => setShowTomorrow(true)}>
             <CalendarClock className="mr-1.5 h-4 w-4" /> Turnos de mañana
           </Button>
           <Button variant="outline" onClick={() => setBlocking(true)}>
             <Ban className="mr-1.5 h-4 w-4" /> Bloquear horario
           </Button>
-          <Button onClick={() => setCreating({ professional_id: columns.find((c) => c.id !== UNASSIGNED)?.id ?? "", time: "09:00" })}
+          <Button onClick={() => setCreating({ professional_id: columns.find((c) => c.proId !== UNASSIGNED)?.proId ?? "", time: "09:00", date })}
             className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
             <CalendarPlus className="mr-1.5 h-4 w-4" /> Nuevo turno
           </Button>
@@ -135,15 +183,23 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span>{active.length} turno{active.length === 1 ? "" : "s"}{canceledCount > 0 && ` · ${canceledCount} cancelado${canceledCount === 1 ? "" : "s"}`}</span>
+        <span>
+          {active.length} turno{active.length === 1 ? "" : "s"}{weekMode ? " tuyos en la semana" : ""}
+          {canceledCount > 0 && ` · ${canceledCount} cancelado${canceledCount === 1 ? "" : "s"}`}
+        </span>
         <Legend color="var(--primary-soft)" label="Confirmado" />
         <Legend color="var(--status-pending-bg)" label="Pendiente" />
         <Legend color="var(--status-available-bg)" label="Presente" />
         <Legend color="var(--status-occupied-bg)" label="Ausente" />
         {weekend && <span className="font-semibold text-[color:var(--status-occupied)]">Fin de semana: el centro no atiende</span>}
+        {mine.needsLink && (
+          <span className="rounded-full bg-[color:var(--status-pending-bg)] px-2 py-0.5 font-semibold text-[color:var(--status-pending)]">
+            Para ver solo tus turnos, pedile a la Dirección que vincule tu usuario con tu profesional (pestaña Equipo).
+          </span>
+        )}
         {blocks.map((b) => (
           <span key={b.id} className="rounded-full bg-muted px-2 py-0.5 font-semibold">
-            Bloqueo: {b.reason}{b.start_time ? ` (${b.start_time.slice(0, 5)}–${b.end_time?.slice(0, 5)})` : " (todo el día)"}
+            Bloqueo{weekMode ? ` ${formatShortDate(b.block_date).slice(0, 5)}` : ""}: {b.reason}{b.start_time ? ` (${b.start_time.slice(0, 5)}–${b.end_time?.slice(0, 5)})` : " (todo el día)"}
           </span>
         ))}
       </div>
@@ -179,15 +235,16 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
             </div>
 
             {columns.map((col) => {
-              const colAppts = active.filter((a) => (a.professional_id ?? UNASSIGNED) === col.id);
-              const colBlocks = blocks.filter((b) => !b.professional_id || b.professional_id === col.id);
+              const colAppts = active.filter((a) => (a.professional_id ?? UNASSIGNED) === col.proId && a.appointment_date === col.date);
+              const colBlocks = blocks.filter((b) => b.block_date === col.date && (!b.professional_id || b.professional_id === col.proId));
+              const colToday = weekMode && col.date === today;
               return (
                 <div key={col.id} className="group/col min-w-[11.5rem] flex-1 basis-0 border-r border-border/60 last:border-r-0 lg:min-w-0">
-                  <div className={`sticky ${STICKY_TOP} z-10 ${HEADER_H} border-b border-border/60 bg-card/95 px-3 py-2 backdrop-blur group-last/col:rounded-tr-2xl`}>
+                  <div className={`sticky ${STICKY_TOP} z-10 ${HEADER_H} border-b px-3 py-2 backdrop-blur group-last/col:rounded-tr-2xl ${colToday ? "border-primary/40 bg-[color:var(--primary-soft)]/95" : "border-border/60 bg-card/95"}`}>
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-bold text-[color:var(--primary-deep)]" title={col.title}>{col.title}</div>
-                        <div className="truncate text-xs text-muted-foreground">{col.subtitle}</div>
+                        <div className={`truncate text-xs ${colToday ? "font-semibold text-primary" : "text-muted-foreground"}`}>{col.subtitle}</div>
                       </div>
                       {colAppts.length > 0 && (
                         <span className="shrink-0 rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[color:var(--primary-deep)]"
@@ -199,7 +256,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
                   </div>
                   <div className={`relative ${col.id === UNASSIGNED ? "bg-muted/30" : "cursor-copy transition-colors hover:bg-primary/[0.03]"}`}
                     style={{ height: GRID_HEIGHT }}
-                    onClick={(e) => clickColumn(col.id, e)}
+                    onClick={(e) => clickColumn(col, e)}
                     title={col.id === UNASSIGNED ? undefined : "Clic en un horario libre para dar un turno"}>
                     {/* Líneas de cada media hora */}
                     {Array.from({ length: (AGENDA_END_MIN - AGENDA_START_MIN) / 30 }, (_, i) => (
@@ -220,7 +277,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
                         </div>
                       );
                     })}
-                    {showNow && (
+                    {nowInRange && col.date === today && (
                       <div className="pointer-events-none absolute inset-x-0 z-[5] border-t-2 border-[color:var(--status-occupied)]"
                         style={{ top: (now - AGENDA_START_MIN) * PX_PER_MIN }} />
                     )}
@@ -243,7 +300,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
       {creating && (
         <NewAppointmentDialog
           professionals={professionals}
-          initial={{ ...creating, date }}
+          initial={creating}
           onClose={() => setCreating(null)}
           onSaved={() => { setCreating(null); load(); }}
         />
@@ -262,7 +319,10 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
         <BlockDialog professionals={professionals} initialDate={date}
           onClose={() => setBlocking(false)} onSaved={() => load()} />
       )}
-      {showTomorrow && <TomorrowDialog professionals={professionals} onClose={() => setShowTomorrow(false)} />}
+      {showTomorrow && (
+        <TomorrowDialog professionals={professionals} professionalId={mine.on ? mine.professionalId : null}
+          onClose={() => setShowTomorrow(false)} />
+      )}
     </div>
   );
 }
@@ -772,15 +832,21 @@ function BlockDialog({ professionals, initialDate, onClose, onSaved }: {
 
 // ─── Turnos de mañana (para los recordatorios) ───────────────────────────────
 
-function TomorrowDialog({ professionals, onClose }: { professionals: ProfessionalOption[]; onClose: () => void }) {
+function TomorrowDialog({ professionals, professionalId, onClose }: {
+  professionals: ProfessionalOption[];
+  /** Con "Mis turnos": solo los del profesional del usuario */
+  professionalId: string | null;
+  onClose: () => void;
+}) {
   const day = nextWorkday(todayKey());
   const [list, setList] = useState<AgendaAppointment[] | null>(null);
   const proName = new Map(professionals.map((p) => [p.id, p.name]));
 
   useEffect(() => {
-    supabase.from("appointments").select(APPT_SELECT).eq("appointment_date", day).neq("status", "cancelado").order("appointment_time")
-      .then(({ data }: { data: AgendaAppointment[] | null }) => setList(data ?? []));
-  }, [day]);
+    let q = supabase.from("appointments").select(APPT_SELECT).eq("appointment_date", day).neq("status", "cancelado");
+    if (professionalId) q = q.eq("professional_id", professionalId);
+    q.order("appointment_time").then(({ data }: { data: AgendaAppointment[] | null }) => setList(data ?? []));
+  }, [day, professionalId]);
 
   function print() {
     if (!list) return;
@@ -801,7 +867,9 @@ function TomorrowDialog({ professionals, onClose }: { professionals: Professiona
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl capitalize text-[color:var(--primary-deep)]">Turnos del {longDate(day)}</DialogTitle>
-          <DialogDescription>Para hacer los recordatorios del día anterior.</DialogDescription>
+          <DialogDescription>
+            {professionalId ? "Tus turnos del próximo día hábil." : "Para hacer los recordatorios del día anterior."}
+          </DialogDescription>
         </DialogHeader>
         {list === null ? (
           <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>

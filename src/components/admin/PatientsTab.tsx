@@ -11,15 +11,22 @@ import {
   fullName, normalizePatient, type CaseStatus, type PatientRecord, type PatientStats, type PatientType, type ProfessionalOption,
 } from "@/lib/patients";
 import { LOCALITY_OPTIONS } from "@/lib/center";
+import type { Staff } from "@/lib/staff";
+import { useMine } from "./useMine";
+import { ScopeToggle } from "./ScopeToggle";
 
 type Props = {
   professionals: ProfessionalOption[];
   /** Cambia cuando se guarda una ficha, para recargar la lista */
   version: number;
   onOpen: (patientId: string) => void;
+  staff: Staff;
 };
 
-export function PatientsTab({ professionals, version, onOpen }: Props) {
+export function PatientsTab({ professionals, version, onOpen, staff }: Props) {
+  const mine = useMine("pacientes", staff);
+  /** Pacientes con algún turno (no cancelado) con el profesional del usuario */
+  const [withMyAppts, setWithMyAppts] = useState<Set<string>>(new Set());
   const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [stats, setStats] = useState<Map<string, PatientStats>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -35,7 +42,10 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
       supabase.from("patient_referrals").select("patient_id, status, registered"),
       supabase.from("patient_followups").select("patient_id, note_date"),
       supabase.from("patient_reports").select("patient_id, report_date"),
-    ]).then(([p, r, f, rep]) => {
+      mine.professionalId
+        ? supabase.from("appointments").select("patient_id").eq("professional_id", mine.professionalId).neq("status", "cancelado")
+        : Promise.resolve({ data: [] }),
+    ]).then(([p, r, f, rep, ap]) => {
       if (cancelled) return;
       if (p.error) toast.error("No se pudieron cargar los pacientes");
       setPatients(((p.data ?? []) as PatientRecord[]).map(normalizePatient));
@@ -61,27 +71,36 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
         if ((st.lastReport ?? "") < row.report_date) st.lastReport = row.report_date;
       }
       setStats(map);
+      setWithMyAppts(new Set(((ap.data ?? []) as { patient_id: string | null }[]).flatMap((x) => (x.patient_id ? [x.patient_id] : []))));
       setLoading(false);
     });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
+
+  // "Mis pacientes": los que tiene a cargo o con los que tiene turnos
+  const minePatients = useMemo(
+    () => patients.filter((p) => p.professional_id === mine.professionalId || withMyAppts.has(p.id)),
+    [patients, withMyAppts, mine.professionalId],
+  );
+  const base = mine.on ? minePatients : patients;
 
   const counts = useMemo(() => {
     const c = new Map<CaseStatus, number>();
-    for (const p of patients) c.set(p.case_status, (c.get(p.case_status) ?? 0) + 1);
+    for (const p of base) c.set(p.case_status, (c.get(p.case_status) ?? 0) + 1);
     return c;
-  }, [patients]);
+  }, [base]);
 
   const filtered = useMemo(() => {
     const q = normalizeText(query.trim());
-    return patients.filter((p) => {
+    return base.filter((p) => {
       if (statusFilter !== "all" && p.case_status !== statusFilter) return false;
       if (insuranceFilter === "con" && p.has_health_insurance !== true) return false;
       if (insuranceFilter === "sin" && p.has_health_insurance !== false) return false;
       if (!q) return true;
       return normalizeText(`${p.first_name} ${p.last_name} ${p.dni} ${p.locality ?? ""}`).includes(q);
     });
-  }, [patients, query, statusFilter, insuranceFilter]);
+  }, [base, query, statusFilter, insuranceFilter]);
 
   const proName = useMemo(() => new Map(professionals.map((p) => [p.id, p.name])), [professionals]);
 
@@ -112,10 +131,15 @@ export function PatientsTab({ professionals, version, onOpen }: Props) {
         </Button>
       </div>
 
+      {mine.available && (
+        <ScopeToggle on={mine.on} onChange={mine.setOn}
+          allLabel={`Todos (${patients.length})`} mineLabel={`Mis pacientes (${minePatients.length})`} />
+      )}
+
       {/* Filtro por estado del caso */}
       <div className="flex flex-wrap gap-1.5">
         <FilterChip active={statusFilter === "all"} onClick={() => setStatusFilter("all")}>
-          Todos ({patients.length})
+          Todos ({base.length})
         </FilterChip>
         {(Object.keys(CASE_STATUS_LABEL) as CaseStatus[]).map((s) => (
           <FilterChip key={s} active={statusFilter === s} onClick={() => setStatusFilter(s)}>

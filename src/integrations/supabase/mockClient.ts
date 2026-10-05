@@ -723,6 +723,13 @@ export const mockSupabase = {
         const role = lower.startsWith("admin") ? "administracion" : lower.startsWith("pro") ? "profesional" : "direccion";
         row = { user_id: `mock-${role}-${store.admins.length}`, email: lower, full_name: null, role, active: true, created_at: new Date().toISOString() };
         store.admins.push(row);
+        // En demo, un usuario Profesional queda vinculado al profesional con más turnos (para probar "Mis turnos")
+        if (role === "profesional") {
+          const free = store.professionals.filter((p) => !p.user_id && p.active);
+          const turnos = (id: unknown) => store.appointments.filter((a) => a.professional_id === id).length;
+          const pro = free.sort((a, b) => turnos(b.id) - turnos(a.id))[0];
+          if (pro) pro.user_id = row.user_id;
+        }
       }
       if (!row.active) return { data: { session: null }, error: { message: "User is banned" } };
       setSession({ user: { id: String(row.user_id), email: lower } }, "SIGNED_IN");
