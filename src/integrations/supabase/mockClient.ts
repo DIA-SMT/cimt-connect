@@ -511,7 +511,9 @@ class MockQueryBuilder {
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
-type MockSession = { user: { id: string; email: string } } | null;
+type MockSession = { user: { id: string; email: string; user_metadata?: Row } } | null;
+// Pedido de "cambiá tu contraseña" por usuario (en producción vive en Supabase Auth)
+const mockMustChange = new Set<string>();
 let session: MockSession = null;
 const authListeners = new Set<(event: string, session: MockSession) => void>();
 
@@ -672,6 +674,7 @@ function mockUsersApi(body: Row): Promise<{ ok: true; user_id?: string } | { err
     if (store.admins.some((a) => a.email === email)) return Promise.resolve({ error: "Ya existe un usuario con ese email" });
     if (String(body.password ?? "").length < 8) return Promise.resolve({ error: "La contraseña tiene que tener al menos 8 caracteres" });
     const user_id = `mock-user-${Date.now()}`;
+    if (body.must_change !== false) mockMustChange.add(user_id);
     store.admins.push({ user_id, email, full_name: body.full_name ?? null, role: body.role, active: true, created_at: new Date().toISOString() });
     if (body.professional_id) {
       const pro = store.professionals.find((p) => p.id === body.professional_id);
@@ -684,7 +687,11 @@ function mockUsersApi(body: Row): Promise<{ ok: true; user_id?: string } | { err
     if (row) row.active = body.active;
     return Promise.resolve({ ok: true });
   }
-  if (body.action === "set_password") return Promise.resolve({ ok: true });
+  if (body.action === "set_password") {
+    if (body.must_change !== false) mockMustChange.add(String(body.user_id));
+    else mockMustChange.delete(String(body.user_id));
+    return Promise.resolve({ ok: true });
+  }
   return Promise.resolve({ error: "Acción inválida" });
 }
 
@@ -732,12 +739,19 @@ export const mockSupabase = {
         }
       }
       if (!row.active) return { data: { session: null }, error: { message: "User is banned" } };
-      setSession({ user: { id: String(row.user_id), email: lower } }, "SIGNED_IN");
+      setSession({ user: { id: String(row.user_id), email: lower, user_metadata: { must_change_password: mockMustChange.has(String(row.user_id)) } } }, "SIGNED_IN");
       return { data: { session }, error: null };
     },
     // Recuperación de contraseña: en mock no se manda ningún email
     resetPasswordForEmail: async () => ({ data: {}, error: null }),
-    updateUser: async () => ({ data: { user: session?.user ?? null }, error: null }),
+    updateUser: async ({ data }: { password?: string; data?: Row } = {}) => {
+      if (session && data && data.must_change_password === false) {
+        mockMustChange.delete(session.user.id);
+        session.user.user_metadata = { ...session.user.user_metadata, must_change_password: false };
+        setSession(session, "USER_UPDATED");
+      }
+      return { data: { user: session?.user ?? null }, error: null };
+    },
     signOut: async () => {
       setSession(null, "SIGNED_OUT");
       return { error: null };
