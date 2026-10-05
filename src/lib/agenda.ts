@@ -63,7 +63,13 @@ export type AgendaAppointment = {
   attendance: Attendance | null;
   practice_number: number | null;
   practice_registered_at: string | null;
-  patients: { first_name: string; last_name: string; dni: string; phone: string; guardian_phone: string | null } | null;
+  reminder_sent_at?: string | null;
+  reminder_sent_by?: string | null;
+  reminder_channel?: "whatsapp" | "llamada" | "email" | null;
+  patients: {
+    first_name: string; last_name: string; dni: string; phone: string;
+    guardian_phone: string | null; guardian_name?: string | null; patient_type?: string;
+  } | null;
 };
 
 export const INTAKE_STATUS_LABEL: Record<IntakeStatus, string> = {
