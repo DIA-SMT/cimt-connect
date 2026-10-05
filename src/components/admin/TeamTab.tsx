@@ -385,6 +385,7 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
   const [role, setRole] = useState<StaffRole>("administracion");
   const [password, setPassword] = useState(generatePassword);
   const [professionalId, setProfessionalId] = useState("");
+  const [mustChange, setMustChange] = useState(true);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(false);
 
@@ -398,6 +399,7 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
       full_name: fullName.trim() || undefined,
       role,
       professional_id: role !== "administracion" ? professionalId || null : null,
+      must_change: mustChange,
     });
     setSaving(false);
     if ("error" in res) { toast.error(res.error); return; }
@@ -411,8 +413,10 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
           <DialogHeader>
             <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">Usuario creado</DialogTitle>
             <DialogDescription>
-              Pasale estos datos a la persona por un medio seguro. Puede cambiar la contraseña desde el panel
-              (botón "Contraseña").
+              Pasale estos datos a la persona por un medio seguro.
+              {mustChange
+                ? " Al ingresar por primera vez le vamos a pedir que elija una contraseña propia."
+                : ' Puede cambiar la contraseña desde el panel (botón "Contraseña").'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 rounded-2xl bg-[color:var(--primary-soft)] p-4 text-sm">
@@ -481,6 +485,13 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
               </Button>
             </div>
           </div>
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="checkbox" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} className="mt-0.5" />
+            <span>
+              <span className="font-medium">Pedir que la cambie al ingresar</span>
+              <span className="block text-xs text-muted-foreground">La primera vez que entre al panel va a tener que elegir una contraseña propia.</span>
+            </span>
+          </label>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
             <Button type="submit" disabled={saving}
@@ -497,11 +508,12 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
 
 function SetPasswordDialog({ user, onClose }: { user: PanelUser; onClose: () => void }) {
   const [password, setPassword] = useState(generatePassword);
+  const [mustChange, setMustChange] = useState(true);
   const [saving, setSaving] = useState(false);
 
   async function save() {
     setSaving(true);
-    const res = await usersApi({ action: "set_password", user_id: user.user_id, password });
+    const res = await usersApi({ action: "set_password", user_id: user.user_id, password, must_change: mustChange });
     setSaving(false);
     if ("error" in res) { toast.error(res.error); return; }
     navigator.clipboard?.writeText(password);
@@ -523,6 +535,13 @@ function SetPasswordDialog({ user, onClose }: { user: PanelUser; onClose: () => 
             <Wand2 className="h-4 w-4" />
           </Button>
         </div>
+        <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="checkbox" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} className="mt-0.5" />
+            <span>
+              <span className="font-medium">Pedir que la cambie al ingresar</span>
+              <span className="block text-xs text-muted-foreground">La primera vez que entre al panel va a tener que elegir una contraseña propia.</span>
+            </span>
+          </label>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
           <Button onClick={save} disabled={saving || password.length < 8}

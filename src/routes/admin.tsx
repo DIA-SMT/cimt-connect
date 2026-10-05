@@ -62,6 +62,7 @@ type AuthState =
   | { kind: "signed_out" }
   | { kind: "forbidden"; email: string }
   | { kind: "admin"; staff: Staff }
+  | { kind: "must_change" } // la Dirección le pidió que cambie la contraseña al ingresar
   | { kind: "recovery" }; // entró desde el link de "olvidé mi contraseña"
 
 // Gate de acceso: requiere sesión de Supabase Auth y estar en la tabla admins.
@@ -90,9 +91,13 @@ function AdminPage() {
       // current_staff() devuelve rol, nombre y profesional vinculado (NULL si no es del panel)
       const { data, error } = await supabase.rpc("current_staff");
       if (cancelled) return;
-      setAuth(!error && data
-        ? { kind: "admin", staff: { ...(data as Staff), email: (data as Staff).email ?? email } }
-        : { kind: "forbidden", email });
+      if (error || !data) {
+        setAuth({ kind: "forbidden", email });
+        return;
+      }
+      setAuth(session.user?.user_metadata?.must_change_password
+        ? { kind: "must_change" }
+        : { kind: "admin", staff: { ...(data as Staff), email: (data as Staff).email ?? email } });
     }
 
     supabase.auth.getSession().then(({ data }: { data: { session: unknown } }) => resolve(data.session));
@@ -122,6 +127,7 @@ function AdminPage() {
   }
   if (auth.kind === "signed_out") return <AdminLogin />;
   if (auth.kind === "recovery") return <SetNewPassword />;
+  if (auth.kind === "must_change") return <SetNewPassword forced onSignOut={signOut} />;
   if (auth.kind === "forbidden") return <AdminForbidden email={auth.email} onSignOut={signOut} />;
   return <AdminPanel staff={auth.staff} onSignOut={signOut} />;
 }
@@ -221,7 +227,7 @@ function AdminLogin() {
 }
 
 // Pantalla a la que llega el link del email de recuperación
-function SetNewPassword() {
+function SetNewPassword({ forced = false, onSignOut }: { forced?: boolean; onSignOut?: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -237,23 +243,32 @@ function SetNewPassword() {
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.auth.updateUser({ password });
+    // Al guardar una contraseña propia se borra el pedido de cambio
+    const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
     setSubmitting(false);
     if (error) {
       toast.error(
         error.code === "same_password"
-          ? "La contraseña nueva tiene que ser distinta a la anterior"
-          : "No se pudo cambiar la contraseña. Pedí un link nuevo desde «¿Olvidaste tu contraseña?».",
+          ? "La contraseña nueva tiene que ser distinta a la que te dieron"
+          : forced
+            ? "No se pudo cambiar la contraseña. Intentá de nuevo."
+            : "No se pudo cambiar la contraseña. Pedí un link nuevo desde «¿Olvidaste tu contraseña?».",
       );
       return;
     }
     toast.success("Contraseña actualizada");
-    // Recarga limpia (sin el hash del link) para entrar al panel con la sesión nueva
-    window.location.replace("/admin");
+    // Cambio obligatorio: Supabase avisa USER_UPDATED y el panel se abre solo.
+    // Recuperación: recarga limpia (sin el hash del link) para entrar con la sesión nueva.
+    if (!forced) window.location.replace("/admin");
   }
 
   return (
-    <AuthCard title="Nueva contraseña" subtitle="Elegí una contraseña de al menos 8 caracteres" onSubmit={handleSubmit}>
+    <AuthCard
+      title={forced ? "Cambiá tu contraseña" : "Nueva contraseña"}
+      subtitle={forced
+        ? "Para empezar a usar el panel, reemplazá la contraseña que te dieron por una propia de al menos 8 caracteres."
+        : "Elegí una contraseña de al menos 8 caracteres"}
+      onSubmit={handleSubmit}>
       <div className="space-y-1.5">
         <Label htmlFor="new-password">Contraseña nueva</Label>
         <Input id="new-password" type="password" autoComplete="new-password" required minLength={8}
@@ -269,6 +284,11 @@ function SetNewPassword() {
         {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Guardar contraseña
       </Button>
+      {forced && onSignOut && (
+        <button type="button" onClick={onSignOut} className="w-full text-center text-sm text-muted-foreground hover:underline">
+          Cerrar sesión
+        </button>
+      )}
     </AuthCard>
   );
 }
@@ -462,7 +482,7 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
     if (password.length < 8) { toast.error("La contraseña tiene que tener al menos 8 caracteres"); return; }
     if (password !== confirm) { toast.error("Las contraseñas no coinciden"); return; }
     setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
     setSaving(false);
     if (error) {
       toast.error(error.code === "same_password"

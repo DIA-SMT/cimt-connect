@@ -39,9 +39,9 @@ export type PanelUser = {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
 type UsersApiBody =
-  | { action: "create"; email: string; password: string; full_name?: string; role: StaffRole; professional_id?: string | null }
+  | { action: "create"; email: string; password: string; full_name?: string; role: StaffRole; professional_id?: string | null; must_change?: boolean }
   | { action: "set_active"; user_id: string; active: boolean }
-  | { action: "set_password"; user_id: string; password: string };
+  | { action: "set_password"; user_id: string; password: string; must_change?: boolean };
 
 // Llama a server/api/admin/users.ts con la sesión actual. En modo demo no hay
 // servidor con service role: se simula contra el cliente mock.

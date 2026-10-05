@@ -8,15 +8,19 @@ import { defineEventHandler, getRequestHeader, readBody, setResponseStatus } fro
 //
 // Cambiar rol, nombre o profesional vinculado lo hace el panel directo contra
 // la base (RLS: solo la Dirección), sin pasar por acá.
+//
+// must_change: al crear o asignar una contraseña, la Dirección puede pedir que
+// la persona la cambie al ingresar. Queda en user_metadata.must_change_password
+// y el panel la borra cuando la persona guarda su contraseña propia.
 
 type Role = "direccion" | "profesional" | "administracion";
 const ROLES: Role[] = ["direccion", "profesional", "administracion"];
 const BAN_FOREVER = "876000h"; // ~100 años
 
 type Body =
-  | { action: "create"; email: string; password: string; full_name?: string; role: Role; professional_id?: string | null }
+  | { action: "create"; email: string; password: string; full_name?: string; role: Role; professional_id?: string | null; must_change?: boolean }
   | { action: "set_active"; user_id: string; active: boolean }
-  | { action: "set_password"; user_id: string; password: string };
+  | { action: "set_password"; user_id: string; password: string; must_change?: boolean };
 
 function fail(event: Parameters<typeof setResponseStatus>[0], status: number, error: string) {
   setResponseStatus(event, status);
@@ -57,6 +61,7 @@ export default defineEventHandler(async (event) => {
       email,
       password: body.password,
       email_confirm: true,
+      user_metadata: { must_change_password: body.must_change !== false },
     });
     if (error || !created.user) {
       const exists = /already|registered|exists/i.test(error?.message ?? "");
@@ -98,7 +103,10 @@ export default defineEventHandler(async (event) => {
 
   if (body?.action === "set_password") {
     if (String(body.password ?? "").length < 8) return fail(event, 400, "La contraseña tiene que tener al menos 8 caracteres");
-    const { error } = await admin.auth.admin.updateUserById(body.user_id, { password: body.password });
+    const { error } = await admin.auth.admin.updateUserById(body.user_id, {
+      password: body.password,
+      user_metadata: { must_change_password: body.must_change !== false },
+    });
     if (error) return fail(event, 500, "No se pudo cambiar la contraseña");
     return { ok: true };
   }
