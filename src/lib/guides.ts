@@ -1,5 +1,5 @@
 // Folletos y textos del CIMT para la página /familias, pasados a texto para que
-// se lean bien en el celular, sean accesibles y LIA pueda recomendarlos. Los
+// se lean bien en el celular, sean accesibles y Migue pueda recomendarlos. Los
 // folletos originales quedan en public/folletos/ para ver, descargar o imprimir.
 //
 // Para sumar un folleto: agregar un Guide a GUIDES con los bloques que tenga.

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { defineEventHandler, getRequestIP, readBody, setResponseStatus } from "nitro/h3";
 
-const SYSTEM_PROMPT = `Sos LIA, la asistente virtual del CIMT (Centro Integral Municipal de Tartamudez) de San Miguel de Tucumán, Argentina.
+const SYSTEM_PROMPT = `Sos Migue, el asistente virtual del CIMT (Centro Integral Municipal de Tartamudez) de San Miguel de Tucumán, Argentina.
 
 ## Tu identidad
-- Nombre: LIA (Asistente virtual CIMT)
+- Nombre: Migue (Asistente virtual CIMT)
+- Sos un asistente virtual, no un profesional del equipo. Si te preguntan si sos fonoaudiólogo o una persona, aclaralo con calidez.
 - Tono: cálido, empático, profesional. Usás español rioplatense (vos, ustedes).
 - Respondés de forma concisa (máx. 3-4 oraciones por respuesta salvo que el usuario pida más detalle).
 
@@ -108,9 +109,9 @@ async function rateLimitHit(ip: string): Promise<boolean> {
         signal: AbortSignal.timeout(3000),
       });
       if (res.ok) return (await res.json()) === true;
-      console.warn("[LIA] rate limit RPC status:", res.status);
+      console.warn("[Migue] rate limit RPC status:", res.status);
     } catch (err) {
-      console.warn("[LIA] rate limit RPC error:", err);
+      console.warn("[Migue] rate limit RPC error:", err);
     }
   }
   return memoryRateLimitHit(key);
@@ -139,7 +140,7 @@ export default defineEventHandler(async (event) => {
     process.env.VITE_OPENROUTER_MODEL ||
     "openai/gpt-4o-mini";
 
-  console.log("[LIA] apiKey present:", !!apiKey, "model:", model);
+  console.log("[Migue] apiKey present:", !!apiKey, "model:", model);
 
   if (!apiKey) {
     setResponseStatus(event, 500);
@@ -168,7 +169,7 @@ export default defineEventHandler(async (event) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": "https://cimt-connect.vercel.app",
-        "X-Title": "CIMT - LIA Asistente Virtual",
+        "X-Title": "CIMT - Migue Asistente Virtual",
       },
       body: JSON.stringify({
         model,
@@ -187,7 +188,7 @@ export default defineEventHandler(async (event) => {
     };
 
     if (!upstream.ok) {
-      console.error("[LIA] upstream error:", data);
+      console.error("[Migue] upstream error:", data);
       setResponseStatus(event, upstream.status);
       return { error: data?.error?.message ?? "Upstream error" };
     }
@@ -198,7 +199,7 @@ export default defineEventHandler(async (event) => {
 
     return { reply };
   } catch (err) {
-    console.error("[LIA] server fetch error:", err);
+    console.error("[Migue] server fetch error:", err);
     setResponseStatus(event, 503);
     return {
       error: `Error al conectar con el asistente: ${err instanceof Error ? err.message : String(err)}`,

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Send, X, MessageCircle, CalendarCheck, ChevronDown } from "lucide-react";
+import migueAvatar from "@/assets/migue-avatar.jpg";
+import { MigueAvatar } from "./MigueAvatar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,22 +27,6 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function LiaAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const dim =
-    size === "sm"
-      ? "h-8 w-8 text-[10px]"
-      : size === "lg"
-      ? "h-12 w-12 text-sm"
-      : "h-10 w-10 text-xs";
-  return (
-    <div
-      className={`${dim} shrink-0 rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] flex items-center justify-center font-display font-bold text-primary-foreground shadow-md`}
-    >
-      LIA
-    </div>
-  );
-}
-
 function TypingDots() {
   return (
     <div className="flex items-center gap-1 px-1 py-0.5">
@@ -48,7 +34,7 @@ function TypingDots() {
         <span
           key={i}
           className="h-2 w-2 rounded-full bg-[color:var(--primary-deep)]/40"
-          style={{ animation: `lia-bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
+          style={{ animation: `migue-bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
         />
       ))}
     </div>
@@ -92,7 +78,7 @@ export function ChatbotWidget() {
           id: uid(),
           role: "assistant",
           content:
-            "¡Hola! 👋 Soy **LIA**, la asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
+            "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
         },
       ]);
     }, 900);
@@ -139,7 +125,7 @@ export function ChatbotWidget() {
       }
 
       if (!response.ok) {
-        console.error("[LIA] API error:", data);
+        console.error("[Migue] API error:", data);
         throw new Error(data?.error ?? `HTTP ${response.status}`);
       }
 
@@ -150,7 +136,7 @@ export function ChatbotWidget() {
     } catch (err: unknown) {
       clearTimeout(timeoutId);
       const isAbort = err instanceof DOMException && err.name === "AbortError";
-      console.error("[LIA] fetch error:", err);
+      console.error("[Migue] fetch error:", err);
       setIsTyping(false);
       setApiError(
         isAbort
@@ -189,15 +175,15 @@ export function ChatbotWidget() {
     <>
       {/* Keyframes injected once */}
       <style>{`
-        @keyframes lia-bounce {
+        @keyframes migue-bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
           40% { transform: translateY(-5px); opacity: 1; }
         }
-        @keyframes lia-pulse-ring {
+        @keyframes migue-pulse-ring {
           0% { transform: scale(1); opacity: 0.6; }
           100% { transform: scale(1.6); opacity: 0; }
         }
-        @keyframes lia-slide-up {
+        @keyframes migue-slide-up {
           from { opacity: 0; transform: translateY(16px) scale(0.97); }
           to   { opacity: 1; transform: translateY(0) scale(1); }
         }
@@ -206,19 +192,30 @@ export function ChatbotWidget() {
       {/* ── Floating button ──────────────────────────────────────────────── */}
       {!isOpen && (
         <button
-          id="lia-chatbot-toggle"
+          id="migue-chatbot-toggle"
           onClick={handleOpen}
-          aria-label="Abrir chat con LIA"
-          className="fixed bottom-5 right-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] text-primary-foreground shadow-[0_4px_24px_rgba(0,0,0,0.2)] transition-all hover:scale-105 hover:shadow-[0_6px_32px_rgba(0,0,0,0.28)] active:scale-95"
+          aria-label="Abrir chat con Migue"
+          title="Chateá con Migue"
+          className="fixed bottom-5 right-5 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] p-[3px] shadow-[0_4px_24px_rgba(0,0,0,0.2)] transition-all hover:scale-105 hover:shadow-[0_6px_32px_rgba(0,0,0,0.28)] active:scale-95 sm:h-16 sm:w-16"
         >
-          <MessageCircle className="h-6 w-6" />
-          {/* Pulse ring */}
+          {/* Pulse ring (detrás de la foto) */}
           {showBadge && (
             <span
               className="absolute inset-0 rounded-full bg-primary"
-              style={{ animation: "lia-pulse-ring 1.8s ease-out infinite" }}
+              style={{ animation: "migue-pulse-ring 1.8s ease-out infinite" }}
             />
           )}
+          <img
+            src={migueAvatar}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            className="relative h-full w-full rounded-full border-2 border-white bg-[#fafafa] object-cover"
+          />
+          {/* Chat icon, para que se lea como botón de chat */}
+          <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow ring-2 ring-background sm:h-6 sm:w-6">
+            <MessageCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+          </span>
           {/* Notification dot */}
           {showBadge && (
             <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white shadow">
@@ -231,19 +228,19 @@ export function ChatbotWidget() {
       {/* ── Chat panel ───────────────────────────────────────────────────── */}
       {isOpen && (
         <div
-          id="lia-chatbot-panel"
+          id="migue-chatbot-panel"
           className="fixed bottom-5 right-5 z-50 flex w-[360px] max-w-[calc(100vw-24px)] flex-col rounded-2xl border border-border/60 bg-background shadow-[0_8px_40px_rgba(0,0,0,0.18)]"
           style={{
             height: "min(560px, calc(100dvh - 100px))",
-            animation: "lia-slide-up 0.22s ease-out",
+            animation: "migue-slide-up 0.22s ease-out",
           }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 rounded-t-2xl border-b border-border/60 bg-gradient-to-r from-[color:var(--primary-soft)] to-background px-4 py-3">
-            <LiaAvatar size="md" />
+            <MigueAvatar size="md" />
             <div className="flex-1 min-w-0">
               <p className="font-display font-bold text-[color:var(--primary-deep)] leading-none text-sm">
-                LIA
+                Migue
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">Asistente virtual · CIMT</p>
             </div>
@@ -252,7 +249,7 @@ export function ChatbotWidget() {
               En línea
             </div>
             <button
-              id="lia-chatbot-close"
+              id="migue-chatbot-close"
               onClick={() => setIsOpen(false)}
               aria-label="Cerrar chat"
               className="ml-1 rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -268,7 +265,7 @@ export function ChatbotWidget() {
                 key={msg.id}
                 className={`flex ${msg.role === "user" ? "justify-end" : "items-end gap-2"} animate-in fade-in slide-in-from-bottom-2 duration-300`}
               >
-                {msg.role === "assistant" && <LiaAvatar size="sm" />}
+                {msg.role === "assistant" && <MigueAvatar size="sm" label="Migue:" />}
                 <div
                   className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                     msg.role === "user"
@@ -284,7 +281,7 @@ export function ChatbotWidget() {
             {/* Typing indicator */}
             {isTyping && (
               <div className="flex items-end gap-2 animate-in fade-in duration-200">
-                <LiaAvatar size="sm" />
+                <MigueAvatar size="sm" label="Migue está escribiendo" />
                 <div className="rounded-2xl rounded-bl-none bg-card border border-border/60 px-3.5 py-2.5 shadow-sm">
                   <TypingDots />
                 </div>
@@ -308,7 +305,7 @@ export function ChatbotWidget() {
                   {QUICK_SUGGESTIONS.map((s) => (
                     <button
                       key={s.id}
-                      id={`lia-suggestion-${s.id}`}
+                      id={`migue-suggestion-${s.id}`}
                       onClick={() => handleSuggestion(s.label)}
                       className="rounded-full border border-primary/25 bg-[color:var(--primary-soft)] px-3 py-1.5 text-xs font-semibold text-[color:var(--primary-deep)] transition-all hover:border-primary hover:bg-primary/10 hover:-translate-y-0.5 active:scale-95"
                     >
@@ -353,7 +350,7 @@ export function ChatbotWidget() {
           >
             <input
               ref={inputRef}
-              id="lia-chat-input"
+              id="migue-chat-input"
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -363,7 +360,7 @@ export function ChatbotWidget() {
             />
             <button
               type="submit"
-              id="lia-chat-send"
+              id="migue-chat-send"
               disabled={!input.trim() || isTyping}
               aria-label="Enviar mensaje"
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-[color:var(--primary-deep)] disabled:opacity-40 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
