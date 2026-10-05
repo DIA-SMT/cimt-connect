@@ -75,7 +75,7 @@ const STEPS: Step[] = [
 ];
 
 const INTRO_MESSAGES = [
-  "¡Hola! 👋 Soy **Migue**, el asistente virtual del **Centro Integral de Motricidad del Habla**.",
+  "¡Hola! 👋 Soy **Migue**, el asistente virtual del **Centro Integral Municipal de Tartamudez**.",
   "Estoy aquí para ayudarte a entender mejor la fluidez del habla con unas preguntas simples.",
   "Es anónimo, gratuito y lleva solo **~1 minuto** ⏱️ ¿Empezamos?",
 ];
