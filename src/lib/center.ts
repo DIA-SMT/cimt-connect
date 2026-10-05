@@ -1,6 +1,6 @@
 // Datos institucionales del CIMT que se muestran en el sitio.
 // Fuente: relevamiento con el equipo del centro (septiembre 2026).
-// Si cambia algo, actualizar también el prompt de LIA en server/api/chat.ts.
+// Si cambia algo, actualizar también el prompt de Migue en server/api/chat.ts.
 
 export const CENTER = {
   address: "Catamarca 411",

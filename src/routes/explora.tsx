@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/Layout";
+import { MigueAvatar } from "@/components/MigueAvatar";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, CalendarCheck, RotateCcw, Sparkles,
@@ -74,7 +75,7 @@ const STEPS: Step[] = [
 ];
 
 const INTRO_MESSAGES = [
-  "¡Hola! 👋 Soy **LIA**, la asistente virtual del **Centro Integral de Motricidad del Habla**.",
+  "¡Hola! 👋 Soy **Migue**, el asistente virtual del **Centro Integral de Motricidad del Habla**.",
   "Estoy aquí para ayudarte a entender mejor la fluidez del habla con unas preguntas simples.",
   "Es anónimo, gratuito y lleva solo **~1 minuto** ⏱️ ¿Empezamos?",
 ];
@@ -120,15 +121,6 @@ function renderBotText(text: string) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function LiaAvatar({ size = "md" }: { size?: "sm" | "md" }) {
-  const dim = size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
-  return (
-    <div className={`${dim} shrink-0 rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] flex items-center justify-center font-display font-bold text-primary-foreground shadow-sm`}>
-      LIA
-    </div>
-  );
-}
-
 function TypingDots() {
   return (
     <div className="flex items-center gap-1 px-1 py-0.5">
@@ -136,7 +128,7 @@ function TypingDots() {
         <span
           key={i}
           className="h-2 w-2 rounded-full bg-[color:var(--primary-deep)]/40"
-          style={{ animation: `lia-bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
+          style={{ animation: `migue-bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
         />
       ))}
     </div>
@@ -147,7 +139,7 @@ function ChatBubble({ msg, onRestart }: { msg: ChatMsg; onRestart: () => void })
   if (msg.from === "bot") {
     return (
       <div className="flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <LiaAvatar size="sm" />
+        <MigueAvatar size="sm" label="Migue:" />
         <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-card border border-border/60 px-4 py-3 text-sm leading-relaxed text-foreground shadow-[var(--shadow-card)]">
           {renderBotText(msg.text)}
         </div>
@@ -176,7 +168,7 @@ function ChatBubble({ msg, onRestart }: { msg: ChatMsg; onRestart: () => void })
 
   return (
     <div className="flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <LiaAvatar size="sm" />
+      <MigueAvatar size="sm" label="Migue:" />
       <div className={`max-w-[85%] rounded-2xl rounded-bl-none border bg-card p-5 shadow-[var(--shadow-elegant)] ${t.ring}`}>
         <div className="flex items-center gap-2 mb-3">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${t.badge}`}>
@@ -325,7 +317,7 @@ function ExploraPage() {
   return (
     <Layout>
       <style>{`
-        @keyframes lia-bounce {
+        @keyframes migue-bounce {
           0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
           40% { transform: translateY(-6px); opacity: 1; }
         }
@@ -336,9 +328,11 @@ function ExploraPage() {
         {/* ── Header ── */}
         <div className="sticky top-0 z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">
           <div className="container mx-auto max-w-2xl px-4 py-3 flex items-center gap-3">
-            <LiaAvatar />
+            <MigueAvatar />
             <div>
-              <p className="font-display font-bold text-[color:var(--primary-deep)] leading-none">LIA</p>
+              <p className="font-display font-bold text-[color:var(--primary-deep)] leading-none">
+                Migue
+              </p>
               <p className="text-xs text-muted-foreground mt-0.5">Asistente virtual · CIMT</p>
             </div>
             <div className="ml-auto flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700">
@@ -357,7 +351,7 @@ function ExploraPage() {
 
             {isTyping && (
               <div className="flex items-end gap-2 animate-in fade-in duration-200">
-                <LiaAvatar size="sm" />
+                <MigueAvatar size="sm" label="Migue está escribiendo" />
                 <div className="rounded-2xl rounded-bl-none bg-card border border-border/60 px-4 py-3 shadow-sm">
                   <TypingDots />
                 </div>
@@ -421,7 +415,7 @@ function ExploraPage() {
             {/* Hint */}
             {canAnswer && (
               <p className="mt-3 text-center text-xs text-muted-foreground">
-                Tocá una opción para responderle a LIA
+                Tocá una opción para responderle a Migue
               </p>
             )}
           </div>
