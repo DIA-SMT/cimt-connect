@@ -331,3 +331,22 @@ Ver el resumen por fases en la conversación del 2026-10-02. Orden sugerido:
   Psicología y Psicopedagogía (pedírselos al centro) y N° de registro en las
   derivaciones.
 - Fase 4 pendiente: espera la foto de un informe oficial.
+
+### Estado (2026-10-05)
+
+- Fase 3 publicada (script 15 corrido).
+- Sitio: página "Para familias y escuelas" con los folletos de Terapia
+  Ocupacional y Psicopedagogía (consejos para docentes y prevención del
+  bullying) y la sección del Área Legal; estilo de hoja cuadriculada y títulos
+  manuscritos en todo el sitio público.
+- Panel: agenda a todo el ancho con un solo scroll y línea de la hora actual;
+  vista del profesional ("Mis turnos" semanal y "Mis pacientes"); cambio de
+  contraseña obligatorio en el primer ingreso.
+- Recordatorios, etapa A (script `16_recordatorios.sql`): WhatsApp con el
+  mensaje armado desde "Turnos de mañana" y marca de "avisado" (WhatsApp o
+  llamada) con quién y cuándo. Responde la pregunta 6 del relevamiento.
+- Próximas etapas de recordatorios: B) email automático con Resend (requiere
+  cuenta del municipio y dominio propio con DNS de Sistemas); C) "Mis turnos"
+  con link sin contraseña para la familia, después del lanzamiento.
+- Pendiente de confirmar con el centro: desde qué WhatsApp se mandan los
+  recordatorios (el mensaje dice "respondiendo este mensaje").

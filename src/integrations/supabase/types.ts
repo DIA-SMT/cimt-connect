@@ -79,6 +79,9 @@ export type Database = {
       }
       appointments: {
         Row: {
+          reminder_sent_at: string | null
+          reminder_sent_by: string | null
+          reminder_channel: string | null
           attendance: string | null
           created_by_email: string | null
           duration_minutes: number
@@ -97,6 +100,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          reminder_sent_at?: string | null
+          reminder_sent_by?: string | null
+          reminder_channel?: string | null
           attendance?: string | null
           created_by_email?: string | null
           duration_minutes?: number
@@ -115,6 +121,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          reminder_sent_at?: string | null
+          reminder_sent_by?: string | null
+          reminder_channel?: string | null
           attendance?: string | null
           created_by_email?: string | null
           duration_minutes?: number

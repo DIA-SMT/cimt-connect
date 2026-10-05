@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Ban, CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, Loader2, Phone, Printer, Video,
+  Ban, CalendarClock, CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, Phone, Printer, Video,
 } from "lucide-react";
 import { selectClass } from "./fields";
 import { useMine } from "./useMine";
+import { REMINDER_CHANNEL_LABEL, reminderPhone, setReminder, whatsappLink, type ReminderChannel } from "@/lib/reminders";
 import { ScopeToggle } from "./ScopeToggle";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
@@ -39,7 +40,7 @@ const HEADER_H = "h-16";
 const STICKY_TOP = "top-0 lg:top-[65px]";
 const UNASSIGNED = "__sin_asignar__";
 
-const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone)";
+const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone, guardian_name, patient_type)";
 
 function firstWorkdayFrom(dateKey: string): string {
   return isWeekendKey(dateKey) ? nextWorkday(dateKey) : dateKey;
@@ -321,7 +322,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
       )}
       {showTomorrow && (
         <TomorrowDialog professionals={professionals} professionalId={mine.on ? mine.professionalId : null}
-          onClose={() => setShowTomorrow(false)} />
+          staffEmail={staff.email} onClose={() => setShowTomorrow(false)} />
       )}
     </div>
   );
@@ -620,6 +621,12 @@ function AppointmentDialog({ appt: a, professional, staff, onClose, onChanged, o
           )}
           <div><dt className="text-xs text-muted-foreground">Tipo</dt><dd className="font-medium">{a.consultation_type === "primera_vez" ? "Primera vez" : "Seguimiento"}</dd></div>
         </dl>
+        {a.status !== "cancelado" && p && (
+          <ul className="rounded-xl border border-border/60 text-sm">
+            <ReminderRow appt={a} professionalName={professional?.name} staffEmail={staff.email} compact
+              onChange={() => onChanged()} />
+          </ul>
+        )}
         {a.reason && a.reason !== "Sesión" && <p className="rounded-lg bg-muted/50 p-2 text-sm">{a.reason}</p>}
 
         {a.status !== "cancelado" && (
@@ -832,10 +839,86 @@ function BlockDialog({ professionals, initialDate, onClose, onSaved }: {
 
 // ─── Turnos de mañana (para los recordatorios) ───────────────────────────────
 
-function TomorrowDialog({ professionals, professionalId, onClose }: {
+// Fila de recordatorio: WhatsApp con el mensaje armado y marca de "avisado"
+function ReminderRow({ appt: a, professionalName, staffEmail, compact = false, onChange }: {
+  appt: AgendaAppointment;
+  professionalName?: string;
+  staffEmail: string;
+  compact?: boolean;
+  onChange: (patch: Partial<AgendaAppointment>) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const phone = reminderPhone(a);
+  const wa = whatsappLink(a, professionalName);
+
+  async function mark(channel: ReminderChannel | null) {
+    setBusy(true);
+    const patch = await setReminder(a.id, channel, staffEmail);
+    setBusy(false);
+    if (patch) onChange(patch as Partial<AgendaAppointment>);
+  }
+
+  function openWhatsApp() {
+    if (!wa) return;
+    window.open(wa, "_blank", "noopener");
+    // Se marca al abrir; si al final no se envió, se puede desmarcar
+    if (!a.reminder_sent_at) mark("whatsapp");
+  }
+
+  const sentInfo = a.reminder_sent_at && a.reminder_channel && (
+    <div className="mt-0.5 text-xs">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-[color:var(--status-available)]">
+        <Check className="h-3.5 w-3.5" />
+        Avisado por {REMINDER_CHANNEL_LABEL[a.reminder_channel]} · {new Date(a.reminder_sent_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })} hs
+      </span>
+      {a.reminder_sent_by && <span className="block truncate text-muted-foreground">{a.reminder_sent_by}</span>}
+    </div>
+  );
+
+  return (
+    <li className={`flex flex-wrap items-center gap-x-3 gap-y-2 p-3 ${a.reminder_sent_at ? "bg-[color:var(--status-available-bg)]/40" : ""}`}>
+      {!compact && (
+        <div className="min-w-0 flex-1 basis-56">
+          <div>
+            <strong className="tabular-nums">{a.appointment_time.slice(0, 5)}</strong>{" "}
+            {a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "—"}
+            <span className="text-muted-foreground"> · {professionalName ?? "sin profesional"}{a.modality === "telemedicina" ? " · telemedicina" : ""}</span>
+          </div>
+          {sentInfo}
+        </div>
+      )}
+      {compact && <div className="min-w-0 flex-1 basis-40">{sentInfo || <span className="text-xs text-muted-foreground">Recordatorio sin enviar</span>}</div>}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {phone && (
+          <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="mr-1 text-xs font-semibold hover:underline">
+            <Phone className="mr-1 inline h-3.5 w-3.5" />{phone}
+          </a>
+        )}
+        <Button size="sm" variant="outline" disabled={!wa || busy} onClick={openWhatsApp}
+          title={wa ? "Abrir WhatsApp con el recordatorio" : "El teléfono no tiene un formato válido para WhatsApp"}
+          className="h-8 border-[#25D366]/50 text-[#128C7E] hover:bg-[#25D366]/10">
+          <MessageCircle className="mr-1 h-3.5 w-3.5" /> WhatsApp
+        </Button>
+        {a.reminder_sent_at ? (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => mark(null)} className="h-8 text-muted-foreground">
+            Desmarcar
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => mark("llamada")} className="h-8"
+            title="Marcar como avisado por teléfono">
+            <Check className="mr-1 h-3.5 w-3.5" /> Avisado por llamada
+          </Button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function TomorrowDialog({ professionals, professionalId, staffEmail, onClose }: {
   professionals: ProfessionalOption[];
   /** Con "Mis turnos": solo los del profesional del usuario */
   professionalId: string | null;
+  staffEmail: string;
   onClose: () => void;
 }) {
   const day = nextWorkday(todayKey());
@@ -851,7 +934,7 @@ function TomorrowDialog({ professionals, professionalId, onClose }: {
   function print() {
     if (!list) return;
     const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const rows = list.map((a) => `<tr><td>${a.appointment_time.slice(0, 5)}</td><td>${esc(a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "—")}</td><td>${esc(a.patients?.phone ?? "")}${a.patients?.guardian_phone ? ` / ${esc(a.patients.guardian_phone)}` : ""}</td><td>${esc(a.professional_id ? proName.get(a.professional_id) ?? "" : "")}</td><td>${a.modality === "telemedicina" ? "Telemedicina" : "Presencial"}</td><td style="width:70px"></td></tr>`).join("");
+    const rows = list.map((a) => `<tr><td>${a.appointment_time.slice(0, 5)}</td><td>${esc(a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "—")}</td><td>${esc(a.patients?.phone ?? "")}${a.patients?.guardian_phone ? ` / ${esc(a.patients.guardian_phone)}` : ""}</td><td>${esc(a.professional_id ? proName.get(a.professional_id) ?? "" : "")}</td><td>${a.modality === "telemedicina" ? "Telemedicina" : "Presencial"}</td><td style="width:70px;text-align:center">${a.reminder_sent_at ? "✓" : ""}</td></tr>`).join("");
     const w = window.open("", "_blank");
     if (!w) { toast.error("Permití las ventanas emergentes para imprimir"); return; }
     w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Turnos del ${formatShortDate(day)}</title>
@@ -864,7 +947,7 @@ function TomorrowDialog({ professionals, professionalId, onClose }: {
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl capitalize text-[color:var(--primary-deep)]">Turnos del {longDate(day)}</DialogTitle>
           <DialogDescription>
@@ -876,22 +959,22 @@ function TomorrowDialog({ professionals, professionalId, onClose }: {
         ) : list.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No hay turnos agendados.</p>
         ) : (
-          <ul className="divide-y divide-border/60 rounded-xl border border-border/60 text-sm">
-            {list.map((a) => (
-              <li key={a.id} className="grid gap-1 p-3 sm:grid-cols-[60px_1fr_auto] sm:items-center">
-                <strong>{a.appointment_time.slice(0, 5)}</strong>
-                <span>
-                  {a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "—"}
-                  <span className="text-muted-foreground"> · {a.professional_id ? proName.get(a.professional_id) : "sin profesional"}{a.modality === "telemedicina" ? " · telemedicina" : ""}</span>
-                </span>
-                {a.patients && (
-                  <a href={`tel:${a.patients.phone.replace(/[^\d+]/g, "")}`} className="font-semibold hover:underline">
-                    <Phone className="mr-1 inline h-3.5 w-3.5" />{a.patients.phone}
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="font-semibold text-[color:var(--primary-deep)]">
+                {list.filter((a) => a.reminder_sent_at).length} de {list.length} avisados
+              </span>
+              <span className="text-xs text-muted-foreground">WhatsApp abre el mensaje ya escrito; solo hay que tocar enviar.</span>
+            </div>
+            <ul className="divide-y divide-border/60 rounded-xl border border-border/60 text-sm">
+              {list.map((a) => (
+                <ReminderRow key={a.id} appt={a}
+                  professionalName={a.professional_id ? proName.get(a.professional_id) : undefined}
+                  staffEmail={staffEmail}
+                  onChange={(patch) => setList((prev) => prev?.map((x) => (x.id === a.id ? { ...x, ...patch } : x)) ?? prev)} />
+              ))}
+            </ul>
+          </>
         )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Cerrar</Button>

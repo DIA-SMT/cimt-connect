@@ -295,7 +295,7 @@ if (demo) {
 }
 
 const INSERT_DEFAULTS: Record<string, Row> = {
-  appointments: { status: "pendiente", modality: "presencial", duration_minutes: 60, attendance: null, practice_number: null, practice_registered_at: null },
+  appointments: { status: "pendiente", modality: "presencial", duration_minutes: 60, attendance: null, practice_number: null, practice_registered_at: null, reminder_sent_at: null, reminder_sent_by: null, reminder_channel: null },
   intake_requests: { status: "nueva", workshop_id: null, workshop_attended: null, patient_id: null, notes: null },
   workshops: { canceled: false, place: "Catamarca 411", capacity: null, notes: null },
   schedule_blocks: { active: true, start_time: null, end_time: null, professional_id: null },
