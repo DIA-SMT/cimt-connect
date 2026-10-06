@@ -13,6 +13,7 @@
 -- OJO: la versión vigente de request_appointment() está en
 -- 9_modalidad_localidad.sql. Si volvés a correr este script, corré el 9
 -- después (si no, quedan dos versiones de la función y los turnos fallan).
+-- OJO: si ya corriste el 17, no vuelvas a correr este (reabre request_appointment).
 -- ============================================================
 
 
