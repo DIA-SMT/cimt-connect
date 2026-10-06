@@ -6,6 +6,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "set VITE_USE_MOCK=true&& npx vite dev --port 5174 --strictPort"],
       "port": 5174
+    },
+    {
+      "name": "dev-real",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set VITE_USE_MOCK=false&& set VITE_PORTAL_ENABLED=true&& npx vite dev --port 5175 --strictPort"],
+      "port": 5175
     }
   ]
 }

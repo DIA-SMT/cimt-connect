@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, X } from "lucide-react";
+import { Menu, UserRound, X } from "lucide-react";
 import logoTortuga from "../assets/logo-tortuga.png";
+import { PORTAL_ENABLED } from "@/lib/portal";
 
 const NAV = [
   { to: "/", label: "Inicio" },
@@ -43,6 +44,17 @@ export function Header() {
           >
             Solicitar turno
           </Link>
+          {PORTAL_ENABLED && (
+            <Link
+              to="/portal"
+              title="Portal de familias: ver los turnos y avisar si pueden venir"
+              aria-label="Mi portal (Portal de familias)"
+              className="flex h-9 min-w-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-primary/30 px-2 text-sm font-semibold text-[color:var(--primary-deep)] transition-colors hover:border-primary hover:bg-[color:var(--primary-soft)] xl:px-3.5"
+            >
+              <UserRound className="h-4 w-4" aria-hidden="true" />
+              <span className="hidden xl:inline">Mi portal</span>
+            </Link>
+          )}
         </nav>
 
         {/* Celular y tablet */}
@@ -51,6 +63,14 @@ export function Header() {
             className="rounded-full bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-card)]">
             Solicitar turno
           </Link>
+          {PORTAL_ENABLED && (
+            // En pantallas de menos de 360 px no entra: queda en el menú
+            <Link to="/portal" onClick={() => setOpen(false)} aria-label="Mi portal (Portal de familias)"
+              className="hidden h-11 min-w-11 items-center justify-center gap-1.5 rounded-full border border-border bg-background text-sm font-semibold text-[color:var(--primary-deep)] min-[360px]:flex sm:px-3.5">
+              <UserRound className="h-5 w-5" aria-hidden="true" />
+              <span className="hidden sm:inline">Mi portal</span>
+            </Link>
+          )}
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="mobile-nav"
             aria-label={open ? "Cerrar menú" : "Abrir menú"}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-[color:var(--primary-deep)]">
@@ -65,6 +85,7 @@ export function Header() {
             {NAV.map((item) => (
               <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} block>{item.label}</NavLink>
             ))}
+            {PORTAL_ENABLED && <NavLink to="/portal" onClick={() => setOpen(false)} block>Mi portal (familias con cuenta)</NavLink>}
           </div>
         </nav>
       )}

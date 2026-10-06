@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Chip, Section, TextField } from "./fields";
 import { GUARDIAN_RELATIONSHIPS, type Guardian } from "@/lib/patients";
+import { PortalGuardianAccess } from "./portal/PortalGuardianAccess";
 
 // Adultos responsables (relevamiento 21: "todos los datos de los adultos
 // responsables para el acompañamiento de la terapia"). Datos de contacto:
@@ -54,6 +55,7 @@ export function GuardiansSection({ patientId, onChanged }: { patientId: string; 
                   {g.lives_with_patient === true && " · Convive"}{g.lives_with_patient === false && " · No convive"}
                 </div>
                 {g.notes && <p className="mt-1 text-xs">{g.notes}</p>}
+                <PortalGuardianAccess guardian={g} patientId={patientId} />
               </div>
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => setEditing(g)}>Editar</Button>
