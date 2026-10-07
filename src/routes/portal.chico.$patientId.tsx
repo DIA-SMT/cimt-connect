@@ -12,7 +12,7 @@ export const Route = createFileRoute("/portal/chico/$patientId")({
 function ChicoPage() {
   const { patientId } = Route.useParams();
   const navigate = useNavigate();
-  const [data, setData] = useState<{ child: { id: string; first_name: string }; appointments: ApptDTO[] } | null>(null);
+  const [data, setData] = useState<{ child: { id: string; first_name: string; self?: boolean }; appointments: ApptDTO[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -52,9 +52,9 @@ function ChicoPage() {
         </div>
       ) : (
         <>
-          <PageTitle sub="Próximos 90 días.">Turnos de {data.child.first_name}</PageTitle>
+          <PageTitle sub="Próximos 90 días.">{data.child.self ? "Tus turnos" : `Turnos de ${data.child.first_name}`}</PageTitle>
           {data.appointments.length === 0 ? (
-            <p className={`${card} text-base`}>{data.child.first_name} no tiene turnos agendados por ahora. Cuando el centro le asigne uno, lo vas a ver acá.</p>
+            <p className={`${card} text-base`}>{data.child.self ? "No tenés turnos agendados por ahora. Cuando el centro te asigne uno, lo vas a ver acá." : `${data.child.first_name} no tiene turnos agendados por ahora. Cuando el centro le asigne uno, lo vas a ver acá.`}</p>
           ) : (
             data.appointments.map((a) => <AppointmentCard key={a.id} appt={a} showChild={false} onChanged={replaceAppt} />)
           )}

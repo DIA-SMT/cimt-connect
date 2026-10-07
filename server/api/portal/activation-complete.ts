@@ -50,7 +50,7 @@ export default defineEventHandler((event) => handle(event, async () => {
       await claim(ctx, inv);
       const added = await linkChildren(ctx, acc.id as string, inv);
       await clearFailures(ctx, dni);
-      return { first_name: acc.first_name, children: added, session: tokens(session) };
+      return { first_name: acc.first_name, children: added.children, self: added.self, session: tokens(session) };
     }
 
     const problem = passwordProblem(password, repeat, dni);
@@ -69,7 +69,7 @@ export default defineEventHandler((event) => handle(event, async () => {
       await clearFailures(ctx, dni);
       const session = await signIn(acc.id as string);
       if (!session) throw new PortalError(503, "Tu contraseña se guardó. Ingresá con tu DNI y la contraseña nueva.");
-      return { first_name: acc.first_name, children: [], session: tokens(session) };
+      return { first_name: acc.first_name, children: [], self: false, session: tokens(session) };
     }
 
     // ── Cuenta nueva ──
@@ -117,7 +117,7 @@ export default defineEventHandler((event) => handle(event, async () => {
     await clearFailures(ctx, dni);
     const session = await signIn(accountId);
     if (!session) throw new PortalError(503, "Tu cuenta quedó creada. Ingresá con tu DNI y tu contraseña.");
-    return { first_name: inv.first_name, children: added, session: tokens(session) };
+    return { first_name: inv.first_name, children: added.children, self: added.self, session: tokens(session) };
   });
 }));
 

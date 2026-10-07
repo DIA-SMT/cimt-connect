@@ -88,7 +88,8 @@ export function AppointmentCard({
     onChanged?.(r.data);
   }
 
-  const title = showChild ? `${appt.child_first_name} · ${apptDateLabel(appt)}` : apptDateLabel(appt);
+  // El turno propio del titular se titula "Tu turno"; los de los chicos, con su nombre
+  const title = showChild ? `${appt.is_self ? "Tu turno" : appt.child_first_name} · ${apptDateLabel(appt)}` : apptDateLabel(appt);
 
   return (
     <article className={`${card} flex flex-col gap-3`} aria-label={title}>
@@ -109,7 +110,7 @@ export function AppointmentCard({
 
       {appt.is_today && appt.can_decline && (
         <p className="text-base font-semibold text-[oklch(0.42_0.1_70)]">
-          Es para hoy: si no pueden venir, además de avisar acá, <CallUs />.
+          Es para hoy: si no {appt.is_self ? "podés" : "pueden"} venir, además de avisar acá, <CallUs />.
         </p>
       )}
 
@@ -117,12 +118,12 @@ export function AppointmentCard({
         <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
           {showConfirm && (
             <button type="button" onClick={confirm} disabled={saving} className={pillPrimary}>
-              {saving ? "Guardando…" : "Vamos a ir"}
+              {saving ? "Guardando…" : appt.is_self ? "Voy a ir" : "Vamos a ir"}
             </button>
           )}
           <Link to="/portal/turno/$appointmentId" params={{ appointmentId: appt.id }}
             className={`${pillOutline} ${showConfirm ? "" : "min-[420px]:col-span-2"}`}>
-            {responded ? "Cambiar respuesta" : "No vamos a poder ir"}
+            {responded ? "Cambiar respuesta" : appt.is_self ? "No voy a poder ir" : "No vamos a poder ir"}
           </Link>
         </div>
       )}

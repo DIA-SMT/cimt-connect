@@ -36,7 +36,7 @@ function ActivarPage() {
   const [error, setError] = useState<React.ReactNode>(null);
   const [fails, setFails] = useState(0);
   const [sending, setSending] = useState(false);
-  const [done, setDone] = useState<{ first_name: string; children: string[] } | null>(null);
+  const [done, setDone] = useState<{ first_name: string; children: string[]; self?: boolean } | null>(null);
   const headingRef = useRef<HTMLDivElement>(null);
 
   // Código desde el link (#c=…) o desde sessionStorage
@@ -182,8 +182,11 @@ function ActivarPage() {
           <p className="text-xs font-bold uppercase tracking-widest text-primary">{stepLabel(2)}</p>
           <PageTitle>{recovery ? "Elegí una contraseña nueva" : linking ? "Sumar a tu cuenta" : "Confirmá"}</PageTitle>
           <div className={`${card} flex flex-col gap-3`}>
-            <p className="font-display text-lg font-bold">{recovery ? "Tu cuenta está vinculada con:" : linking ? "Vas a sumar a tu cuenta a:" : "Vas a vincular tu cuenta con:"}</p>
+            <p className="font-display text-lg font-bold">{recovery ? "Tu cuenta está vinculada con:" : linking ? "Vas a sumar a tu cuenta:" : "Con tu cuenta vas a ver:"}</p>
             <ul className="flex flex-wrap gap-2">
+              {info.self && (
+                <li className="rounded-full bg-[color:var(--primary-soft)] px-4 py-1.5 text-base font-bold text-[color:var(--primary-deep)]">Tus propios turnos</li>
+              )}
               {info.children.map((c) => (
                 <li key={c} className="rounded-full bg-[color:var(--primary-soft)] px-4 py-1.5 text-base font-bold text-[color:var(--primary-deep)]">{c}</li>
               ))}
@@ -191,7 +194,7 @@ function ActivarPage() {
             {childrenOk === null && (
               <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                 <button type="button" onClick={() => setChildrenOk(true)} className={pillPrimary}>Sí, es correcto</button>
-                <button type="button" onClick={() => setChildrenOk(false)} className={pillOutline}>No es mi chico/a</button>
+                <button type="button" onClick={() => setChildrenOk(false)} className={pillOutline}>{info.self ? (info.children.length ? "Algo no es correcto" : "No soy yo") : "No es mi chico/a"}</button>
               </div>
             )}
             {childrenOk === false && (
@@ -271,8 +274,10 @@ function ActivarPage() {
         <div className={`${card} flex flex-col items-center gap-3 text-center`}>
           <CircleCheck className="h-14 w-14 text-[oklch(0.55_0.15_150)]" aria-hidden="true" />
           <PageTitle>{recovery ? "Contraseña actualizada" : `¡Listo, ${done.first_name}!`}</PageTitle>
-          {done.children.length > 0 && (
-            <p className="text-base">Ya podés ver los turnos de {listNames(done.children)}.</p>
+          {(done.self || done.children.length > 0) && (
+            <p className="text-base">
+              Ya podés ver {[done.self ? "tus turnos" : null, done.children.length ? `los turnos de ${listNames(done.children)}` : null].filter(Boolean).join(" y ").replace("tus turnos y los turnos de", "tus turnos y los de")}.
+            </p>
           )}
           <p className="text-base text-muted-foreground">
             La próxima vez, entrá a <b>{typeof window !== "undefined" ? window.location.host : ""}/portal</b> con tu DNI y tu contraseña.

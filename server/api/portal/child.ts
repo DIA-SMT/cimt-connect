@@ -14,7 +14,7 @@ export default defineEventHandler((event) => handle(event, async () => {
   if (!child) throw new PortalError(404, "No encontramos a ese chico en tu cuenta.");
   const today = centerNow().date;
   return {
-    child: { id: child.patient_id, first_name: child.display },
+    child: { id: child.patient_id, first_name: child.display, self: child.self },
     appointments: await appointmentsFor(ctx, account, [child], today, addDaysKey(today, 90)),
   };
 }));

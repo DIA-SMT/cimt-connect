@@ -132,11 +132,11 @@ function TurnoPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <BackLink childId={appt.child_id} childName={appt.child_first_name} />
-      <PageTitle>¿Pueden venir?</PageTitle>
+      <BackLink childId={appt.child_id} childName={appt.is_self ? null : appt.child_first_name} />
+      <PageTitle>{appt.is_self ? "¿Podés venir?" : "¿Pueden venir?"}</PageTitle>
 
       <div className="rounded-3xl bg-[color:var(--primary-soft)] p-5">
-        <p className="font-display text-lg font-bold text-[color:var(--primary-deep)]">{appt.child_first_name} · {apptDateLabel(appt)}</p>
+        <p className="font-display text-lg font-bold text-[color:var(--primary-deep)]">{appt.is_self ? "Tu turno" : appt.child_first_name} · {apptDateLabel(appt)}</p>
         <p className="text-sm text-[color:var(--primary-deep)]/80">{apptMeta(appt)}</p>
       </div>
 
@@ -146,7 +146,9 @@ function TurnoPage() {
           <p className="text-base">
             {appt.state === "cancelado" ? "El centro canceló este turno."
               : appt.is_past
-                ? (r?.kind === "no_puedo" ? "Este turno ya pasó. Tu aviso quedó registrado." : <>Este turno ya pasó. Si no pudieron venir, <CallUs />.</>)
+                ? (r?.kind === "no_puedo"
+                  ? `Este turno ya pasó. ${r.by_me ? "Tu aviso" : "El aviso"} quedó registrado.`
+                  : <>Este turno ya pasó. Si no {appt.is_self ? "pudiste" : "pudieron"} venir, <CallUs />.</>)
               : <>El equipo ya resolvió el aviso. Si cambió algo, <CallUs />.</>}
           </p>
         </div>
@@ -155,7 +157,9 @@ function TurnoPage() {
           {r && r.by_me && <p className="text-sm text-muted-foreground">Respondiste el {stampLabel(r.at)}.</p>}
           {r && !r.by_me && (
             <p className="rounded-2xl bg-muted px-4 py-3 text-base">
-              Otro adulto de la familia avisó el {stampLabel(r.at)} que {r.kind === "confirmo" ? "van" : "no van"}. Podés responder igual.
+              {appt.is_self
+                ? <>Tu familia avisó el {stampLabel(r.at)} que {r.kind === "confirmo" ? "vas" : "no vas"}. Podés responder igual.</>
+                : <>Otro adulto de la familia avisó el {stampLabel(r.at)} que {r.kind === "confirmo" ? "van" : "no van"}. Podés responder igual.</>}
             </p>
           )}
 
@@ -166,7 +170,7 @@ function TurnoPage() {
                 onChange={() => { setChoice("confirmo"); setError(null); }} className="sr-only" />
               <Dot on={choice === "confirmo"} />
               <span>
-                Vamos a ir
+                {appt.is_self ? "Voy a ir" : "Vamos a ir"}
                 {!appt.can_confirm && appt.confirm_from && (
                   <span className="block text-sm font-semibold">Vas a poder confirmar desde el {shortDayLabel(appt.confirm_from)} ({CONFIRM_WINDOW_DAYS} días antes)</span>
                 )}
@@ -176,14 +180,14 @@ function TurnoPage() {
               <input type="radio" name="response" value="no_puedo" checked={choice === "no_puedo"}
                 onChange={() => { setChoice("no_puedo"); setError(null); }} className="sr-only" />
               <Dot on={choice === "no_puedo"} />
-              No vamos a poder ir
+              {appt.is_self ? "No voy a poder ir" : "No vamos a poder ir"}
             </label>
           </fieldset>
 
           {choice === "no_puedo" && (
             <>
               <fieldset className="flex flex-col gap-2" aria-describedby={reasonError ? "portal-reason-error" : undefined}>
-                <legend className="mb-2 text-base font-bold">¿Por qué no pueden venir?</legend>
+                <legend className="mb-2 text-base font-bold">{appt.is_self ? "¿Por qué no podés venir?" : "¿Por qué no pueden venir?"}</legend>
                 {REASONS.map((o) => (
                   <label key={o.code} className={`${optionClass(reason === o.code)} cursor-pointer`}>
                     <input type="radio" name="reason" value={o.code} checked={reason === o.code}
@@ -219,10 +223,10 @@ function TurnoPage() {
   );
 }
 
-function BackLink({ childId, childName }: { childId?: string; childName?: string }) {
+function BackLink({ childId, childName }: { childId?: string; childName?: string | null }) {
   return childId ? (
     <Link to="/portal/chico/$patientId" params={{ patientId: childId }} className="flex min-h-11 items-center gap-1 self-start text-base font-bold text-primary">
-      <ChevronLeft className="h-5 w-5" aria-hidden="true" /> Turnos de {childName}
+      <ChevronLeft className="h-5 w-5" aria-hidden="true" /> {childName ? `Turnos de ${childName}` : "Tus turnos"}
     </Link>
   ) : (
     <Link to="/portal" className="flex min-h-11 items-center gap-1 self-start text-base font-bold text-primary">

@@ -63,7 +63,7 @@ function IngresarPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageTitle sub="Mirá los turnos de tus chicos y avisanos si pueden venir.">Portal de familias</PageTitle>
+      <PageTitle sub="Mirá tus turnos o los de tus chicos, y avisanos si pueden venir.">Portal de familias</PageTitle>
 
       <div className={`${card} flex flex-col gap-4`}>
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">

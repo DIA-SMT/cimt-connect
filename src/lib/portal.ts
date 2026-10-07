@@ -32,6 +32,7 @@ export type ChildDTO = {
   id: string;
   first_name: string;
   last_initial: string;
+  self: boolean; // es el propio titular de la cuenta (paciente adulto)
   next: ApptDTO | null; // próximo turno después de esta semana
 };
 
@@ -46,7 +47,8 @@ export type ActivationInfo = {
   // vincular: suma chicos a una cuenta que ya existe (pide la contraseña actual)
   purpose: "activacion" | "recuperacion" | "vincular";
   guardian_first_name: string;
-  children: string[]; // "Martín G."
+  children: string[]; // chicos a cargo: "Martín G."
+  self: boolean; // incluye los turnos del propio titular (paciente adulto)
   needs: "new_password" | "current_password";
   needs_privacy: boolean;
 };
@@ -72,7 +74,7 @@ export const REASONS: { code: ReasonCode; label: string }[] = [
 
 export const PRIVACY_POINTS = [
   `El responsable de tus datos es el CIMT (Municipalidad de San Miguel de Tucumán), ${CENTER.address}.`,
-  "Usamos tus datos para mostrarte los turnos de los chicos a tu cargo y recibir tus avisos.",
+  "Usamos tus datos para mostrarte tus turnos o los de los chicos a tu cargo, y recibir tus avisos.",
   "El portal no muestra diagnósticos, informes ni la historia clínica.",
   "Es optativo: si no lo usás, la atención sigue igual.",
   "Solo el equipo del CIMT ve lo que hacés acá. Registramos los ingresos por seguridad.",
@@ -114,13 +116,22 @@ export function apptStatus(a: ApptDTO): { tone: ApptTone; text: string } | null 
   const whose = r && !r.by_me ? " de otro adulto de la familia" : "";
   if (a.state === "cancelado") {
     if (r?.kind === "no_puedo" && a.outcome === "cancelado") {
-      return { tone: "info", text: r.by_me ? "Cancelamos el turno por tu aviso" : "Cancelamos el turno por el aviso de otro adulto de la familia" };
+      return { tone: "info", text: r.by_me ? "Cancelamos el turno por tu aviso"
+        : a.is_self ? "Cancelamos el turno por el aviso de tu familia" : "Cancelamos el turno por el aviso de otro adulto de la familia" };
     }
     return { tone: "bad", text: "Cancelado por el centro" };
   }
   // Un aviso de "no vamos" (y lo que resolvió el centro) se sigue viendo
   // aunque ya haya pasado la hora del turno
   if (r?.kind === "no_puedo") {
+    if (a.is_self) {
+      if (a.outcome === "justificado") return { tone: "info", text: "Falta justificada" };
+      if (a.outcome === "reprogramado") return { tone: "info", text: "Te contactamos para otro día" };
+      if (a.outcome === "otro") return { tone: "info", text: r.by_me ? "Recibimos tu aviso" : "Recibimos el aviso de tu familia" };
+      return r.by_me
+        ? { tone: "bad", text: "Avisaste que no vas · Recibimos tu aviso" }
+        : { tone: "bad", text: `Tu familia avisó que no vas · ${stampLabel(r.at)}` };
+    }
     if (a.outcome === "justificado") return { tone: "info", text: "Falta justificada" };
     if (a.outcome === "reprogramado") {
       return { tone: "info", text: whose ? `Por el aviso${whose}, te contactamos para otro día` : "Te contactamos para otro día" };
@@ -132,6 +143,9 @@ export function apptStatus(a: ApptDTO): { tone: ApptTone; text: string } | null 
   }
   if (a.is_past) return { tone: "muted", text: "Este turno ya pasó" };
   if (r?.kind === "confirmo") {
+    if (a.is_self) {
+      return r.by_me ? { tone: "ok", text: "✓ Avisaste que vas" } : { tone: "ok", text: `Tu familia avisó que vas · ${stampLabel(r.at)}` };
+    }
     return r.by_me
       ? { tone: "ok", text: "✓ Avisaste que van" }
       : { tone: "ok", text: `Otro adulto de la familia avisó que van · ${stampLabel(r.at)}` };
@@ -237,17 +251,17 @@ export const portalApi = {
   },
   async activationComplete(input: {
     dni: string; code: string; password: string; password_repeat: string; accept_privacy_version?: string;
-  }): Promise<ApiResult<{ first_name: string; children: string[] }>> {
+  }): Promise<ApiResult<{ first_name: string; children: string[]; self?: boolean }>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).activationComplete(input);
-    return keepSession(await call<{ first_name: string; children: string[]; session: SessionTokens }>("activation-complete", { method: "POST", body: input, auth: false }));
+    return keepSession(await call<{ first_name: string; children: string[]; self?: boolean; session: SessionTokens }>("activation-complete", { method: "POST", body: input, auth: false }));
   },
   async me(): Promise<ApiResult<MeDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).me();
     return call("me");
   },
-  async childAppointments(patientId: string): Promise<ApiResult<{ child: { id: string; first_name: string }; appointments: ApptDTO[] }>> {
+  async childAppointments(patientId: string): Promise<ApiResult<{ child: { id: string; first_name: string; self?: boolean }; appointments: ApptDTO[] }>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).childAppointments(patientId);
     return call(`child?id=${encodeURIComponent(patientId)}`);

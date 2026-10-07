@@ -21,17 +21,24 @@ export default defineEventHandler((event) => handle(event, async () => {
       throw new PortalError(409, "Ya tenés una cuenta con este DNI. Ingresá con tu contraseña.", { code: "ACCOUNT_EXISTS" });
     }
 
+    // Chicos a cargo por nombre; el propio titular va aparte ("tus turnos")
     let children: string[];
+    let self: boolean;
     if (inv.purpose === "recuperacion") {
-      children = acc ? (await activeChildren(ctx, acc as Account)).map((c) => `${c.first_name} ${c.last_name.charAt(0)}.`) : [];
+      const active = acc ? await activeChildren(ctx, acc as Account) : [];
+      children = active.filter((c) => !c.self).map((c) => `${c.first_name} ${c.last_name.charAt(0)}.`);
+      self = active.some((c) => c.self);
     } else {
-      children = (await validChildren(ctx, dni, inv.children)).map((v) => shortName(v.patient));
-      if (!children.length) throw new PortalError(400, "Este código ya no sirve. Pedí uno nuevo en el centro.");
+      const valid = await validChildren(ctx, dni, inv.children);
+      if (!valid.length) throw new PortalError(400, "Este código ya no sirve. Pedí uno nuevo en el centro.");
+      children = valid.filter((v) => !v.child.self).map((v) => shortName(v.patient));
+      self = valid.some((v) => v.child.self);
     }
     return {
       purpose: inv.purpose,
       guardian_first_name: inv.first_name,
       children,
+      self,
       needs: inv.purpose === "vincular" ? "current_password" : "new_password",
       needs_privacy: inv.purpose === "activacion",
     };

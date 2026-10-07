@@ -287,7 +287,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 </div>
               </Section>
 
-              <GuardiansSection patientId={draft.id} onChanged={() => { changed.current = true; }} />
+              <GuardiansSection patientId={draft.id} patientRev={patient} onChanged={() => { changed.current = true; }} />
 
               <Section icon={Home} title="Contexto familiar y convivencia">
                 <div className="grid gap-4 sm:grid-cols-2">
