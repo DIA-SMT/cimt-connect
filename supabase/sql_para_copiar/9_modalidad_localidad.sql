@@ -3,6 +3,7 @@
 -- Correlo en Supabase → SQL Editor → New query → Run
 -- Requiere haber corrido antes los scripts 6, 7 y 8.
 -- Es idempotente: se puede correr varias veces.
+-- OJO: si ya corriste el 17, no vuelvas a correr este (reabre request_appointment).
 --
 -- IMPORTANTE: correlo ANTES de publicar el código nuevo (el formulario de
 -- turnos nuevo manda modalidad y localidad; el código viejo sigue andando

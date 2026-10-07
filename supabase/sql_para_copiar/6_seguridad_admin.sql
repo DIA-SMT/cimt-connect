@@ -2,6 +2,7 @@
 -- CIMT Connect — Seguridad: panel admin con login + RLS cerrado
 -- Correlo en Supabase → SQL Editor → New query → Run
 -- Es idempotente: se puede correr varias veces.
+-- OJO: si ya corriste el 17, no vuelvas a correr este (reabre request_appointment y get_booked_slots).
 --
 -- Qué hace:
 --   1. Crea la tabla admins (qué usuarios de Supabase Auth pueden entrar al panel)
