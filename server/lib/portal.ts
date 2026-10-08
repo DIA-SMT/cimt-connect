@@ -50,6 +50,9 @@ export function setup() {
   return {
     admin: createClient(c.url, c.serviceKey, opts), // service role: solo en el servidor
     anon: () => createClient(c.url, c.anonKey, opts), // nuevo por pedido, para iniciar sesión
+    // Con la sesión de una persona del equipo: rige RLS y el historial de
+    // cambios (audit_log) registra su email, como si lo hiciera desde el panel
+    asUser: (token: string) => createClient(c.url, c.anonKey, { ...opts, global: { headers: { Authorization: `Bearer ${token}` } } }),
     pepper: c.pepper,
   };
 }
@@ -175,14 +178,14 @@ export async function requireFamily(ctx: Ctx, event: H3Event): Promise<Account> 
 }
 
 // Persona del equipo: sesión del panel y fila activa en admins (cualquier rol)
-export async function requireStaff(ctx: Ctx, event: H3Event): Promise<{ user_id: string; email: string }> {
+export async function requireStaff(ctx: Ctx, event: H3Event): Promise<{ user_id: string; email: string; token: string }> {
   const token = bearer(event);
   if (!token) throw new PortalError(401, "No autenticado");
   const { data, error } = await ctx.admin.auth.getUser(token);
   if (error || !data.user) throw new PortalError(401, "Sesión inválida");
   const { data: row } = await ctx.admin.from("admins").select("active, email").eq("user_id", data.user.id).maybeSingle();
   if (!row?.active) throw new PortalError(403, "Solo el equipo del CIMT puede hacer esto");
-  return { user_id: data.user.id, email: (row.email as string) ?? data.user.email ?? "" };
+  return { user_id: data.user.id, email: (row.email as string) || data.user.email || "", token };
 }
 
 // ── Qué chicos ve una cuenta ────────────────────────────────────────────────
@@ -218,34 +221,44 @@ export type ActiveChild = { patient_id: string; first_name: string; last_name: s
 // Lo usan el portal (solo los vigentes) y el panel (estado del acceso e
 // invitaciones), así los dos ven lo mismo.
 export async function accountLinks(ctx: Ctx, account: Pick<Account, "id" | "dni">) {
-  const { data: links } = await ctx.admin.from("portal_links")
+  const { data: links, error } = await ctx.admin.from("portal_links")
     .select("id, patient_id, guardian_id, relationship_kind, adolescent_consent_at")
     .eq("account_id", account.id).is("revoked_at", null);
+  if (error) throw new PortalError(503, "No pudimos conectar. Probá de nuevo.");
   if (!links?.length) return [];
   const guardianIds = links.map((l) => l.guardian_id).filter((x): x is string => !!x);
-  const [{ data: guardians }, { data: patients }] = await Promise.all([
+  const [{ data: guardians, error: gErr }, { data: patients, error: pErr }] = await Promise.all([
     guardianIds.length
       ? ctx.admin.from("patient_guardians").select("id, patient_id, dni, active").in("id", guardianIds)
-      : Promise.resolve({ data: [] as GuardianRow[] }),
+      : Promise.resolve({ data: [] as GuardianRow[], error: null }),
     ctx.admin.from("patients").select("id, first_name, last_name, dni, birth_date, discharge_date").in("id", links.map((l) => l.patient_id)),
   ]);
+  if (gErr || pErr) throw new PortalError(503, "No pudimos conectar. Probá de nuevo.");
   const today = centerNow().date;
   return links.map((l) => {
     const p = (patients as PatientRow[] | null)?.find((x) => x.id === l.patient_id) ?? null;
     const self = l.relationship_kind === "titular";
     let valid: boolean;
+    // Derecho a pedir copia de la historia clínica: el alta y la conformidad
+    // del adolescente cortan el acceso al portal, pero no ese derecho
+    let hc_ok: boolean;
     if (self) {
       // Titular: la cuenta es del propio paciente (mismo DNI), mayor de edad y sin alta
-      valid = !!p && normalizeDni(p.dni ?? "") === account.dni && selfEligibility(p, today).ok;
+      const same = !!p && normalizeDni(p.dni ?? "") === account.dni;
+      valid = same && selfEligibility(p!, today).ok;
+      hc_ok = same;
     } else {
       const g = (guardians as GuardianRow[] | null)?.find((x) => x.id === l.guardian_id);
-      valid = !!g && !!p && g.active && g.patient_id === p.id && normalizeDni(g.dni ?? "") === account.dni;
+      const same = !!g && !!p && g.active && g.patient_id === p.id && normalizeDni(g.dni ?? "") === account.dni;
+      const age = p?.birth_date ? ageOn(p.birth_date, today) : null;
+      valid = same;
       if (valid && p) {
         const el = eligibility(p, today);
         valid = el.ok && !((el.age ?? 0) >= 16 && !l.adolescent_consent_at);
       }
+      hc_ok = same && l.relationship_kind === "representante_legal" && age !== null && age < SELF_ACCESS_AGE;
     }
-    return { id: l.id as string, patient_id: l.patient_id as string, kind: l.relationship_kind as string, self, patient: p, valid };
+    return { id: l.id as string, patient_id: l.patient_id as string, kind: l.relationship_kind as string, self, patient: p, valid, hc_ok };
   });
 }
 

@@ -14,7 +14,8 @@
 --     área, derivaciones, seguimiento, informes, registro de adjuntos.
 --   · Turnos, bloqueos de horario, solicitudes de ingreso.
 --   · Portal: cuentas de familias (y sus usuarios de acceso), vínculos,
---     invitaciones, respuestas a turnos, intentos de ingreso.
+--     invitaciones, respuestas a turnos, intentos de ingreso, pedidos de
+--     copia de la historia clínica y su constancia (requiere el script 20).
 --   · Encuestas de satisfacción, historial de cambios, límites del chat.
 --   · Reinicia la numeración de prácticas (vuelve a empezar en 000001).
 --
@@ -50,6 +51,8 @@ BEGIN
   -- Sin CASCADE a propósito: si apareciera una tabla nueva que dependa de
   -- estas, el script falla sin borrar nada en vez de llevársela puesta.
   TRUNCATE TABLE
+    public.portal_hc_request_events,
+    public.portal_hc_requests,
     public.portal_appointment_responses,
     public.portal_links,
     public.portal_invitations,
@@ -88,6 +91,7 @@ SELECT
   (SELECT count(*) FROM public.patient_reports)              AS informes,
   (SELECT count(*) FROM public.patient_files)                AS adjuntos,
   (SELECT count(*) FROM public.portal_accounts)              AS cuentas_portal,
+  (SELECT count(*) FROM public.portal_hc_requests)           AS pedidos_copia_hc,
   (SELECT count(*) FROM public.satisfaction_surveys)         AS encuestas,
   (SELECT count(*) FROM public.audit_log)                    AS historial,
   (SELECT count(*) FROM public.workshops)                    AS talleres_se_conservan,
