@@ -18,6 +18,7 @@ import { SocialCornerTab } from "@/components/admin/SocialCornerTab";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
 import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
+import { PASSWORD_MIN, PASSWORD_MIN_MESSAGE } from "@/lib/passwords";
 
 type Patient = {
   first_name: string;
@@ -234,8 +235,8 @@ function SetNewPassword({ forced = false, onSignOut }: { forced?: boolean; onSig
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (password.length < 8) {
-      toast.error("La contraseña tiene que tener al menos 8 caracteres");
+    if (password.length < PASSWORD_MIN) {
+      toast.error(PASSWORD_MIN_MESSAGE);
       return;
     }
     if (password !== confirm) {
@@ -266,17 +267,17 @@ function SetNewPassword({ forced = false, onSignOut }: { forced?: boolean; onSig
     <AuthCard
       title={forced ? "Cambiá tu contraseña" : "Nueva contraseña"}
       subtitle={forced
-        ? "Para empezar a usar el panel, reemplazá la contraseña que te dieron por una propia de al menos 8 caracteres."
-        : "Elegí una contraseña de al menos 8 caracteres"}
+        ? "Para empezar a usar el panel, reemplazá la contraseña que te dieron por una propia."
+        : "Elegí tu contraseña nueva"}
       onSubmit={handleSubmit}>
       <div className="space-y-1.5">
         <Label htmlFor="new-password">Contraseña nueva</Label>
-        <Input id="new-password" type="password" autoComplete="new-password" required minLength={8}
+        <Input id="new-password" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN}
           value={password} onChange={(e) => setPassword(e.target.value)} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="confirm-password">Repetir contraseña</Label>
-        <Input id="confirm-password" type="password" autoComplete="new-password" required minLength={8}
+        <Input id="confirm-password" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN}
           value={confirm} onChange={(e) => setConfirm(e.target.value)} />
       </div>
       <Button type="submit" disabled={submitting}
@@ -479,7 +480,7 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (password.length < 8) { toast.error("La contraseña tiene que tener al menos 8 caracteres"); return; }
+    if (password.length < PASSWORD_MIN) { toast.error(PASSWORD_MIN_MESSAGE); return; }
     if (password !== confirm) { toast.error("Las contraseñas no coinciden"); return; }
     setSaving(true);
     const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
@@ -503,12 +504,12 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="cp-new">Contraseña nueva</Label>
-            <Input id="cp-new" type="password" autoComplete="new-password" required minLength={8}
+            <Input id="cp-new" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN}
               value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="cp-confirm">Repetir contraseña</Label>
-            <Input id="cp-confirm" type="password" autoComplete="new-password" required minLength={8}
+            <Input id="cp-confirm" type="password" autoComplete="new-password" required minLength={PASSWORD_MIN}
               value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </div>
           <div className="flex justify-end gap-2">

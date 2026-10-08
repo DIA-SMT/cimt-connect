@@ -10,6 +10,7 @@ import { Globe, ImageUp, KeyRound, Loader2, Plus, Power, User2, UserPlus, Wand2 
 import { TextAreaField, TextField, selectClass } from "./fields";
 import { DISCIPLINES } from "@/lib/center";
 import { ROLE_DESCRIPTION, ROLE_LABEL, usersApi, type PanelUser, type StaffRole } from "@/lib/staff";
+import { PASSWORD_MIN } from "@/lib/passwords";
 
 // Pestaña "Equipo" (solo Dirección): profesionales del centro y usuarios del panel.
 // Relevamiento: 44 (fotos y descripción en el sitio), 47 (la Dirección da de alta
@@ -478,7 +479,7 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
           <div className="space-y-1.5">
             <Label htmlFor="nu-pass">Contraseña inicial</Label>
             <div className="flex gap-2">
-              <Input id="nu-pass" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)}
+              <Input id="nu-pass" required minLength={PASSWORD_MIN} value={password} onChange={(e) => setPassword(e.target.value)}
                 className="font-mono" />
               <Button type="button" variant="outline" onClick={() => setPassword(generatePassword())} title="Generar otra">
                 <Wand2 className="h-4 w-4" />
@@ -529,7 +530,7 @@ function SetPasswordDialog({ user, onClose }: { user: PanelUser; onClose: () => 
           <DialogDescription>Para {user.email}. Pasásela por un medio seguro.</DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
-          <Input value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} className="font-mono"
+          <Input value={password} onChange={(e) => setPassword(e.target.value)} minLength={PASSWORD_MIN} className="font-mono"
             aria-label="Contraseña nueva" />
           <Button type="button" variant="outline" onClick={() => setPassword(generatePassword())} title="Generar otra">
             <Wand2 className="h-4 w-4" />
@@ -544,7 +545,7 @@ function SetPasswordDialog({ user, onClose }: { user: PanelUser; onClose: () => 
           </label>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
-          <Button onClick={save} disabled={saving || password.length < 8}
+          <Button onClick={save} disabled={saving || password.length < PASSWORD_MIN}
             className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
             {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             Asignar

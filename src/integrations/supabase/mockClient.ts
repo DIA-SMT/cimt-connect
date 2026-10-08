@@ -21,6 +21,7 @@ import {
   MOCK_PROFESSIONALS,
   MOCK_APPOINTMENTS,
 } from "@/lib/mockData";
+import { PASSWORD_MIN, PASSWORD_MIN_MESSAGE } from "@/lib/passwords";
 
 type Row = Record<string, unknown>;
 
@@ -672,7 +673,7 @@ function mockUsersApi(body: Row): Promise<{ ok: true; user_id?: string } | { err
   if (body.action === "create") {
     const email = String(body.email).trim().toLowerCase();
     if (store.admins.some((a) => a.email === email)) return Promise.resolve({ error: "Ya existe un usuario con ese email" });
-    if (String(body.password ?? "").length < 8) return Promise.resolve({ error: "La contraseña tiene que tener al menos 8 caracteres" });
+    if (String(body.password ?? "").length < PASSWORD_MIN) return Promise.resolve({ error: PASSWORD_MIN_MESSAGE });
     const user_id = `mock-user-${Date.now()}`;
     if (body.must_change !== false) mockMustChange.add(user_id);
     store.admins.push({ user_id, email, full_name: body.full_name ?? null, role: body.role, active: true, created_at: new Date().toISOString() });
