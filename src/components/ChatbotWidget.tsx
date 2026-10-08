@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { Send, X, MessageCircle, CalendarCheck, ChevronDown } from "lucide-react";
 import migueAvatar from "@/assets/migue-avatar.jpg";
 import { MigueAvatar } from "./MigueAvatar";
+import { ROLE_LABEL, type Staff } from "@/lib/staff";
+import { StaffChatError, askStaffMigue } from "@/lib/staffAssistant";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,15 @@ const QUICK_SUGGESTIONS = [
   { id: "ubicacion", label: "¿Dónde están ubicados?" },
   { id: "especialistas", label: "¿Qué especialistas tienen?" },
   { id: "tartamudez", label: "¿Qué es la tartamudez?" },
+];
+
+// Modo equipo (dentro del panel, con sesión): consultas internas, sin datos clínicos
+const STAFF_SUGGESTIONS = [
+  { id: "hoy", label: "¿Qué turnos hay hoy?" },
+  { id: "avisar", label: "¿Quién falta avisar para mañana?" },
+  { id: "ingresos", label: "¿Cuántos ingresos hubo este mes?" },
+  { id: "solicitudes", label: "¿Qué solicitudes están pendientes?" },
+  { id: "taller", label: "¿Cuándo es el próximo taller?" },
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -43,7 +54,12 @@ function TypingDots() {
 
 // ─── Main widget ─────────────────────────────────────────────────────────────
 
-export function ChatbotWidget() {
+/** Sin `staff`: el Migue informativo del sitio. Con `staff`: el modo equipo del panel. */
+export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
+  const staffMode = !!staff;
+  const suggestions = staffMode
+    ? [...(staff?.professional_id ? [{ id: "semana", label: "¿Qué turnos tengo esta semana?" }] : []), ...STAFF_SUGGESTIONS]
+    : QUICK_SUGGESTIONS;
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -77,12 +93,15 @@ export function ChatbotWidget() {
         {
           id: uid(),
           role: "assistant",
-          content:
-            "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
+          content: staffMode
+            ? `¡Hola${staff?.full_name ? `, ${staff.full_name.split(" ")[0]}` : ""}! Soy **Migue**, en modo equipo. Puedo consultar turnos, métricas, solicitudes, pacientes y talleres del centro, y contarte dónde se hace cada cosa en el panel. No veo datos clínicos y no modifico nada. ¿Qué necesitás?`
+            : "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
         },
       ]);
     }, 900);
     return () => clearTimeout(t);
+    // El saludo se arma una sola vez; al cambiar de modo el widget se vuelve a montar (key en Layout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleOpen = () => {
@@ -99,6 +118,22 @@ export function ChatbotWidget() {
     setMessages(updatedMessages);
     setInput("");
     setIsTyping(true);
+
+    if (staff) {
+      try {
+        const reply = await askStaffMigue(updatedMessages.map((m) => ({ role: m.role, content: m.content })), staff);
+        setMessages((prev) => [...prev, { id: uid(), role: "assistant", content: reply }]);
+      } catch (err: unknown) {
+        console.error("[Migue equipo]", err);
+        const timeout = err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
+        setApiError(timeout
+          ? "La respuesta tardó demasiado. Probá de nuevo."
+          : err instanceof StaffChatError ? err.message : "No se pudo conectar con el asistente.");
+      } finally {
+        setIsTyping(false);
+      }
+      return;
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30_000);
@@ -242,7 +277,9 @@ export function ChatbotWidget() {
               <p className="font-display font-bold text-[color:var(--primary-deep)] leading-none text-sm">
                 Migue
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">Asistente virtual · CIMT</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {staffMode ? `Modo equipo · ${ROLE_LABEL[staff!.role]}` : "Asistente virtual · CIMT"}
+              </p>
             </div>
             <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -267,7 +304,7 @@ export function ChatbotWidget() {
               >
                 {msg.role === "assistant" && <MigueAvatar size="sm" label="Migue:" />}
                 <div
-                  className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${staffMode ? "whitespace-pre-line " : ""}${
                     msg.role === "user"
                       ? "rounded-br-none bg-primary text-primary-foreground font-medium shadow-sm"
                       : "rounded-bl-none bg-card border border-border/60 text-foreground shadow-[var(--shadow-card)]"
@@ -302,7 +339,7 @@ export function ChatbotWidget() {
                   Sugerencias rápidas
                 </p>
                 <div className="flex flex-wrap gap-1.5 justify-center">
-                  {QUICK_SUGGESTIONS.map((s) => (
+                  {suggestions.map((s) => (
                     <button
                       key={s.id}
                       id={`migue-suggestion-${s.id}`}
@@ -317,7 +354,7 @@ export function ChatbotWidget() {
             )}
 
             {/* Turno shortcut — shown after some interaction */}
-            {firstUserMessageSent && !isTyping && (
+            {!staffMode && firstUserMessageSent && !isTyping && (
               <div className="flex justify-center pt-1">
                 <Link
                   to="/turnos"
@@ -354,7 +391,7 @@ export function ChatbotWidget() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Escribí tu consulta..."
+              placeholder={staffMode ? "Preguntá por turnos, métricas, solicitudes…" : "Escribí tu consulta..."}
               disabled={isTyping}
               className="flex-1 rounded-full border border-border/60 bg-muted/40 px-4 py-2 text-sm outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary/50 focus:ring-2 focus:ring-primary/15 disabled:opacity-50"
             />
