@@ -186,7 +186,7 @@ function HcSection({ data, first, onChanged, onRefresh }: {
   return (
     <section id="copia" ref={sectionRef} aria-labelledby="portal-hc" className={`flex scroll-mt-20 flex-col gap-3 ${first ? "" : "mt-4"}`}>
       <h2 id="portal-hc" ref={titleRef} tabIndex={-1} className={`${sectionTitle} outline-none`}>
-        {self ? "Copia de tu historia clínica" : "Copia de la historia clínica"}
+        {self ? "Copia de tu historial" : "Copia del historial del paciente"}
       </h2>
 
       {done && (
@@ -204,7 +204,7 @@ function HcSection({ data, first, onChanged, onRefresh }: {
       {canAsk && asking && (
         <div role="group" aria-labelledby="portal-hc-ask" className={`${card} flex flex-col gap-4`}>
           <h3 id="portal-hc-ask" ref={askTitleRef} tabIndex={-1} className="font-display text-lg font-bold leading-snug outline-none">
-            {self ? "Pedir una copia de tu historia clínica" : `Pedir una copia de la historia clínica de ${child.first_name}`}
+            {self ? "Pedir una copia de tu historial" : `Pedir una copia del historial de ${child.first_name}`}
           </h3>
           <ul className="flex list-disc flex-col gap-2 pl-5 text-base">
             <li>La prepara el equipo del centro.</li>
@@ -225,7 +225,7 @@ function HcSection({ data, first, onChanged, onRefresh }: {
       {canAsk && !asking && (
         <div className={`${card} flex flex-col gap-3`}>
           <p className="text-base">
-            {self ? "Si necesitás una copia de tu historia clínica, pedila acá." : `Si necesitás una copia de la historia clínica de ${child.first_name}, pedila acá.`}
+            {self ? "Si necesitás una copia de tu historial, pedila acá." : `Si necesitás una copia del historial de ${child.first_name}, pedila acá.`}
             {" "}La preparamos y te la entregamos en mano en el centro.
           </p>
           <button ref={askButtonRef} type="button" onClick={openAsk} className={`${pillPrimary} min-[420px]:self-start`}>

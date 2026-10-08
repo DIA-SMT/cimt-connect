@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen } from "lucide-react";
+import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
@@ -358,7 +358,16 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
   const [newRequests, setNewRequests] = useState(0);
-  const [portalCount, setPortalCount] = usePortalInboxCount();
+  const [portalView, setPortalView] = useState<"hc" | "notices" | undefined>(undefined);
+  const openNotices = useCallback(() => { setPortalView("notices"); setActiveTab("portal"); }, []);
+  const [portalCounts, setPortalCounts] = usePortalInboxCount(openNotices);
+
+  // Avisos de familias sin resolver: también en el título de la pestaña del navegador
+  useEffect(() => {
+    const base = "Panel admin — CIMT";
+    document.title = portalCounts.notices > 0 ? `(${portalCounts.notices}) Avisos de familias · ${base}` : base;
+    return () => { document.title = base; };
+  }, [portalCounts.notices]);
 
   function loadProfessionals() {
     supabase.from("professionals").select("id, name, specialty, license, active, session_minutes").order("name", { ascending: true })
@@ -417,6 +426,22 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
           </div>
         </div>
 
+        {/* Avisos de familias que no van a venir: lo más urgente, visible desde cualquier pestaña */}
+        {portalCounts.notices > 0 && !(activeTab === "portal") && (
+          <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-[oklch(0.6_0.19_25)]/50 bg-[color:var(--status-occupied-bg)] px-4 py-3">
+            <BellRing className="h-5 w-5 shrink-0 text-[oklch(0.5_0.19_25)]" aria-hidden />
+            <p className="min-w-0 flex-1 text-sm">
+              <strong className="text-[oklch(0.45_0.19_25)]">
+                {portalCounts.notices === 1 ? "Una familia avisó que no va a venir a un turno." : `${portalCounts.notices} familias avisaron que no van a venir a un turno.`}
+              </strong>{" "}
+              <span className="text-foreground/80">Resolvelo para liberar el horario o avisarle al profesional.</span>
+            </p>
+            <Button size="sm" onClick={openNotices} className="bg-[oklch(0.55_0.2_25)] text-white hover:bg-[oklch(0.48_0.2_25)]">
+              Ver avisos
+            </Button>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="mt-6 flex w-fit flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
           <TabButton active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")}
@@ -425,7 +450,8 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             icon={<Inbox className="h-4 w-4" />} label="Solicitudes" badge={newRequests} />
           {portalStaffApi.enabled && (
             <TabButton active={activeTab === "portal"} onClick={() => setActiveTab("portal")}
-              icon={<MailOpen className="h-4 w-4" />} label="Portal" badge={portalCount} />
+              icon={<MailOpen className="h-4 w-4" />} label="Portal" badge={portalCounts.hc + portalCounts.notices}
+              urgent={portalCounts.notices > 0} />
           )}
           <TabButton active={activeTab === "pacientes"} onClick={() => setActiveTab("pacientes")}
             icon={<Users className="h-4 w-4" />} label="Pacientes" />
@@ -442,12 +468,13 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         </div>
 
         {activeTab === "agenda" ? (
-          <AgendaTab professionals={professionals} staff={staff} onOpenPatient={setOpenPatientId} />
+          <AgendaTab professionals={professionals} staff={staff} onOpenPatient={setOpenPatientId}
+            onOpenNotices={portalStaffApi.enabled ? openNotices : undefined} />
         ) : activeTab === "solicitudes" ? (
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
             onCountChange={setNewRequests} />
         ) : activeTab === "portal" && portalStaffApi.enabled ? (
-          <PortalInboxTab onOpenPatient={setOpenPatientId} onCountChange={setPortalCount} />
+          <PortalInboxTab key={portalView ?? "auto"} initialView={portalView} onOpenPatient={setOpenPatientId} onCountChange={setPortalCounts} />
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} staff={staff} />
         ) : activeTab === "estadisticas" ? (
@@ -539,8 +566,8 @@ function ChangePasswordDialog({ open, onClose }: { open: boolean; onClose: () =>
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function TabButton({
-  active, onClick, icon, label, badge = 0,
-}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number }) {
+  active, onClick, icon, label, badge = 0, urgent = false,
+}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; badge?: number; urgent?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -554,7 +581,10 @@ function TabButton({
       {icon}
       {label}
       {badge > 0 && (
-        <span className="rounded-full bg-[color:var(--status-pending)] px-1.5 text-[10px] font-bold text-white">{badge}</span>
+        <span className={`relative rounded-full px-1.5 text-[10px] font-bold text-white ${urgent ? "bg-[oklch(0.58_0.21_25)]" : "bg-[color:var(--status-pending)]"}`}>
+          {urgent && <span className="absolute inset-0 animate-ping rounded-full bg-[oklch(0.58_0.21_25)] opacity-60" aria-hidden />}
+          <span className="relative">{badge}</span>
+        </span>
       )}
     </button>
   );
