@@ -17,7 +17,7 @@ export default defineEventHandler((event) => handle(event, async () => {
 
   switch (body?.action) {
     case "list": {
-      const [hc, notices] = await Promise.all([staffHcList(ctx), staffNotices(ctx)]);
+      const [hc, notices] = await Promise.all([staffHcList(ctx), staffNotices(ctx, true)]);
       return { hc, notices };
     }
     case "count": {

@@ -344,6 +344,9 @@ export type StaffNotice = {
   on_time: boolean;
   is_past: boolean;
   resolution: NoticeResolution | null; // null: pendiente
+  // La familia todavía ve este turno en el portal (si no, hay que avisarle
+  // por otro medio: el turno ya pasó, se cargó el alta, etc.)
+  family_sees: boolean;
   resolved_at: string | null;
   resolved_by_email: string | null;
 };

@@ -17,6 +17,10 @@ function InicioPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<MeDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Con una copia lista para retirar, "Tus pedidos" va arriba de todo. Se
+  // decide al cargar la página: si cambiara en cada actualización, la
+  // sección saltaría de lugar (y perdería sus mensajes) mientras se la usa
+  const [readyFirst, setReadyFirst] = useState(false);
 
   // quiet: actualiza después de cancelar un pedido sin tapar la pantalla si falla
   const load = useCallback(async (quiet = false) => {
@@ -30,6 +34,7 @@ function InicioPage() {
       if (!quiet) setError("No pudimos cargar tus turnos. Probá de nuevo en un rato.");
       return;
     }
+    if (!quiet) setReadyFirst(r.data.requests.some((x) => x.status === "lista"));
     setData(r.data);
   }, [navigate]);
 
@@ -72,7 +77,6 @@ function InicioPage() {
   // aunque la cuenta ya no tenga turnos vinculados (por ejemplo, con el alta
   // cargada: el derecho a la copia sigue)
   const requests = [...data.requests].sort((a, b) => requestRank(a) - requestRank(b));
-  const anyReady = requests.some((r) => r.status === "lista");
   const requestsSection = requests.length > 0 && (
     <section aria-labelledby="portal-pedidos" className="flex flex-col gap-3">
       <h2 id="portal-pedidos" className={sectionTitle}>Tus pedidos</h2>
@@ -110,7 +114,7 @@ function InicioPage() {
         </p>
       </div>
 
-      {anyReady && requestsSection}
+      {readyFirst && requestsSection}
 
       {data.children.length === 0 ? (
         <div className={card}>
@@ -145,7 +149,7 @@ function InicioPage() {
         </>
       )}
 
-      {!anyReady && requestsSection}
+      {!readyFirst && requestsSection}
     </div>
   );
 }
