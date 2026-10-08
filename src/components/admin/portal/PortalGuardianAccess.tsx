@@ -261,7 +261,7 @@ function InvitePortalDialog({ guardian, patientId, hasPending, onClose }: {
                     <div className="space-y-1.5">
                       <Label htmlFor="portal-authorized-by">¿Quién lo autorizó?</Label>
                       <Input id="portal-authorized-by" value={authorizedBy} onChange={(e) => setAuthorizedBy(e.target.value)} placeholder="Ej.: la madre, Laura Gómez" />
-                      <p className="text-xs text-muted-foreground">Un adulto autorizado ve turnos y avisa, pero no puede pedir la historia clínica.</p>
+                      <p className="text-xs text-muted-foreground">Un adulto autorizado ve turnos y avisa, pero no puede pedir copia del historial del paciente.</p>
                     </div>
                   )}
                 </fieldset>

@@ -28,7 +28,7 @@ const YES_NO = ["Sí", "No"];
 const TERAPIA_OCUPACIONAL_V1: FormTemplate = {
   id: "terapia_ocupacional_v1",
   area: "Terapia ocupacional",
-  title: "Historia clínica — Terapia ocupacional",
+  title: "Evaluación — Terapia ocupacional",
   sections: [
     {
       id: "avd",

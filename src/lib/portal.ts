@@ -86,10 +86,10 @@ export const REASONS: { code: ReasonCode; label: string }[] = [
 export const PRIVACY_POINTS = [
   `El responsable de tus datos es el CIMT (Municipalidad de San Miguel de Tucumán), ${CENTER.address}.`,
   "Usamos tus datos para mostrarte tus turnos o los de los chicos a tu cargo, y recibir tus avisos y pedidos.",
-  "El portal no muestra diagnósticos, informes ni la historia clínica.",
+  "El portal no muestra diagnósticos, informes ni el historial del paciente.",
   "Es optativo: si no lo usás, la atención sigue igual.",
   "Solo el equipo del CIMT ve lo que hacés acá. Registramos los ingresos por seguridad.",
-  "Podés pedir acceso a tus datos o corregirlos. La copia de la historia clínica se pide acá o en el centro, y se entrega en mano, con DNI.",
+  "Podés pedir acceso a tus datos o corregirlos. La copia del historial del paciente se pide acá o en el centro, y se entrega en mano, con DNI.",
 ];
 
 // ── Formato ─────────────────────────────────────────────────────────────────

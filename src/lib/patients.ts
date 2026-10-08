@@ -131,7 +131,7 @@ export const AUDIT_TABLE_LABEL: Record<string, string> = {
   patient_followups: "Seguimiento",
   patient_reports: "Informe",
   patient_guardians: "Adulto responsable",
-  clinical_forms: "Historia clínica por área",
+  clinical_forms: "Evaluación por área",
   patient_files: "Adjunto",
 };
 

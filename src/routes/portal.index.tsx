@@ -81,7 +81,7 @@ function InicioPage() {
     <section aria-labelledby="portal-pedidos" className="flex flex-col gap-3">
       <h2 id="portal-pedidos" className={sectionTitle}>Tus pedidos</h2>
       {requests.map((r) => {
-        const title = r.is_self ? "Copia de tu historia clínica" : `Copia de la historia clínica de ${r.child_first_name}`;
+        const title = r.is_self ? "Copia de tu historial" : `Copia del historial de ${r.child_first_name}`;
         // Sin página del paciente a la que ir, el pedido completo (cómo
         // retirarla, cancelar) se ve acá
         if (!r.child_page) return <HcRequestCard key={r.id} req={r} title={title} onChanged={requestChanged} />;

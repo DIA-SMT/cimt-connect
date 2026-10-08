@@ -178,7 +178,7 @@ function DemoBox() {
       <p className="font-display text-base font-bold text-[color:var(--primary-deep)]">Modo demo (datos de prueba)</p>
       <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
         <li>Laura (2 chicos): DNI <b>30111222</b> · contraseña <b>familia2026</b></li>
-        <li>Jorge (papá de Valentina, adulto autorizado de Martín: no puede pedir su historia clínica): DNI <b>28999888</b> · contraseña <b>familia2026</b></li>
+        <li>Jorge (papá de Valentina, adulto autorizado de Martín: no puede pedir copia de su historial): DNI <b>28999888</b> · contraseña <b>familia2026</b></li>
         <li>Activar cuenta: código <b>24680 13579</b> con DNI <b>27444555</b></li>
         <li>Contraseña nueva para Laura: código <b>97531 86420</b> con DNI <b>30111222</b></li>
       </ul>

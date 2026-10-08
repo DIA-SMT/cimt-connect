@@ -65,16 +65,16 @@ export function ClinicalFormsSection({ patient, professionals, staff, canEdit, o
   }
 
   return (
-    <Section icon={ClipboardList} title="Historia clínica por área"
+    <Section icon={ClipboardList} title="Evaluación por área"
       action={canEdit && (
         <Button size="sm" variant="outline"
           onClick={() => (TEMPLATES.length === 1 ? setOpen(TEMPLATES[0]) : setChoosing(true))}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Nueva historia
+          <Plus className="mr-1 h-3.5 w-3.5" /> Nueva evaluación
         </Button>
       )}>
       {forms.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Todavía no hay historias clínicas por área. {canEdit && `Disponible: ${TEMPLATES.map((t) => t.area).join(", ")}.`}
+          Todavía no hay evaluaciones por área. {canEdit && `Disponible: ${TEMPLATES.map((t) => t.area).join(", ")}.`}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -103,7 +103,7 @@ export function ClinicalFormsSection({ patient, professionals, staff, canEdit, o
                 </div>
                 <VoidedBanner item={f} />
                 {canEdit && !f.voided_at && (
-                  <div className="flex justify-end"><VoidButton what="la historia clínica" onConfirm={(reason) => annul(f.id, reason)} /></div>
+                  <div className="flex justify-end"><VoidButton what="la evaluación" onConfirm={(reason) => annul(f.id, reason)} /></div>
                 )}
               </li>
             );
@@ -176,8 +176,8 @@ function ClinicalFormDialog({ patient, professionals, staff, canEdit, source, on
       ? await supabase.from("clinical_forms").update(payload).eq("id", existing.id)
       : await supabase.from("clinical_forms").insert({ ...payload, patient_id: patient.id, template_id: template!.id, area: template!.area });
     setSaving(false);
-    if (error) { toast.error("No se pudo guardar la historia clínica"); return; }
-    toast.success(status === "completo" ? "Historia clínica completa" : "Borrador guardado");
+    if (error) { toast.error("No se pudo guardar la evaluación"); return; }
+    toast.success(status === "completo" ? "Evaluación completa" : "Borrador guardado");
     onSaved();
   }
 
@@ -310,7 +310,7 @@ async function printClinicalForm(t: FormTemplate, f: ClinicalForm, p: PatientRec
   .firma { margin-top: 50px; width: 55%; margin-left: auto; text-align: center; border-top: 1px solid #1a2b3c; padding-top: 5px; font-size: 10pt; }
   footer { margin-top: 18px; font-size: 8.5pt; color: #7a8899; text-align: center; }
 </style></head><body>
-<header><strong>Historia Clínica CIM de Tartamudez</strong><div>Municipalidad de San Miguel de Tucumán · Catamarca 411</div></header>
+<header><strong>Evaluación · Centro Integral Municipal de Tartamudez</strong><div>Municipalidad de San Miguel de Tucumán · Catamarca 411</div></header>
 <h1>Área: ${esc(t.area)}</h1>
 <p class="sub">Fecha: ${esc(formatShortDate(f.form_date))}${f.status === "borrador" ? " · BORRADOR" : ""}</p>
 

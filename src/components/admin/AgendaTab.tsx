@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Ban, CalendarClock, CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, Phone, Printer, Video,
+  Ban, CalendarClock, CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, Phone, Printer, Video, BellRing,
 } from "lucide-react";
 import { selectClass } from "./fields";
 import { useMine } from "./useMine";
 import { REMINDER_CHANNEL_LABEL, reminderPhone, setReminder, whatsappLink, type ReminderChannel } from "@/lib/reminders";
+import { RESOLUTION_LABEL, portalStaffApi } from "@/lib/portalStaff";
+import { REASONS, stampLabel } from "@/lib/portal";
+import type { StaffNotice } from "@/lib/portalRules";
 import { ScopeToggle } from "./ScopeToggle";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
@@ -29,7 +32,14 @@ type Props = {
   professionals: ProfessionalOption[];
   staff: Staff;
   onOpenPatient: (patientId: string) => void;
+  /** Abre Portal → Avisos de turnos (para resolver un aviso de la familia) */
+  onOpenNotices?: () => void;
 };
+
+// Turnos sobre los que la familia avisó por el portal que no va: el aviso más
+// nuevo de cada turno, con lo que resolvió el equipo (lo calcula la bandeja).
+type NoticeMap = Map<string, StaffNotice>;
+const NOTICE_RED = "oklch(0.55 0.2 25)";
 
 const PX_PER_MIN = 1.6;
 const GRID_HEIGHT = (AGENDA_END_MIN - AGENDA_START_MIN) * PX_PER_MIN;
@@ -62,7 +72,8 @@ function nowMinutes(): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
+export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices }: Props) {
+  const [notices, setNotices] = useState<NoticeMap>(new Map());
   const [date, setDate] = useState(() => firstWorkdayFrom(todayKey()));
   const [appts, setAppts] = useState<AgendaAppointment[]>([]);
   const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
@@ -87,8 +98,8 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
     return [0, 1, 2, 3, 4].map((i) => addDays(monday, i));
   }, [date]);
 
-  async function load() {
-    setLoading(true);
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
     let qa = supabase.from("appointments").select(APPT_SELECT);
     let qb = supabase.from("schedule_blocks").select("*").eq("active", true);
     if (weekMode) {
@@ -98,15 +109,36 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
       qa = qa.eq("appointment_date", date);
       qb = qb.eq("block_date", date);
     }
-    const [a, b] = await Promise.all([qa.order("appointment_time"), qb]);
-    if (a.error || b.error) toast.error("No se pudo cargar la agenda");
-    setAppts((a.data ?? []) as AgendaAppointment[]);
-    setBlocks((b.data ?? []) as ScheduleBlock[]);
+    const [a, b, inbox] = await Promise.all([
+      qa.order("appointment_time"), qb,
+      portalStaffApi.enabled ? portalStaffApi.inbox().catch(() => null) : Promise.resolve(null),
+    ]);
+    if ((a.error || b.error) && !silent) toast.error("No se pudo cargar la agenda");
+    if (!a.error) setAppts((a.data ?? []) as AgendaAppointment[]);
+    if (!b.error) setBlocks((b.data ?? []) as ScheduleBlock[]);
+    if (inbox?.ok) {
+      const map: NoticeMap = new Map();
+      for (const n of [...inbox.data.notices].sort((x, y) => y.at.localeCompare(x.at))) {
+        if (!map.has(n.appointment_id)) map.set(n.appointment_id, n);
+      }
+      setNotices(map);
+    }
     setLoading(false);
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [date, weekMode]);
+
+  // La agenda se actualiza sola: lo que cambie otra persona, otra pestaña o el
+  // portal (cancelaciones, avisos de las familias) aparece sin recargar.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === "visible") loadRef.current(true); };
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
 
   const active = appts.filter((a) => a.status !== "cancelado");
   const canceledCount = appts.length - active.length;
@@ -283,7 +315,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
                         style={{ top: (now - AGENDA_START_MIN) * PX_PER_MIN }} />
                     )}
                     {colAppts.map((a) => (
-                      <ApptBlock key={a.id} appt={a} onClick={(e) => { e.stopPropagation(); setOpenApptId(a.id); }} />
+                      <ApptBlock key={a.id} appt={a} notice={notices.get(a.id)} onClick={(e) => { e.stopPropagation(); setOpenApptId(a.id); }} />
                     ))}
                   </div>
                 </div>
@@ -311,6 +343,8 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
           appt={openAppt}
           professional={professionals.find((p) => p.id === openAppt.professional_id)}
           staff={staff}
+          notice={notices.get(openAppt.id)}
+          onOpenNotices={onOpenNotices ? () => { setOpenApptId(null); onOpenNotices(); } : undefined}
           onClose={() => setOpenApptId(null)}
           onChanged={() => load()}
           onOpenPatient={(id) => { setOpenApptId(null); onOpenPatient(id); }}
@@ -322,7 +356,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
       )}
       {showTomorrow && (
         <TomorrowDialog professionals={professionals} professionalId={mine.on ? mine.professionalId : null}
-          staffEmail={staff.email} onClose={() => setShowTomorrow(false)} />
+          staffEmail={staff.email} notices={notices} onClose={() => setShowTomorrow(false)} />
       )}
     </div>
   );
@@ -330,7 +364,22 @@ export function AgendaTab({ professionals, staff, onOpenPatient }: Props) {
 
 // ─── Bloque de turno en la grilla ────────────────────────────────────────────
 
-function ApptBlock({ appt: a, onClick }: { appt: AgendaAppointment; onClick: (e: React.MouseEvent) => void }) {
+function noticeState(n: StaffNotice | undefined): "pendiente" | "reprogramar" | "visto" | null {
+  if (!n) return null;
+  if (n.resolution === null) return "pendiente";
+  if (n.resolution === "reprogramado") return "reprogramar";
+  if (n.resolution === "otro") return "visto";
+  return null; // cancelado / justificado / vinieron igual: el turno ya lo muestra
+}
+
+const NOTICE_TAG: Record<"pendiente" | "reprogramar" | "visto", string> = {
+  pendiente: "no viene",
+  reprogramar: "reprogramar",
+  visto: "avisó",
+};
+
+function ApptBlock({ appt: a, notice, onClick }: { appt: AgendaAppointment; notice?: StaffNotice; onClick: (e: React.MouseEvent) => void }) {
+  const ns = noticeState(notice);
   const start = toMinutes(a.appointment_time);
   const height = Math.max(a.duration_minutes * PX_PER_MIN - 3, 20);
   const compact = height < 44;
@@ -342,11 +391,13 @@ function ApptBlock({ appt: a, onClick }: { appt: AgendaAppointment; onClick: (e:
   const name = a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "Sin paciente";
   const time = `${a.appointment_time.slice(0, 5)}–${fromMinutes(start + a.duration_minutes)}`;
   return (
-    <button onClick={onClick} title={`${time} · ${name}`}
-      className={`absolute inset-x-1.5 z-[6] overflow-hidden rounded-lg border border-black/5 border-l-4 px-2 text-left leading-tight shadow-sm transition hover:z-20 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${compact ? "py-0.5" : "py-1"} ${style}`}
+    <button onClick={onClick}
+      title={`${time} · ${name}${ns === "pendiente" ? " · La familia avisó que no viene (sin resolver)" : ns === "reprogramar" ? " · Hay que reprogramarlo: la familia avisó que no viene" : ns === "visto" ? " · La familia avisó que no viene" : ""}`}
+      className={`absolute inset-x-1.5 z-[6] overflow-hidden rounded-lg border border-black/5 border-l-4 px-2 text-left leading-tight shadow-sm transition hover:z-20 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${compact ? "py-0.5" : "py-1"} ${style} ${ns === "pendiente" ? "ring-2 ring-[oklch(0.6_0.19_25)]" : ns === "reprogramar" ? "ring-2 ring-[oklch(0.75_0.15_70)]" : ""}`}
       style={{ top: (start - AGENDA_START_MIN) * PX_PER_MIN + 1.5, height }}>
       {compact ? (
         <div className="flex items-center gap-1.5 truncate text-xs">
+          {ns === "pendiente" && <BellRing className="h-3 w-3 shrink-0" style={{ color: NOTICE_RED }} aria-label="La familia avisó que no viene" />}
           <span className="font-semibold tabular-nums">{a.appointment_time.slice(0, 5)}</span>
           <span className="truncate font-medium">{name}</span>
         </div>
@@ -355,7 +406,11 @@ function ApptBlock({ appt: a, onClick }: { appt: AgendaAppointment; onClick: (e:
           <div className="flex items-center gap-1 text-[11px] font-semibold tabular-nums text-foreground/70">
             {time}
             {a.modality === "telemedicina" && <Video className="h-3 w-3" aria-label="Telemedicina" />}
-            {a.attendance && (
+            {ns && !a.attendance ? (
+              <span className={`ml-auto inline-flex items-center gap-0.5 rounded px-1 text-[9px] font-bold uppercase tracking-wide ${ns === "pendiente" ? "bg-[oklch(0.55_0.2_25)] text-white" : "bg-white/70 text-[oklch(0.45_0.11_70)]"}`}>
+                {ns === "pendiente" && <BellRing className="h-2.5 w-2.5" aria-hidden />}{NOTICE_TAG[ns]}
+              </span>
+            ) : a.attendance && (
               <span className="ml-auto rounded bg-white/60 px-1 text-[9px] font-bold uppercase tracking-wide">
                 {a.attendance === "justificado" ? "just." : a.attendance}
               </span>
@@ -549,10 +604,12 @@ function NewAppointmentDialog({ professionals, initial, onClose, onSaved }: {
 
 // ─── Detalle del turno: asistencia, práctica y nota de la sesión ─────────────
 
-function AppointmentDialog({ appt: a, professional, staff, onClose, onChanged, onOpenPatient }: {
+function AppointmentDialog({ appt: a, professional, staff, notice, onOpenNotices, onClose, onChanged, onOpenPatient }: {
   appt: AgendaAppointment;
   professional?: ProfessionalOption;
   staff: Staff;
+  notice?: StaffNotice;
+  onOpenNotices?: () => void;
   onClose: () => void;
   onChanged: () => void;
   onOpenPatient: (patientId: string) => void;
@@ -621,6 +678,7 @@ function AppointmentDialog({ appt: a, professional, staff, onClose, onChanged, o
           )}
           <div><dt className="text-xs text-muted-foreground">Tipo</dt><dd className="font-medium">{a.consultation_type === "primera_vez" ? "Primera vez" : "Seguimiento"}</dd></div>
         </dl>
+        {notice && <NoticeBox notice={notice} onOpenNotices={onOpenNotices} />}
         {a.status !== "cancelado" && p && (
           <ul className="rounded-xl border border-border/60 text-sm">
             <ReminderRow appt={a} professionalName={professional?.name} staffEmail={staff.email} compact
@@ -840,8 +898,9 @@ function BlockDialog({ professionals, initialDate, onClose, onSaved }: {
 // ─── Turnos de mañana (para los recordatorios) ───────────────────────────────
 
 // Fila de recordatorio: WhatsApp con el mensaje armado y marca de "avisado"
-function ReminderRow({ appt: a, professionalName, staffEmail, compact = false, onChange }: {
+function ReminderRow({ appt: a, notice, professionalName, staffEmail, compact = false, onChange }: {
   appt: AgendaAppointment;
+  notice?: StaffNotice;
   professionalName?: string;
   staffEmail: string;
   compact?: boolean;
@@ -884,6 +943,12 @@ function ReminderRow({ appt: a, professionalName, staffEmail, compact = false, o
             {a.patients ? `${a.patients.last_name}, ${a.patients.first_name}` : "—"}
             <span className="text-muted-foreground"> · {professionalName ?? "sin profesional"}{a.modality === "telemedicina" ? " · telemedicina" : ""}</span>
           </div>
+          {noticeState(notice) && (
+            <p className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold" style={{ color: NOTICE_RED }}>
+              <BellRing className="h-3.5 w-3.5" aria-hidden />
+              La familia avisó por el portal que no viene{noticeState(notice) === "pendiente" ? " (sin resolver)" : ` · ${RESOLUTION_LABEL[notice!.resolution!]}`}
+            </p>
+          )}
           {sentInfo}
         </div>
       )}
@@ -914,8 +979,35 @@ function ReminderRow({ appt: a, professionalName, staffEmail, compact = false, o
   );
 }
 
-function TomorrowDialog({ professionals, professionalId, staffEmail, onClose }: {
+// Aviso de la familia en el detalle del turno
+function NoticeBox({ notice: n, onOpenNotices }: { notice: StaffNotice; onOpenNotices?: () => void }) {
+  const state = noticeState(n);
+  if (!state) return null;
+  const reason = n.reason_code ? REASONS.find((r) => r.code === n.reason_code)?.label ?? null : null;
+  return (
+    <div className={`rounded-xl border-2 p-3 text-sm ${state === "pendiente" ? "border-[oklch(0.6_0.19_25)]/50 bg-[color:var(--status-occupied-bg)]" : "border-[oklch(0.75_0.15_70)]/50 bg-[color:var(--status-pending-bg)]"}`}>
+      <p className="flex items-center gap-1.5 font-semibold" style={{ color: state === "pendiente" ? NOTICE_RED : "oklch(0.45 0.11 70)" }}>
+        <BellRing className="h-4 w-4 shrink-0" aria-hidden />
+        La familia avisó por el portal que no viene
+      </p>
+      <p className="mt-1 text-foreground/80">
+        {[n.requester_name && `Avisó ${n.requester_name}`, stampLabel(n.at), reason, n.reason_text && `«${n.reason_text}»`].filter(Boolean).join(" · ")}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {state === "pendiente" ? "Todavía nadie lo resolvió." : `Resuelto: ${RESOLUTION_LABEL[n.resolution!]}${state === "reprogramar" ? ". Hay que darle otro turno y cancelar este." : "."}`}
+      </p>
+      {state === "pendiente" && onOpenNotices && (
+        <Button size="sm" onClick={onOpenNotices} className="mt-2 h-8 bg-[oklch(0.55_0.2_25)] text-white hover:bg-[oklch(0.48_0.2_25)]">
+          Resolver en Portal
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function TomorrowDialog({ professionals, professionalId, staffEmail, notices, onClose }: {
   professionals: ProfessionalOption[];
+  notices: NoticeMap;
   /** Con "Mis turnos": solo los del profesional del usuario */
   professionalId: string | null;
   staffEmail: string;
@@ -968,7 +1060,7 @@ function TomorrowDialog({ professionals, professionalId, staffEmail, onClose }: 
             </div>
             <ul className="divide-y divide-border/60 rounded-xl border border-border/60 text-sm">
               {list.map((a) => (
-                <ReminderRow key={a.id} appt={a}
+                <ReminderRow key={a.id} appt={a} notice={notices.get(a.id)}
                   professionalName={a.professional_id ? proName.get(a.professional_id) : undefined}
                   staffEmail={staffEmail}
                   onChange={(patch) => setList((prev) => prev?.map((x) => (x.id === a.id ? { ...x, ...patch } : x)) ?? prev)} />

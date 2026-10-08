@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  Clock, IdCard, Loader2, PackageCheck, RefreshCw, Scale, TriangleAlert, Undo2, UserRound, XCircle,
-} from "lucide-react";
+import { BellRing, Clock, IdCard, Loader2, PackageCheck, RefreshCw, Scale, TriangleAlert, Undo2, UserRound, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,8 +25,10 @@ import { type HcLinkKind, centerNow } from "@/lib/portalRules";
 type Props = {
   /** Abre la ficha del paciente */
   onOpenPatient: (patientId: string) => void;
-  /** Avisa al panel cuántas cosas quedan por resolver (para el número de la pestaña) */
-  onCountChange: (pending: number) => void;
+  /** Avisa al panel cuántas cosas quedan por resolver (para el número de la pestaña y el cartel de avisos) */
+  onCountChange: (pending: { hc: number; notices: number }) => void;
+  /** Con qué lista abrir (el cartel de avisos abre directo en "Avisos de turnos") */
+  initialView?: View;
 };
 
 type View = "hc" | "notices";
@@ -135,12 +135,12 @@ function pendingOf(d: StaffInbox) {
   };
 }
 
-export function PortalInboxTab({ onOpenPatient, onCountChange }: Props) {
+export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Props) {
   const [data, setData] = useState<StaffInbox | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [view, setView] = useState<View>("hc");
+  const [view, setView] = useState<View | null>(initialView ?? null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [resolving, setResolving] = useState<{ id: string; how: NoticeAction } | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -168,8 +168,11 @@ export function PortalInboxTab({ onOpenPatient, onCountChange }: Props) {
 
   // Número de la pestaña del panel
   useEffect(() => {
-    if (pending) onCountChange(pending.hc + pending.notices);
+    if (pending) onCountChange(pending);
   }, [pending, onCountChange]);
+
+  // Sin elección previa, abre en los avisos si hay alguno sin resolver: son lo más urgente
+  const shown: View = view ?? (pending && pending.notices > 0 ? "notices" : "hc");
 
   const hc = useMemo(() => sortHc(data?.hc ?? []), [data]);
   // Pendientes primero; el servidor ya las ordena por fecha del turno
@@ -215,7 +218,7 @@ export function PortalInboxTab({ onOpenPatient, onCountChange }: Props) {
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-lg font-bold text-[color:var(--primary-deep)]">Portal de familias</h2>
           <p className="text-sm text-muted-foreground">
-            Pedidos de copia de la historia clínica y avisos de turnos que mandan las familias desde el portal.
+            Pedidos de copia del historial del paciente y avisos de turnos que mandan las familias desde el portal.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => load()} disabled={refreshing} aria-busy={refreshing}>
@@ -234,16 +237,16 @@ export function PortalInboxTab({ onOpenPatient, onCountChange }: Props) {
             <p role="alert" className={`text-sm ${TEXT_BAD}`}>No se pudo actualizar la bandeja: {loadError}</p>
           )}
           <div className="flex flex-wrap gap-1.5">
-            <Chip active={view === "hc"} onClick={() => setView("hc")}>
-              Copias de historia clínica ({pending.hc})
+            <Chip active={shown === "hc"} onClick={() => setView("hc")}>
+              Copias del historial ({pending.hc})
             </Chip>
-            <Chip active={view === "notices"} onClick={() => setView("notices")}>
+            <Chip active={shown === "notices"} urgent={pending.notices > 0} onClick={() => setView("notices")}>
               Avisos de turnos ({pending.notices})
             </Chip>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)]">
-            {view === "hc" ? (
+            {shown === "hc" ? (
               <HcList list={hc} now={now} onOpen={setOpenId} />
             ) : (
               <NoticeList list={notices} now={now} resolving={resolving} onResolve={resolveNotice} onOpenPatient={onOpenPatient} />
@@ -272,7 +275,7 @@ export function PortalInboxTab({ onOpenPatient, onCountChange }: Props) {
 
 function HcList({ list, now, onOpen }: { list: StaffHcRequest[]; now: number; onOpen: (id: string) => void }) {
   if (list.length === 0) {
-    return <div className="py-16 text-center text-sm text-muted-foreground">No hay pedidos de copia de la historia clínica.</div>;
+    return <div className="py-16 text-center text-sm text-muted-foreground">No hay pedidos de copia del historial del paciente.</div>;
   }
   const open = list.filter((r) => isOpen(r.status));
   const closed = list.filter((r) => !isOpen(r.status));
@@ -444,7 +447,7 @@ function HcDialog({ request: r, now, onClose, onSaved, onNotesSaved, onReload, o
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">{r.patient_name}</DialogTitle>
           <DialogDescription>
-            Copia de la historia clínica · <Pill tone={HC_TONE[r.status]}>{HC_STATUS_LABEL[r.status]}</Pill>
+            Copia del historial del paciente · <Pill tone={HC_TONE[r.status]}>{HC_STATUS_LABEL[r.status]}</Pill>
           </DialogDescription>
         </DialogHeader>
 
@@ -625,8 +628,10 @@ function NoticeList({ list, now, resolving, onResolve, onOpenPatient }: {
   const center = centerNow(new Date(now));
   const open = list.filter((n) => n.resolution === null);
   const done = list.filter((n) => n.resolution !== null);
+  const tomorrow = nextDateKey(center.date);
   const row = (n: StaffNotice) => (
     <NoticeRow key={n.response_id} n={n} past={apptPast(n, center)} gone={!n.family_sees}
+      soon={n.date === center.date ? "hoy" : n.date === tomorrow ? "mañana" : null}
       resolving={resolving} onResolve={onResolve} onOpenPatient={onOpenPatient} />
   );
   return (
@@ -640,8 +645,9 @@ function NoticeList({ list, now, resolving, onResolve, onOpenPatient }: {
   );
 }
 
-function NoticeRow({ n, past, gone, resolving, onResolve, onOpenPatient }: {
+function NoticeRow({ n, past, gone, soon, resolving, onResolve, onOpenPatient }: {
   n: StaffNotice;
+  soon: "hoy" | "mañana" | null; // el turno es hoy o mañana: más urgente
   past: boolean; // el turno ya empezó: no se puede cancelar
   gone: boolean; // el turno es de un día anterior: la familia ya no lo ve en el portal
   resolving: { id: string; how: NoticeAction } | null;
@@ -651,10 +657,13 @@ function NoticeRow({ n, past, gone, resolving, onResolve, onOpenPatient }: {
   const reason = n.reason_code ? REASONS.find((x) => x.code === n.reason_code)?.label ?? null : null;
   // Un turno que ya pasó no se puede cancelar (el servidor lo rechaza)
   const actions = NOTICE_ACTIONS.filter((how) => !(how === "cancelar" && past));
+  const urgent = n.resolution === null;
   return (
-    <li className="grid gap-2 p-4 md:px-5">
+    <li className={`grid gap-2 p-4 md:px-5 ${urgent ? "border-l-4 border-l-[oklch(0.6_0.19_25)] bg-[color:var(--status-occupied-bg)]/40" : ""}`}>
       <div className="flex flex-wrap items-center gap-2">
+        {urgent && <BellRing className={`h-4 w-4 shrink-0 ${TEXT_BAD}`} aria-hidden />}
         <span className="font-bold">{n.patient_name}</span>
+        {urgent && soon && !past && <Pill tone="bad">{soon === "hoy" ? "Turno hoy" : "Turno mañana"}</Pill>}
         {n.resolution && <Pill tone={RESOLUTION_TONE[n.resolution]}>{RESOLUTION_LABEL[n.resolution]}</Pill>}
         {past && <Pill tone="muted">El turno ya pasó</Pill>}
         <Button size="sm" variant="ghost" className="ml-auto h-8 px-2 text-xs" onClick={() => onOpenPatient(n.patient_id)}>
@@ -731,15 +740,24 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Chip({ active, urgent = false, onClick, children }: { active: boolean; urgent?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} aria-pressed={active} className={[
-      "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+      "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
       active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-[color:var(--primary-soft)]",
+      urgent && !active ? "ring-2 ring-[oklch(0.6_0.19_25)]/50" : "",
     ].join(" ")}>
+      {urgent && <span className="h-2 w-2 rounded-full bg-[oklch(0.6_0.19_25)]" aria-hidden />}
       {children}
     </button>
   );
+}
+
+// Día siguiente de una fecha AAAA-MM-DD (fecha del centro)
+function nextDateKey(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + 1));
+  return dt.toISOString().slice(0, 10);
 }
 
 function Item({ label, value }: { label: string; value: React.ReactNode }) {
