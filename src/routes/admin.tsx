@@ -391,7 +391,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   }
 
   return (
-    <Layout plain>
+    <Layout plain staff={staff}>
       <section className="container mx-auto px-4 py-10 md:px-6 md:py-14">
         {/* Header */}
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
