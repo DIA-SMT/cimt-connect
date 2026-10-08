@@ -226,7 +226,7 @@ function ActivarPage() {
                   </button>
                 </div>
                 <p id="portal-password-help" className="text-sm text-muted-foreground">
-                  {linking ? "La misma con la que entrás al portal." : "Al menos 8 caracteres. No uses tu DNI ni algo fácil como 12345678."}
+                  {linking ? "La misma con la que entrás al portal." : "La que quieras, de al menos 6 caracteres."}
                 </p>
               </div>
               {!linking && (

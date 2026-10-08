@@ -136,16 +136,13 @@ export function normalizeCode(raw: string): string {
   return String(raw ?? "").replace(/\D/g, "").slice(0, 10);
 }
 
-const COMMON_PASSWORDS = new Set([
-  "12345678", "123456789", "1234567890", "password", "contraseña", "contrasena", "qwertyui",
-  "11111111", "00000000", "87654321", "abcdefgh", "iloveyou", "tucuman1", "argentina",
-]);
-
-export function passwordProblem(password: string, repeat: string, dni: string): string | null {
-  if (password.length < 8) return "La contraseña tiene que tener al menos 8 caracteres.";
+// Cada familia elige la contraseña que quiera: solo el mínimo de Supabase Auth
+// (6, no se puede bajar) y el máximo de bcrypt (72). Mismos valores que
+// src/lib/passwords.ts para el panel; acá van escritos porque este archivo no
+// importa nada. El DNI se recibe por compatibilidad con los llamados.
+export function passwordProblem(password: string, repeat: string, _dni: string): string | null {
+  if (password.length < 6) return "La contraseña tiene que tener al menos 6 caracteres.";
   if (password.length > 72) return "La contraseña puede tener hasta 72 caracteres.";
-  if (dni && password.includes(dni)) return "Elegí una contraseña que no incluya tu DNI.";
-  if (COMMON_PASSWORDS.has(password.toLowerCase())) return "Esa contraseña es muy fácil de adivinar.";
   if (password !== repeat) return "Las contraseñas no coinciden.";
   return null;
 }

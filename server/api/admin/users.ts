@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { defineEventHandler, getRequestHeader, readBody, setResponseStatus } from "nitro/h3";
+import { PASSWORD_MIN, PASSWORD_MIN_MESSAGE } from "../../../src/lib/passwords";
 
 // Gestión de usuarios del panel (relevamiento, respuesta 47: la Dirección da de
 // alta y de baja a los usuarios). Crear usuarios, cambiar contraseñas y bloquear
@@ -55,7 +56,7 @@ export default defineEventHandler(async (event) => {
     const role = body.role;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(event, 400, "Email inválido");
     if (!ROLES.includes(role)) return fail(event, 400, "Rol inválido");
-    if (String(body.password ?? "").length < 8) return fail(event, 400, "La contraseña tiene que tener al menos 8 caracteres");
+    if (String(body.password ?? "").length < PASSWORD_MIN) return fail(event, 400, PASSWORD_MIN_MESSAGE);
 
     const { data: created, error } = await admin.auth.admin.createUser({
       email,
@@ -102,7 +103,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (body?.action === "set_password") {
-    if (String(body.password ?? "").length < 8) return fail(event, 400, "La contraseña tiene que tener al menos 8 caracteres");
+    if (String(body.password ?? "").length < PASSWORD_MIN) return fail(event, 400, PASSWORD_MIN_MESSAGE);
     const { error } = await admin.auth.admin.updateUserById(body.user_id, {
       password: body.password,
       user_metadata: { must_change_password: body.must_change !== false },
