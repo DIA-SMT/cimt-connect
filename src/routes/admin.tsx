@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles } from "lucide-react";
+import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen } from "lucide-react";
 import { toast } from "sonner";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
@@ -15,6 +15,9 @@ import { TeamTab } from "@/components/admin/TeamTab";
 import { AgendaTab } from "@/components/admin/AgendaTab";
 import { IntakeTab } from "@/components/admin/IntakeTab";
 import { SocialCornerTab } from "@/components/admin/SocialCornerTab";
+import { PortalInboxTab } from "@/components/admin/portal/PortalInboxTab";
+import { usePortalInboxCount } from "@/components/admin/portal/usePortalInboxCount";
+import { portalStaffApi } from "@/lib/portalStaff";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
 import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
@@ -55,7 +58,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "agenda" | "solicitudes" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
+type Tab = "agenda" | "solicitudes" | "portal" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
 
 type AuthState =
   | { kind: "loading" }
@@ -354,6 +357,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
   const [newRequests, setNewRequests] = useState(0);
+  const [portalCount, setPortalCount] = usePortalInboxCount();
 
   function loadProfessionals() {
     supabase.from("professionals").select("id, name, specialty, license, active, session_minutes").order("name", { ascending: true })
@@ -418,6 +422,10 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             icon={<CalendarDays className="h-4 w-4" />} label="Agenda" />
           <TabButton active={activeTab === "solicitudes"} onClick={() => setActiveTab("solicitudes")}
             icon={<Inbox className="h-4 w-4" />} label="Solicitudes" badge={newRequests} />
+          {portalStaffApi.enabled && (
+            <TabButton active={activeTab === "portal"} onClick={() => setActiveTab("portal")}
+              icon={<MailOpen className="h-4 w-4" />} label="Portal" badge={portalCount} />
+          )}
           <TabButton active={activeTab === "pacientes"} onClick={() => setActiveTab("pacientes")}
             icon={<Users className="h-4 w-4" />} label="Pacientes" />
           <TabButton active={activeTab === "estadisticas"} onClick={() => setActiveTab("estadisticas")}
@@ -437,6 +445,8 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         ) : activeTab === "solicitudes" ? (
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
             onCountChange={setNewRequests} />
+        ) : activeTab === "portal" && portalStaffApi.enabled ? (
+          <PortalInboxTab onOpenPatient={setOpenPatientId} onCountChange={setPortalCount} />
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} staff={staff} />
         ) : activeTab === "estadisticas" ? (

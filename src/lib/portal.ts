@@ -1,7 +1,9 @@
 // Portal de familias (fase 1): tipos, formato y cliente de la API.
 // Diseño: el adulto responsable ve los turnos de sus chicos y avisa si van o
 // no. Nunca recibe datos clínicos: la API devuelve solo ApptDTO y compañía.
-// Las acciones de la familia son pedidos que el equipo resuelve desde el panel.
+// Las acciones de la familia son pedidos que el equipo resuelve desde el panel
+// (avisos de turnos y pedidos de copia de la historia clínica, que se entrega
+// en mano en el centro: el portal solo muestra el estado del pedido).
 //
 // Dos modos:
 //   - mock (VITE_USE_MOCK=true): todo en el navegador (mockPortal.ts).
@@ -12,12 +14,12 @@
 import { longDate } from "@/lib/agenda";
 import { CENTER } from "@/lib/center";
 import {
-  type ApptDTO, type ReasonCode, type ResponseKind,
+  type ApptDTO, type HcRejectReason, type HcRequestDTO, type ReasonCode, type ResponseKind,
   centerNow,
 } from "@/lib/portalRules";
 
 export {
-  type ApptDTO, type Outcome, type ReasonCode, type ResponseKind,
+  type ApptDTO, type HcRejectReason, type HcRequestDTO, type HcStatus, type Outcome, type ReasonCode, type ResponseKind,
   CONFIRM_WINDOW_DAYS, NOTICE_MIN_DAYS, PRIVACY_VERSION, REASON_TEXT_MAX,
   confirmFrom, isValidDni, normalizeCode, normalizeDni, passwordProblem,
 } from "@/lib/portalRules";
@@ -33,6 +35,7 @@ export type ChildDTO = {
   first_name: string;
   last_initial: string;
   self: boolean; // es el propio titular de la cuenta (paciente adulto)
+  can_request_hc: boolean; // esta cuenta puede pedir copia de su historia clínica
   next: ApptDTO | null; // próximo turno después de esta semana
 };
 
@@ -40,6 +43,14 @@ export type MeDTO = {
   guardian_first_name: string;
   week: ApptDTO[]; // próximos 7 días, todos los chicos
   children: ChildDTO[];
+  requests: HcRequestDTO[]; // pedidos de copia de la historia clínica (abiertos y recientes)
+};
+
+// Página de un chico: sus turnos y la copia de su historia clínica
+export type ChildPageDTO = {
+  child: { id: string; first_name: string; self?: boolean };
+  appointments: ApptDTO[];
+  hc: { can_request: boolean; requests: HcRequestDTO[] };
 };
 
 export type ActivationInfo = {
@@ -74,11 +85,11 @@ export const REASONS: { code: ReasonCode; label: string }[] = [
 
 export const PRIVACY_POINTS = [
   `El responsable de tus datos es el CIMT (Municipalidad de San Miguel de Tucumán), ${CENTER.address}.`,
-  "Usamos tus datos para mostrarte tus turnos o los de los chicos a tu cargo, y recibir tus avisos.",
+  "Usamos tus datos para mostrarte tus turnos o los de los chicos a tu cargo, y recibir tus avisos y pedidos.",
   "El portal no muestra diagnósticos, informes ni la historia clínica.",
   "Es optativo: si no lo usás, la atención sigue igual.",
   "Solo el equipo del CIMT ve lo que hacés acá. Registramos los ingresos por seguridad.",
-  "Podés pedir acceso a tus datos o corregirlos, y pedir una copia de la historia clínica en el centro.",
+  "Podés pedir acceso a tus datos o corregirlos. La copia de la historia clínica se pide acá o en el centro, y se entrega en mano, con DNI.",
 ];
 
 // ── Formato ─────────────────────────────────────────────────────────────────
@@ -115,6 +126,9 @@ export function apptStatus(a: ApptDTO): { tone: ApptTone; text: string } | null 
   // El aviso de otro adulto nunca se presenta como propio
   const whose = r && !r.by_me ? " de otro adulto de la familia" : "";
   if (a.state === "cancelado") {
+    if (r?.kind === "no_puedo" && a.outcome === "reprogramado") {
+      return { tone: "info", text: "Te contactamos para otro día" };
+    }
     if (r?.kind === "no_puedo" && a.outcome === "cancelado") {
       return { tone: "info", text: r.by_me ? "Cancelamos el turno por tu aviso"
         : a.is_self ? "Cancelamos el turno por el aviso de tu familia" : "Cancelamos el turno por el aviso de otro adulto de la familia" };
@@ -152,6 +166,23 @@ export function apptStatus(a: ApptDTO): { tone: ApptTone; text: string } | null 
   }
   if (a.can_confirm) return { tone: "warn", text: "Sin responder" };
   return null;
+}
+
+// Estado de un pedido de copia de la historia clínica tal como lo ve la familia
+export const HC_REJECT_TEXT: Record<HcRejectReason, string> = {
+  no_habilitado: "No la podemos entregar por este medio. Acercate al centro o llamanos.",
+  duplicado: "Ya había un pedido igual en curso.",
+  otro: "No pudimos prepararla. Llamanos para coordinar.",
+};
+
+export function hcStatus(r: HcRequestDTO): { tone: ApptTone; text: string } {
+  switch (r.status) {
+    case "pendiente": return { tone: "warn", text: "Pedido recibido · la estamos preparando" };
+    case "lista": return { tone: "ok", text: "Lista para retirar en el centro" };
+    case "entregada": return { tone: "muted", text: `Entregada el ${stampLabel(r.delivered_at ?? r.created_at)}` };
+    case "rechazada": return { tone: "bad", text: r.reject_reason ? HC_REJECT_TEXT[r.reject_reason] : "No pudimos prepararla. Llamanos." };
+    case "cancelada": return { tone: "muted", text: "Cancelaste el pedido" };
+  }
 }
 
 export function retryLabel(retryAt?: string): string {
@@ -261,7 +292,7 @@ export const portalApi = {
     if (MOCK) return (await mock()).me();
     return call("me");
   },
-  async childAppointments(patientId: string): Promise<ApiResult<{ child: { id: string; first_name: string; self?: boolean }; appointments: ApptDTO[] }>> {
+  async childAppointments(patientId: string): Promise<ApiResult<ChildPageDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).childAppointments(patientId);
     return call(`child?id=${encodeURIComponent(patientId)}`);
@@ -277,5 +308,16 @@ export const portalApi = {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).respond(input);
     return call("respond", { method: "POST", body: input });
+  },
+  // Pedido de copia de la historia clínica (se entrega en mano en el centro)
+  async hcCreate(patientId: string): Promise<ApiResult<HcRequestDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).hcCreate(patientId);
+    return call("hc", { method: "POST", body: { action: "create", patient_id: patientId } });
+  },
+  async hcCancel(id: string): Promise<ApiResult<HcRequestDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).hcCancel(id);
+    return call("hc", { method: "POST", body: { action: "cancel", id } });
   },
 };

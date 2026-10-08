@@ -11,7 +11,7 @@ export const CONFIRM_WINDOW_DAYS = 3;
 // número de días de anticipación (el día anterior al turno o antes).
 export const NOTICE_MIN_DAYS = 1;
 
-export const PRIVACY_VERSION = "2026-10-v1";
+export const PRIVACY_VERSION = "2026-10-v2";
 export const REASON_TEXT_MAX = 140;
 export const REASON_CODES = ["salud", "escuela", "transporte", "trabajo", "otro"] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
@@ -206,3 +206,150 @@ export function computeApptDto(
     is_past: isPast,
   };
 }
+
+// ── Pedidos de copia de la historia clínica ─────────────────────────────────
+// La pueden pedir el propio paciente adulto (titular) y su representante
+// legal (madre, padre o tutor/a). Un adulto "autorizado" no (Ley 26.529,
+// art. 19). La copia se prepara en el centro y se entrega en mano, con DNI:
+// el portal solo lleva el pedido y su estado, nunca la historia clínica.
+
+export const HC_REQUEST_KINDS = ["titular", "representante_legal"] as const;
+export type HcLinkKind = (typeof HC_REQUEST_KINDS)[number];
+
+export function canRequestHc(linkKind: string): linkKind is HcLinkKind {
+  return (HC_REQUEST_KINDS as readonly string[]).includes(linkKind);
+}
+
+export type HcStatus = "pendiente" | "lista" | "entregada" | "rechazada" | "cancelada";
+export const HC_OPEN_STATUSES: readonly HcStatus[] = ["pendiente", "lista"];
+export const HC_REJECT_REASONS = ["no_habilitado", "duplicado", "otro"] as const;
+export type HcRejectReason = (typeof HC_REJECT_REASONS)[number];
+// Pedidos nuevos por cuenta y por día (contra pedidos repetidos por error)
+export const HC_DAILY_MAX = 3;
+// Hasta cuándo la familia sigue viendo un pedido cerrado
+export const HC_VISIBLE_DAYS = 60;
+
+// Lo que la familia ve de un pedido (nunca más que esto)
+export type HcRequestDTO = {
+  id: string;
+  patient_id: string;
+  child_first_name: string;
+  is_self: boolean; // la copia es de la propia historia clínica del titular
+  status: HcStatus;
+  created_at: string; // ISO
+  ready_at: string | null;
+  delivered_at: string | null;
+  reject_reason: HcRejectReason | null;
+  can_cancel: boolean;
+  // Si se puede abrir la página del chico (deja de poder, por ejemplo, con
+  // el alta cargada; el pedido se sigue viendo igual)
+  child_page: boolean;
+};
+
+export type HcRow = {
+  id: string; patient_id: string; status: HcStatus; created_at: string; updated_at: string;
+  ready_at: string | null; delivered_at: string | null; reject_reason: HcRejectReason | null;
+};
+
+export function computeHcDto(r: HcRow, child: { display: string; self: boolean; page?: boolean }): HcRequestDTO {
+  return {
+    id: r.id,
+    patient_id: r.patient_id,
+    child_first_name: child.display,
+    is_self: child.self,
+    status: r.status,
+    created_at: r.created_at,
+    ready_at: r.ready_at,
+    delivered_at: r.delivered_at,
+    reject_reason: r.status === "rechazada" ? r.reject_reason : null,
+    can_cancel: r.status === "pendiente",
+    child_page: child.page ?? true,
+  };
+}
+
+// Un pedido cerrado se sigue mostrando un tiempo, contado desde que se cerró
+export function hcVisible(r: Pick<HcRow, "status" | "created_at" | "updated_at">, now: Date = new Date()): boolean {
+  if ((HC_OPEN_STATUSES as readonly string[]).includes(r.status)) return true;
+  return now.getTime() - Date.parse(r.updated_at ?? r.created_at) < HC_VISIBLE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+// Constancia de cada paso de un pedido (solo la ve el equipo)
+export type HcEventKind = "pedido" | "lista" | "pendiente" | "entregada" | "rechazada" | "cancelada" | "nota";
+export type HcEvent = { kind: HcEventKind; by_email: string | null; at: string }; // by_email null: la familia
+
+// ── Bandeja del equipo (panel) ──────────────────────────────────────────────
+// Pedidos de copia de la historia clínica y avisos de "no vamos a poder ir".
+// Solo la ve el equipo: acá sí van nombres, DNI y el comentario de la familia.
+
+export type StaffHcRequest = {
+  id: string;
+  patient_id: string;
+  patient_name: string; // "Apellido, Nombre"
+  patient_dni: string | null;
+  link_kind: HcLinkKind;
+  requester_name: string;
+  requester_dni: string;
+  // ¿Quien pidió sigue habilitado hoy? null: ya no tiene cuenta o el pedido está cerrado
+  still_allowed: boolean | null;
+  status: HcStatus;
+  created_at: string;
+  ready_at: string | null;
+  ready_by_email: string | null;
+  delivered_at: string | null;
+  delivered_by_email: string | null;
+  delivered_to_name: string | null;
+  delivered_to_dni: string | null;
+  rejected_at: string | null;
+  rejected_by_email: string | null;
+  reject_reason: HcRejectReason | null;
+  cancelled_at: string | null;
+  staff_notes: string | null;
+  events: HcEvent[]; // del más viejo al más nuevo
+};
+
+export type HcStaffTarget = "pendiente" | "lista" | "entregada" | "rechazada";
+
+// Pasos que el equipo puede dar desde cada estado
+export const HC_TRANSITIONS: Record<HcStatus, readonly HcStaffTarget[]> = {
+  pendiente: ["lista", "entregada", "rechazada"],
+  lista: ["entregada", "rechazada", "pendiente"],
+  entregada: [],
+  rechazada: [],
+  cancelada: [],
+};
+
+// Cómo resuelve el equipo un aviso de "no vamos a poder ir"
+//   justificar: asistencia "justificado" en el turno → "Falta justificada"
+//   cancelar:   cancela el turno → "Cancelamos el turno por tu aviso"
+//   reprogramar: se los contacta para otro día → "Te contactamos para otro día"
+//   visto:      solo se toma nota → "Recibimos tu aviso"
+export const NOTICE_ACTIONS = ["justificar", "cancelar", "reprogramar", "visto"] as const;
+export type NoticeAction = (typeof NOTICE_ACTIONS)[number];
+
+// Cómo quedó un aviso: lo que hizo el equipo, o "asistio" si el turno tiene
+// asistencia "presente" (avisaron que no venían, pero vinieron)
+export type NoticeResolution = Outcome | "asistio";
+
+export type StaffNotice = {
+  response_id: string;
+  appointment_id: string;
+  patient_id: string;
+  patient_name: string;
+  date: string;
+  time: string;
+  modality: "presencial" | "telemedicina";
+  professional_name: string | null;
+  requester_name: string | null; // null si la cuenta ya no existe
+  is_self: boolean; // avisó el propio paciente adulto
+  reason_code: ReasonCode | null;
+  reason_text: string | null;
+  at: string;
+  on_time: boolean;
+  is_past: boolean;
+  resolution: NoticeResolution | null; // null: pendiente
+  resolved_at: string | null;
+  resolved_by_email: string | null;
+};
+
+export type StaffInbox = { hc: StaffHcRequest[]; notices: StaffNotice[] };
+export type StaffInboxCount = { hc_pending: number; notices_pending: number };

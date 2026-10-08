@@ -21,22 +21,40 @@
  *
  * Datos de demo:
  *   - Laura Gómez · DNI 30111222 · contraseña familia2026
- *     (mamá de Martín, 9 años, y de Valentina, 6)
- *   - Jorge Ruiz (papá de Valentina) ya respondió un turno: Laura lo ve como
- *     "otro adulto de la familia".
+ *     (mamá de Martín, 9 años, y de Valentina, 6). Ya pidió la copia de la
+ *     historia clínica de Martín: el pedido está pendiente en la bandeja del panel.
+ *   - Jorge Ruiz · DNI 28999888 · contraseña familia2026: papá de Valentina
+ *     (representante legal) y adulto autorizado de Martín (pareja de Laura):
+ *     ve los turnos de los dos, pero solo puede pedir la copia de la historia
+ *     clínica de Valentina. Ya avisó que Valentina no va a un turno (sin
+ *     resolver): Laura lo ve como "otro adulto de la familia".
  *   - Invitación 24680 13579 para Carla Paz · DNI 27444555 (mamá de Fernanda, 14)
  *   - Código de contraseña nueva 97531 86420 para Laura
+ *
+ * Como en la base real, el aviso guarda lo que cargó el equipo solo si es
+ * "reprogramado" u "otro": "cancelado" y "justificado" salen del turno
+ * (estado cancelado o asistencia "justificado"), "asistio" de la asistencia
+ * "presente" y, si alguien del equipo lo resolvió y después se cambió el
+ * turno, queda como "otro" (visto).
+ *
+ * Cada paso de un pedido de copia (pedido, cancelación, cambios del equipo y
+ * notas) deja una constancia en el propio pedido (events), como la tabla
+ * portal_hc_request_events.
  *
  * En el mock los códigos se guardan en claro. En la base real se guarda solo
  * un HMAC del código.
  */
 
 import { isWeekendKey } from "@/lib/agenda";
-import type { ActivationInfo, ApiResult, ChildDTO, MeDTO } from "@/lib/portal";
+import type { ActivationInfo, ApiResult, ChildDTO, ChildPageDTO, MeDTO } from "@/lib/portal";
 import {
-  type ApptDTO, type Outcome, type ReasonCode, type ResponseKind,
-  CONFIRM_WINDOW_DAYS, PRIVACY_VERSION, REASON_CODES, REASON_TEXT_MAX,
-  addDaysKey as addDays, centerNow, computeApptDto, isValidDni, normalizeCode, normalizeDni, passwordProblem,
+  type ApptDTO, type HcEventKind, type HcRejectReason, type HcRequestDTO, type HcStaffTarget, type NoticeAction,
+  type NoticeResolution, type Outcome, type ReasonCode, type ResponseKind, type StaffHcRequest, type StaffInbox,
+  type StaffInboxCount, type StaffNotice,
+  CONFIRM_WINDOW_DAYS, HC_DAILY_MAX, HC_OPEN_STATUSES, HC_REJECT_REASONS, HC_TRANSITIONS, NOTICE_ACTIONS,
+  PRIVACY_VERSION, REASON_CODES, REASON_TEXT_MAX,
+  addDaysKey as addDays, canRequestHc, centerNow, computeApptDto, computeHcDto, hcVisible, isNoticeOnTime,
+  isValidDni, normalizeCode, normalizeDni, passwordProblem,
 } from "@/lib/portalRules";
 import type { AccessStatus, RelationshipKind, StaffInviteInput, StaffInviteResult, StaffInviteSelfInput } from "@/lib/portalStaff";
 import { mockSupabase } from "./mockClient";
@@ -58,11 +76,21 @@ type Appt = {
   id: string; child_id: string; date: string; time: string; duration_minutes: number;
   modality: "presencial" | "telemedicina"; professional_name: string | null;
   status: "agendado" | "cancelado";
+  attendance: "presente" | "ausente" | "justificado" | null; // la carga el equipo
 };
 type Response = {
   id: string; appointment_id: string; account_id: string; kind: ResponseKind;
   reason_code: ReasonCode | null; reason_text: string | null; at: string;
-  outcome: Outcome | null; // lo resuelve el equipo
+  // Lo que cargó el equipo al resolver el aviso. "cancelado" y "justificado"
+  // no se guardan acá: salen del turno, como en la base real
+  outcome: Extract<Outcome, "reprogramado" | "otro"> | null;
+  resolved_at: string | null; resolved_by_email: string | null;
+};
+// Pedido de copia de la historia clínica (tabla portal_hc_requests). Sus
+// constancias (portal_hc_request_events) van en events, de la más vieja a la
+// más nueva. updated_at cambia con cada cambio de estado, no con las notas.
+type HcRequest = Omit<StaffHcRequest, "patient_name" | "patient_dni" | "still_allowed"> & {
+  account_id: string | null; updated_at: string;
 };
 type Purpose = "activacion" | "recuperacion" | "vincular";
 type Invitation = {
@@ -83,13 +111,13 @@ type Invitation = {
 type Db = {
   version: number; seeded_on: string;
   accounts: Account[]; children: Child[]; links: Link[]; appts: Appt[];
-  responses: Response[]; invitations: Invitation[];
+  responses: Response[]; invitations: Invitation[]; hc_requests: HcRequest[];
   login_failures: Record<string, { count: number; first_at: string }>;
 };
 
 const DB_KEY = "cimt-portal-mock-db";
 const SESSION_KEY = "cimt-portal-mock-session";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 const INVITATION_MAX_FAILS = 5;
 const LOGIN_MAX_FAILS = 10; // por DNI y por hora
@@ -119,6 +147,24 @@ function demoInvitation(i: Partial<Invitation> & Pick<Invitation, "code" | "dni"
   };
 }
 
+// Pedido de copia recién hecho (los defaults de la tabla), con la constancia
+// del pedido (by_email null: lo hizo la familia)
+function hcRow(r: Pick<HcRequest, "id" | "patient_id" | "account_id" | "link_kind" | "requester_name" | "requester_dni" | "created_at">): HcRequest {
+  return {
+    status: "pendiente", ready_at: null, ready_by_email: null,
+    delivered_at: null, delivered_by_email: null, delivered_to_name: null, delivered_to_dni: null,
+    rejected_at: null, rejected_by_email: null, reject_reason: null,
+    cancelled_at: null, staff_notes: null, updated_at: r.created_at,
+    events: [{ kind: "pedido", by_email: null, at: r.created_at }],
+    ...r,
+  };
+}
+
+// Constancia de un paso del pedido (by_email null: la familia)
+function logHcEvent(row: HcRequest, kind: HcEventKind, byEmail: string | null, at = new Date().toISOString()) {
+  row.events.push({ kind, by_email: byEmail, at });
+}
+
 function seed(): Db {
   const today = centerNow().date;
   const now = Date.now();
@@ -127,21 +173,25 @@ function seed(): Db {
   const d0 = workday(today, 0); // hoy si es hábil, si no el próximo hábil
   const ANA = "Lic. Ana Torres";
   const PAULA = "Lic. Paula Díaz";
+  const STAFF = "demo@cimt.local";
 
   const appts: Appt[] = [
-    { id: "t-martin-0", child_id: "c-martin", date: d0, time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado" },
-    { id: "t-martin-1", child_id: "c-martin", date: workday(today, 1), time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado" },
-    { id: "t-martin-2", child_id: "c-martin", date: workday(today, 2), time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado" },
-    { id: "t-martin-3", child_id: "c-martin", date: workday(today, 7), time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado" },
-    { id: "t-martin-4", child_id: "c-martin", date: workday(today, 12), time: "17:30", duration_minutes: 30, modality: "telemedicina", professional_name: ANA, status: "agendado" },
-    { id: "t-vale-1", child_id: "c-valentina", date: workday(today, 1), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "agendado" },
-    { id: "t-vale-2", child_id: "c-valentina", date: workday(today, 3), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "cancelado" },
-    { id: "t-vale-3", child_id: "c-valentina", date: workday(today, 4), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "agendado" },
-    { id: "t-vale-4", child_id: "c-valentina", date: workday(today, 8), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "agendado" },
-    { id: "t-fer-1", child_id: "c-fernanda", date: workday(today, 2), time: "15:00", duration_minutes: 40, modality: "presencial", professional_name: "Lic. Sergio Paz", status: "agendado" },
-    { id: "t-fer-2", child_id: "c-fernanda", date: workday(today, 7), time: "15:00", duration_minutes: 40, modality: "presencial", professional_name: "Lic. Sergio Paz", status: "agendado" },
+    // Martín hoy: el equipo justificó la falta (asistencia "justificado") por el aviso de Laura
+    { id: "t-martin-0", child_id: "c-martin", date: d0, time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado", attendance: "justificado" },
+    { id: "t-martin-1", child_id: "c-martin", date: workday(today, 1), time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado", attendance: null },
+    { id: "t-martin-2", child_id: "c-martin", date: workday(today, 2), time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado", attendance: null },
+    { id: "t-martin-3", child_id: "c-martin", date: workday(today, 7), time: "17:30", duration_minutes: 30, modality: "presencial", professional_name: ANA, status: "agendado", attendance: null },
+    { id: "t-martin-4", child_id: "c-martin", date: workday(today, 12), time: "17:30", duration_minutes: 30, modality: "telemedicina", professional_name: ANA, status: "agendado", attendance: null },
+    { id: "t-vale-1", child_id: "c-valentina", date: workday(today, 1), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "agendado", attendance: null },
+    { id: "t-vale-2", child_id: "c-valentina", date: workday(today, 3), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "cancelado", attendance: null },
+    { id: "t-vale-3", child_id: "c-valentina", date: workday(today, 4), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "agendado", attendance: null },
+    { id: "t-vale-4", child_id: "c-valentina", date: workday(today, 8), time: "10:00", duration_minutes: 30, modality: "presencial", professional_name: PAULA, status: "agendado", attendance: null },
+    { id: "t-fer-1", child_id: "c-fernanda", date: workday(today, 2), time: "15:00", duration_minutes: 40, modality: "presencial", professional_name: "Lic. Sergio Paz", status: "agendado", attendance: null },
+    { id: "t-fer-2", child_id: "c-fernanda", date: workday(today, 7), time: "15:00", duration_minutes: 40, modality: "presencial", professional_name: "Lic. Sergio Paz", status: "agendado", attendance: null },
   ];
   const legal = (account_id: string, child_id: string): Link => ({ account_id, child_id, relationship_kind: "representante_legal", guardian_id: null });
+  // Adulto autorizado: ve los turnos y avisa, pero no puede pedir la historia clínica
+  const authorized = (account_id: string, child_id: string): Link => ({ account_id, child_id, relationship_kind: "autorizado", guardian_id: null });
 
   return {
     version: DB_VERSION,
@@ -155,21 +205,32 @@ function seed(): Db {
       { id: "c-valentina", first_name: "Valentina", last_name: "Ruiz", source: "demo" },
       { id: "c-fernanda", first_name: "Fernanda", last_name: "Paz", source: "demo" },
     ],
-    links: [legal("acc-laura", "c-martin"), legal("acc-laura", "c-valentina"), legal("acc-jorge", "c-valentina")],
+    links: [
+      legal("acc-laura", "c-martin"), legal("acc-laura", "c-valentina"),
+      legal("acc-jorge", "c-valentina"), authorized("acc-jorge", "c-martin"),
+    ],
     appts,
     responses: [
-      // Martín hoy: Laura avisó ayer que no van (a tiempo), el equipo lo justificó
-      { id: "r1", appointment_id: "t-martin-0", account_id: "acc-laura", kind: "no_puedo", reason_code: "transporte", reason_text: null, at: iso(20 * H), outcome: "justificado" },
+      // Martín hoy: Laura avisó ayer que no van (a tiempo), el equipo justificó la falta
+      { id: "r1", appointment_id: "t-martin-0", account_id: "acc-laura", kind: "no_puedo", reason_code: "transporte", reason_text: null, at: iso(20 * H), outcome: null, resolved_at: iso(18 * H), resolved_by_email: STAFF },
       // Martín mañana: Laura confirmó
-      { id: "r2", appointment_id: "t-martin-1", account_id: "acc-laura", kind: "confirmo", reason_code: null, reason_text: null, at: iso(3 * H), outcome: null },
+      { id: "r2", appointment_id: "t-martin-1", account_id: "acc-laura", kind: "confirmo", reason_code: null, reason_text: null, at: iso(3 * H), outcome: null, resolved_at: null, resolved_by_email: null },
       // Valentina mañana: Jorge avisó que no van (sin resolver)
-      { id: "r3", appointment_id: "t-vale-1", account_id: "acc-jorge", kind: "no_puedo", reason_code: "trabajo", reason_text: null, at: iso(1 * H), outcome: null },
+      { id: "r3", appointment_id: "t-vale-1", account_id: "acc-jorge", kind: "no_puedo", reason_code: "trabajo", reason_text: null, at: iso(1 * H), outcome: null, resolved_at: null, resolved_by_email: null },
       // Valentina en 3 días hábiles: Laura avisó y el equipo canceló el turno
-      { id: "r4", appointment_id: "t-vale-2", account_id: "acc-laura", kind: "no_puedo", reason_code: "escuela", reason_text: "Acto en la escuela", at: iso(26 * H), outcome: "cancelado" },
+      { id: "r4", appointment_id: "t-vale-2", account_id: "acc-laura", kind: "no_puedo", reason_code: "escuela", reason_text: "Acto en la escuela", at: iso(26 * H), outcome: null, resolved_at: iso(25 * H), resolved_by_email: STAFF },
     ],
     invitations: [
       demoInvitation({ code: "2468013579", dni: "27444555", purpose: "activacion", first_name: "Carla", last_name: "Paz", child_ids: ["c-fernanda"] }),
       demoInvitation({ code: "9753186420", dni: "30111222", purpose: "recuperacion", first_name: "Laura", last_name: "Gómez", account_id: "acc-laura" }),
+    ],
+    hc_requests: [
+      // Laura pidió hace 30 horas la copia de la historia clínica de Martín:
+      // todavía no se preparó (su única constancia es la del pedido)
+      hcRow({
+        id: "hc-demo-1", patient_id: "c-martin", account_id: "acc-laura", link_kind: "representante_legal",
+        requester_name: "Laura Gómez", requester_dni: "30111222", created_at: iso(30 * H),
+      }),
     ],
     login_failures: {},
   };
@@ -274,6 +335,16 @@ function childIdsOf(db: Db, accountId: string): string[] {
   return db.links.filter((l) => l.account_id === accountId).map((l) => l.child_id);
 }
 
+function linkOf(db: Db, accountId: string, childId: string): Link | undefined {
+  return db.links.find((l) => l.account_id === accountId && l.child_id === childId);
+}
+
+// ¿Esta cuenta puede pedir la copia de la historia clínica de este chico?
+function canRequestHcFor(db: Db, accountId: string, childId: string): boolean {
+  const link = linkOf(db, accountId, childId);
+  return !!link && canRequestHc(link.relationship_kind);
+}
+
 function lastInitial(c: Pick<Child, "last_name">) { return `${c.last_name.charAt(0)}.`; }
 
 function isSelfLink(db: Db, accountId: string, childId: string): boolean {
@@ -286,6 +357,7 @@ function childNames(db: Db, ids: string[]): string[] {
 
 // Turnos de los chicos invitados desde el panel: se leen de la agenda del mock
 type Row = Record<string, unknown>;
+const ATTENDANCE = ["presente", "ausente", "justificado"] as const;
 async function agendaAppts(childIds: string[]): Promise<Appt[]> {
   if (childIds.length === 0) return [];
   const { data: pros } = await mockSupabase.from("professionals").select("*");
@@ -303,6 +375,7 @@ async function agendaAppts(childIds: string[]): Promise<Appt[]> {
         modality: a.modality === "telemedicina" ? "telemedicina" : "presencial",
         professional_name: a.professional_id ? names.get(String(a.professional_id)) ?? null : null,
         status: a.status === "cancelado" ? "cancelado" : "agendado",
+        attendance: ATTENDANCE.find((x) => x === a.attendance) ?? null,
       });
     }
   }
@@ -326,11 +399,16 @@ function displayName(db: Db, accountId: string, child: Child): string {
   return twins.length ? `${child.first_name} ${lastInitial(child)}` : child.first_name;
 }
 
+// La respuesta más nueva de un turno, de cualquier adulto
+function newestResponse(db: Db, appointmentId: string): Response | undefined {
+  return db.responses
+    .filter((r) => r.appointment_id === appointmentId)
+    .sort((x, y) => y.at.localeCompare(x.at))[0];
+}
+
 function toDto(db: Db, a: Appt, accountId: string): ApptDTO {
   const child = db.children.find((c) => c.id === a.child_id)!;
-  const last = db.responses
-    .filter((r) => r.appointment_id === a.id)
-    .sort((x, y) => y.at.localeCompare(x.at))[0];
+  const last = newestResponse(db, a.id);
   return computeApptDto(
     {
       id: a.id, child_id: child.id, child_first_name: displayName(db, accountId, child),
@@ -338,6 +416,8 @@ function toDto(db: Db, a: Appt, accountId: string): ApptDTO {
       date: a.date, time: a.time, duration_minutes: a.duration_minutes,
       modality: a.modality, professional_name: a.professional_name,
       cancelled: a.status === "cancelado",
+      // "Justificado" solo se usa para contestar un aviso de la familia
+      justified: a.attendance === "justificado",
     },
     last ? { account_id: last.account_id, kind: last.kind, reason_code: last.reason_code, at: last.at, outcome: last.outcome } : null,
     accountId,
@@ -349,6 +429,38 @@ async function apptsOf(db: Db, accountId: string, childIds: string[], fromDate: 
     .filter((a) => a.date >= fromDate && a.date <= toDate)
     .sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time))
     .map((a) => toDto(db, a, accountId));
+}
+
+// Pacientes de los que esta cuenta puede ver sus pedidos: los vínculos con
+// derecho a pedir la copia (en la base, aunque ya no den acceso al portal,
+// por ejemplo con el alta). page dice si la página del chico se puede abrir:
+// en el mock todo vínculo da acceso, así que siempre se puede.
+function hcPatients(db: Db, accountId: string): { patient_id: string; display: string; self: boolean; page: boolean }[] {
+  const ids = childIdsOf(db, accountId);
+  return db.links
+    .filter((l) => l.account_id === accountId && canRequestHc(l.relationship_kind) && db.children.some((c) => c.id === l.child_id))
+    .map((l) => {
+      const c = db.children.find((x) => x.id === l.child_id)!;
+      return {
+        patient_id: l.child_id,
+        display: displayName(db, accountId, c),
+        self: isSelfLink(db, accountId, l.child_id),
+        page: ids.includes(l.child_id),
+      };
+    });
+}
+
+// Pedidos de copia de esta cuenta (abiertos y cerrados recientes)
+function hcRequestsFor(db: Db, accountId: string, onlyPatientId?: string): HcRequestDTO[] {
+  const patients = hcPatients(db, accountId).filter((p) => !onlyPatientId || p.patient_id === onlyPatientId);
+  if (!patients.length) return [];
+  const now = new Date();
+  return db.hc_requests
+    .filter((r) => r.account_id === accountId && patients.some((p) => p.patient_id === r.patient_id))
+    .sort((x, y) => y.created_at.localeCompare(x.created_at))
+    .slice(0, 50)
+    .filter((r) => hcVisible(r, now))
+    .map((r) => computeHcDto(r, patients.find((p) => p.patient_id === r.patient_id)!));
 }
 
 // ── Endpoints de la familia ─────────────────────────────────────────────────
@@ -547,12 +659,15 @@ export async function me(): Promise<ApiResult<MeDTO>> {
     const c = db.children.find((x) => x.id === id)!;
     const later = (await apptsOf(db, acc.id, [id], addDays(weekEnd, 1), addDays(today, 90)))
       .find((a) => a.state === "agendado") ?? null;
-    children.push({ id, first_name: displayName(db, acc.id, c), last_initial: lastInitial(c), self: isSelfLink(db, acc.id, id), next: later });
+    children.push({
+      id, first_name: displayName(db, acc.id, c), last_initial: lastInitial(c), self: isSelfLink(db, acc.id, id),
+      can_request_hc: canRequestHcFor(db, acc.id, id), next: later,
+    });
   }
-  return ok({ guardian_first_name: acc.first_name, week, children });
+  return ok({ guardian_first_name: acc.first_name, week, children, requests: hcRequestsFor(db, acc.id) });
 }
 
-export async function childAppointments(patientId: string): Promise<ApiResult<{ child: { id: string; first_name: string; self?: boolean }; appointments: ApptDTO[] }>> {
+export async function childAppointments(patientId: string): Promise<ApiResult<ChildPageDTO>> {
   await wait(300);
   const db = load();
   const acc = requireAccount(db);
@@ -564,6 +679,8 @@ export async function childAppointments(patientId: string): Promise<ApiResult<{ 
   return ok({
     child: { id: c.id, first_name: displayName(db, acc.id, c), self: isSelfLink(db, acc.id, c.id) },
     appointments: await apptsOf(db, acc.id, [c.id], today, addDays(today, 90)),
+    // Copia de la historia clínica: si esta cuenta puede pedirla y sus pedidos
+    hc: { can_request: canRequestHcFor(db, acc.id, c.id), requests: hcRequestsFor(db, acc.id, c.id) },
   });
 }
 
@@ -591,6 +708,7 @@ export async function respond(input: {
   if (!acc) return fail(401, SESSION_EXPIRED);
   const a = await findOwnAppt(db, acc.id, input.appointment_id);
   if (!a) return fail(404, "No encontramos ese turno en tu cuenta.");
+  if (input.response !== "confirmo" && input.response !== "no_puedo") return fail(400, "Elegí una respuesta.");
   const dto = toDto(db, a, acc.id);
   if (a.status === "cancelado") return fail(409, "El centro canceló este turno.");
   if (dto.is_past) return fail(409, "Este turno ya pasó. Si no pudieron venir, llamanos.");
@@ -609,10 +727,74 @@ export async function respond(input: {
   }
   db.responses.push({
     id: uid("r"), appointment_id: a.id, account_id: acc.id, kind: input.response,
-    reason_code, reason_text, at: new Date().toISOString(), outcome: null,
+    reason_code, reason_text, at: new Date().toISOString(),
+    outcome: null, resolved_at: null, resolved_by_email: null,
   });
   save(db);
   return ok(toDto(db, a, acc.id));
+}
+
+// ── Copia de la historia clínica (familia) ──────────────────────────────────
+// La piden el titular o el representante legal; se entrega en mano en el
+// centro. En producción: POST /api/portal/hc (server/lib/requests.ts).
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HC_NOT_FOUND = "No encontramos ese pedido.";
+
+export async function hcCreate(patientId: string): Promise<ApiResult<HcRequestDTO>> {
+  await wait(450);
+  const db = load();
+  const acc = requireAccount(db);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  const link = linkOf(db, acc.id, patientId);
+  if (!link) return fail(404, "No encontramos a ese chico en tu cuenta.");
+  const kind = link.relationship_kind;
+  if (!canRequestHc(kind)) {
+    return fail(403, "La copia la pueden pedir el propio paciente o su madre, padre o tutor/a. Si necesitás ayuda, llamanos.", { code: "NOT_ALLOWED" });
+  }
+  const since = Date.now() - DAY_MS;
+  if (db.hc_requests.filter((r) => r.account_id === acc.id && Date.parse(r.created_at) >= since).length >= HC_DAILY_MAX) {
+    return fail(429, "Ya hiciste varios pedidos hoy. Si necesitás algo más, llamanos.");
+  }
+  // Un solo pedido abierto por persona y paciente (índice único en la base)
+  if (db.hc_requests.some((r) => r.patient_id === patientId && r.requester_dni === acc.dni && HC_OPEN_STATUSES.includes(r.status))) {
+    return fail(409, "Ya hay un pedido en curso. Te avisamos acá cuando la copia esté lista.", { code: "HC_OPEN" });
+  }
+  // El pedido y su constancia (hcRow la agrega, sin email: lo hizo la familia)
+  const row = hcRow({
+    id: uid("hc"), patient_id: patientId, account_id: acc.id, link_kind: kind,
+    requester_name: `${acc.first_name} ${acc.last_name}`.trim(), requester_dni: acc.dni,
+    created_at: new Date().toISOString(),
+  });
+  db.hc_requests.push(row);
+  save(db);
+  const c = db.children.find((x) => x.id === patientId)!;
+  return ok(computeHcDto(row, { display: displayName(db, acc.id, c), self: isSelfLink(db, acc.id, patientId), page: true }));
+}
+
+export async function hcCancel(id: string): Promise<ApiResult<HcRequestDTO>> {
+  await wait(400);
+  const db = load();
+  const acc = requireAccount(db);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  if (!validId(id)) return fail(404, HC_NOT_FOUND);
+  const row = db.hc_requests.find((r) => r.id === id);
+  // Vale para cualquier vínculo con derecho a la copia, aunque ya no dé
+  // acceso al portal. Un pedido de otra persona da lo mismo que uno que no existe
+  const patient = row ? hcPatients(db, acc.id).find((p) => p.patient_id === row.patient_id) : undefined;
+  if (!row || row.account_id !== acc.id || !patient) return fail(404, HC_NOT_FOUND);
+  if (row.status !== "pendiente") {
+    return fail(409, row.status === "lista"
+      ? "La copia ya está lista. Si ya no la necesitás, avisanos en el centro."
+      : "Este pedido ya está cerrado.");
+  }
+  const now = new Date().toISOString();
+  row.status = "cancelada";
+  row.cancelled_at = now;
+  row.updated_at = now;
+  logHcEvent(row, "cancelada", null, now);
+  save(db);
+  return ok(computeHcDto(row, patient));
 }
 
 // ── Endpoints del equipo (panel) ────────────────────────────────────────────
@@ -774,4 +956,297 @@ export async function staffAccessStatus(rawDni: string | null, patientId: string
     return { state: "invitado", expires_at: inv.expires_at };
   }
   return { state: "ninguno", has_account: !!account };
+}
+
+// ── Bandeja del equipo (panel) ──────────────────────────────────────────────
+// Pedidos de copia de la historia clínica y avisos de "no vamos a poder ir".
+// En producción: POST /api/portal-staff/inbox (server/lib/requests.ts).
+
+const NOTICE_DAYS = 90; // avisos que se miran hacia atrás
+const RESOLVED_DAYS = 14; // los resueltos se siguen mostrando un tiempo
+const HC_CLOSED_DAYS = 30; // pedidos cerrados que se siguen mostrando
+
+// En la base los ids son UUID; acá alcanza con que haya algo
+const validId = (s: unknown): s is string => typeof s === "string" && s.length > 0 && s.length <= 64;
+
+// Nombre ("Apellido, Nombre") y DNI del paciente como los ve el equipo. Los
+// chicos invitados desde el panel se leen de su ficha en la agenda del mock;
+// los de la demo no tienen ficha (sin DNI).
+async function patientInfo(db: Db, childIds: string[]): Promise<Map<string, { name: string; dni: string | null }>> {
+  const out = new Map<string, { name: string; dni: string | null }>();
+  for (const id of new Set(childIds)) {
+    const c = db.children.find((x) => x.id === id);
+    let p: Row | undefined;
+    if (c?.source === "agenda") {
+      const { data } = await mockSupabase.from("patients").select("*").eq("id", id);
+      p = ((data ?? []) as Row[])[0];
+    }
+    const first = p ? String(p.first_name ?? "") : c?.first_name;
+    const last = p ? String(p.last_name ?? "") : c?.last_name;
+    out.set(id, {
+      name: first !== undefined ? `${last}, ${first}` : "Paciente",
+      dni: p?.dni ? String(p.dni) : null,
+    });
+  }
+  return out;
+}
+
+// Para un pedido abierto: ¿quien lo hizo sigue pudiendo pedirla hoy? null si
+// el pedido está cerrado; false si la cuenta ya no existe o ya no tiene un
+// vínculo con derecho a la copia (titular o representante legal). El mock no
+// tiene edad ni alta: alcanza con el tipo de vínculo (el alta tampoco cuenta
+// en la base: no quita el derecho a la copia).
+function stillAllowed(db: Db, r: HcRequest): boolean | null {
+  if (!HC_OPEN_STATUSES.includes(r.status)) return null;
+  const acc = r.account_id ? db.accounts.find((a) => a.id === r.account_id) : undefined;
+  if (!acc) return false;
+  return canRequestHcFor(db, acc.id, r.patient_id);
+}
+
+async function toStaffHc(db: Db, rows: HcRequest[]): Promise<StaffHcRequest[]> {
+  if (!rows.length) return [];
+  const info = await patientInfo(db, rows.map((r) => r.patient_id));
+  return rows.map((r) => {
+    const { account_id: _a, updated_at: _u, events, ...rest } = r;
+    const p = info.get(r.patient_id);
+    return {
+      ...rest,
+      patient_name: p?.name ?? "Paciente",
+      patient_dni: p?.dni ?? null,
+      still_allowed: stillAllowed(db, r),
+      events: [...(events ?? [])].sort((x, y) => x.at.localeCompare(y.at)), // del más viejo al más nuevo
+    };
+  });
+}
+
+// Abiertos (los más viejos primero) y cerrados de los últimos 30 días
+async function staffHcList(db: Db): Promise<StaffHcRequest[]> {
+  const since = Date.now() - HC_CLOSED_DAYS * DAY_MS;
+  const isOpen = (r: HcRequest) => HC_OPEN_STATUSES.includes(r.status);
+  const open = db.hc_requests.filter(isOpen).sort((x, y) => x.created_at.localeCompare(y.created_at));
+  const closed = db.hc_requests
+    .filter((r) => !isOpen(r) && Date.parse(r.updated_at) >= since)
+    .sort((x, y) => y.updated_at.localeCompare(x.updated_at))
+    .slice(0, 100);
+  return toStaffHc(db, [...open, ...closed]);
+}
+
+// Todos los turnos que conoce el portal: los de la demo y los de los chicos
+// invitados desde el panel (agenda del mock)
+async function allAppts(db: Db): Promise<Map<string, Appt>> {
+  const agendaIds = db.children.filter((c) => c.source === "agenda").map((c) => c.id);
+  return new Map([...db.appts, ...(await agendaAppts(agendaIds))].map((a) => [a.id, a]));
+}
+
+// Cómo quedó el aviso: lo que cargó el equipo, lo que se deduce del turno
+// (cancelado, falta justificada, o vinieron igual) o, si alguien del equipo
+// ya lo resolvió y después se cambió el turno, se da por visto
+function resolutionOf(r: Response, a: Appt): NoticeResolution | null {
+  if (r.outcome) return r.outcome;
+  if (a.status === "cancelado") return "cancelado";
+  if (a.attendance === "justificado") return "justificado";
+  if (a.attendance === "presente") return "asistio";
+  return r.resolved_at ? "otro" : null;
+}
+
+async function staffNotices(db: Db): Promise<StaffNotice[]> {
+  const since = Date.now() - NOTICE_DAYS * DAY_MS;
+  // Vale la respuesta más nueva de cada turno (si después confirmaron, ya no es un aviso)
+  const newest = new Map<string, Response>();
+  const recent = db.responses.filter((r) => Date.parse(r.at) >= since).sort((x, y) => y.at.localeCompare(x.at));
+  for (const r of recent) if (!newest.has(r.appointment_id)) newest.set(r.appointment_id, r);
+  const notices = [...newest.values()].filter((r) => r.kind === "no_puedo");
+  if (!notices.length) return [];
+
+  const appts = await allAppts(db);
+  const info = await patientInfo(db, notices.map((r) => appts.get(r.appointment_id)?.child_id).filter((x): x is string => !!x));
+  const now = centerNow();
+  const resolvedSince = Date.now() - RESOLVED_DAYS * DAY_MS;
+  const out: StaffNotice[] = [];
+  for (const r of notices) {
+    const a = appts.get(r.appointment_id);
+    if (!a) continue;
+    const resolution = resolutionOf(r, a);
+    // Los resueltos se ven un tiempo (desde que se resolvieron o, si se
+    // deducen del turno, desde el turno)
+    if (resolution && Date.parse(r.resolved_at ?? `${a.date}T${a.time}:00-03:00`) < resolvedSince) continue;
+    const acc = db.accounts.find((x) => x.id === r.account_id);
+    out.push({
+      response_id: r.id,
+      appointment_id: a.id,
+      patient_id: a.child_id,
+      patient_name: info.get(a.child_id)?.name ?? "Paciente",
+      date: a.date,
+      time: a.time,
+      modality: a.modality,
+      professional_name: a.professional_name,
+      requester_name: acc ? `${acc.first_name} ${acc.last_name}`.trim() : null,
+      is_self: !!acc && isSelfLink(db, acc.id, a.child_id),
+      reason_code: r.reason_code,
+      reason_text: r.reason_text,
+      at: r.at,
+      on_time: isNoticeOnTime(r.at, a.date),
+      is_past: `${a.date} ${a.time}` <= `${now.date} ${now.time}`,
+      resolution,
+      resolved_at: r.resolved_at,
+      resolved_by_email: r.resolved_by_email,
+    });
+  }
+  // Pendientes primero, por fecha del turno; después los resueltos más nuevos
+  return out.sort((x, y) => (x.resolution === null) !== (y.resolution === null)
+    ? (x.resolution === null ? -1 : 1)
+    : x.resolution === null
+      ? `${x.date}${x.time}`.localeCompare(`${y.date}${y.time}`)
+      : (y.resolved_at ?? y.at).localeCompare(x.resolved_at ?? x.at));
+}
+
+export async function staffInbox(): Promise<ApiResult<StaffInbox>> {
+  await wait(350);
+  const db = load();
+  const hc = await staffHcList(db);
+  const notices = await staffNotices(db);
+  return ok({ hc, notices });
+}
+
+export async function staffInboxCount(): Promise<StaffInboxCount> {
+  await wait(150);
+  const db = load();
+  return {
+    hc_pending: db.hc_requests.filter((r) => r.status === "pendiente").length,
+    notices_pending: (await staffNotices(db)).filter((n) => n.resolution === null).length,
+  };
+}
+
+export async function staffHcUpdate(input: {
+  id: string; to: HcStaffTarget; delivered_to_name?: string; delivered_to_dni?: string; reject_reason?: HcRejectReason;
+}, issuedBy: string): Promise<ApiResult<StaffHcRequest>> {
+  await wait(400);
+  if (!validId(input.id)) return fail(400, "Pedido inválido");
+  const db = load();
+  const row = db.hc_requests.find((r) => r.id === input.id);
+  if (!row) return fail(404, HC_NOT_FOUND);
+  const to = String(input.to) as HcStaffTarget;
+  if (!HC_TRANSITIONS[row.status].includes(to)) return fail(409, "Este pedido ya cambió de estado. Actualizá la bandeja.");
+
+  const now = new Date().toISOString();
+  let patch: Partial<HcRequest>;
+  if (to === "lista") {
+    patch = { ready_at: now, ready_by_email: issuedBy };
+  } else if (to === "pendiente") {
+    patch = { ready_at: null, ready_by_email: null };
+  } else if (to === "entregada") {
+    const name = String(input.delivered_to_name ?? "").replace(/\s+/g, " ").trim();
+    const dni = normalizeDni(String(input.delivered_to_dni ?? ""));
+    if (name.length < 3 || name.length > 120) return fail(400, "Escribí el nombre de quien la retiró.");
+    if (!isValidDni(dni)) return fail(400, "Revisá el DNI de quien la retiró.");
+    patch = { delivered_at: now, delivered_by_email: issuedBy, delivered_to_name: name, delivered_to_dni: dni };
+  } else {
+    const reason = HC_REJECT_REASONS.find((x) => x === input.reject_reason);
+    if (!reason) return fail(400, "Elegí el motivo.");
+    patch = { rejected_at: now, rejected_by_email: issuedBy, reject_reason: reason };
+  }
+  Object.assign(row, patch, { status: to, updated_at: now });
+  logHcEvent(row, to, issuedBy, now);
+  save(db);
+  return ok((await toStaffHc(db, [row]))[0]);
+}
+
+// Las notas no cambian updated_at, pero dejan constancia de quién las editó.
+// portalStaffApi.hcNotes no pasa el email: se toma de la sesión del panel (mock)
+export async function staffHcNotes(id: string, notes: string, issuedBy?: string): Promise<ApiResult<{ ok: true }>> {
+  await wait(300);
+  if (!validId(id)) return fail(400, "Pedido inválido");
+  const text = String(notes ?? "").trim();
+  if (text.length > 500) return fail(400, "Las notas pueden tener hasta 500 caracteres.");
+  const by = issuedBy || (await mockSupabase.auth.getSession()).data.session?.user?.email || "demo@cimt.local";
+  const db = load();
+  const row = db.hc_requests.find((r) => r.id === id);
+  if (!row) return fail(404, HC_NOT_FOUND);
+  row.staff_notes = text || null;
+  logHcEvent(row, "nota", by);
+  save(db);
+  return ok({ ok: true as const });
+}
+
+// Justificar o cancelar cambia el turno, solo si sigue sin cancelar y sin
+// asistencia (o con "ausente"). Los turnos de la demo viven acá; los de los
+// chicos invitados, en la agenda del mock (como lo haría el panel).
+// "changed": el turno ya no está para tocarlo (o ya no existe).
+async function changeApptForNotice(appointmentId: string, how: "justificar" | "cancelar"): Promise<"ok" | "changed" | "error"> {
+  const untouched = (x: { status?: unknown; attendance?: unknown }) =>
+    x.status !== "cancelado" && (x.attendance == null || x.attendance === "ausente");
+  const db = load();
+  const demo = db.appts.find((x) => x.id === appointmentId);
+  if (demo) {
+    if (!untouched(demo)) return "changed";
+    if (how === "cancelar") demo.status = "cancelado";
+    else demo.attendance = "justificado";
+    save(db);
+    return "ok";
+  }
+  const { data, error: rErr } = await mockSupabase.from("appointments").select("*").eq("id", appointmentId);
+  if (rErr) return "error";
+  const row = ((data ?? []) as Row[])[0];
+  if (!row || !untouched(row)) return "changed";
+  const { error } = await mockSupabase.from("appointments")
+    .update(how === "cancelar" ? { status: "cancelado" } : { attendance: "justificado" })
+    .eq("id", appointmentId).neq("status", "cancelado");
+  return error ? "error" : "ok";
+}
+
+export async function staffResolveNotice(responseId: string, how: NoticeAction, issuedBy: string): Promise<ApiResult<{ ok: true }>> {
+  await wait(400);
+  if (!validId(responseId)) return fail(400, "Pedido inválido");
+  if (!(NOTICE_ACTIONS as readonly string[]).includes(String(how))) return fail(400, "Elegí cómo se resolvió.");
+  const db = load();
+  const r = db.responses.find((x) => x.id === responseId);
+  if (!r || r.kind !== "no_puedo") return fail(404, "No encontramos ese aviso.");
+  if (newestResponse(db, r.appointment_id)?.id !== r.id) return fail(409, "La familia cambió su respuesta. Actualizá la bandeja.");
+  const a = (await allAppts(db)).get(r.appointment_id);
+  if (!a) return fail(404, "No encontramos el turno de ese aviso.");
+  if (resolutionOf(r, a)) return fail(409, "Este aviso ya está resuelto. Actualizá la bandeja.");
+  const now = centerNow();
+  if (how === "cancelar" && `${a.date} ${a.time}` <= `${now.date} ${now.time}`) {
+    return fail(409, "El turno ya pasó: no se puede cancelar. Usá «Justificar la falta» o «Tomamos nota».");
+  }
+
+  // 1. Se reserva el aviso (con los datos de ahora, que otra pestaña pudo
+  //    cambiar mientras se leía la agenda): si dos personas lo resuelven a la
+  //    vez, gana una
+  const at = new Date().toISOString();
+  const claimDb = load();
+  const claimed = claimDb.responses.find((x) => x.id === r.id);
+  if (!claimed || claimed.resolved_at !== null || claimed.outcome !== null) {
+    return fail(409, "Otra persona del equipo ya resolvió este aviso. Actualizá la bandeja.");
+  }
+  claimed.outcome = how === "reprogramar" ? "reprogramado" : how === "visto" ? "otro" : null;
+  claimed.resolved_at = at;
+  claimed.resolved_by_email = issuedBy;
+  save(claimDb);
+  const release = () => {
+    const d = load();
+    const x = d.responses.find((y) => y.id === r.id);
+    if (x && x.resolved_at === at) {
+      Object.assign(x, { outcome: null, resolved_at: null, resolved_by_email: null });
+      save(d);
+    }
+  };
+
+  // 2. Si la familia cambió su respuesta mientras tanto, no se toca nada
+  if (newestResponse(load(), r.appointment_id)?.id !== r.id) {
+    release();
+    return fail(409, "La familia cambió su respuesta. Actualizá la bandeja.");
+  }
+
+  // 3. Justificar o cancelar cambia el turno
+  if (how === "justificar" || how === "cancelar") {
+    const changed = await changeApptForNotice(a.id, how);
+    if (changed !== "ok") {
+      release();
+      return changed === "error"
+        ? fail(503, "No se pudo actualizar el turno. Probá de nuevo.")
+        : fail(409, "El turno cambió (ya tiene asistencia cargada o está cancelado). Actualizá la bandeja.");
+    }
+  }
+  return ok({ ok: true as const });
 }

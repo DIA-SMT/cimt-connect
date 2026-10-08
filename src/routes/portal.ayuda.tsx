@@ -19,7 +19,11 @@ const FAQ = [
   },
   {
     q: "¿Por qué no veo diagnósticos ni informes?",
-    a: "El portal es solo para turnos y avisos. Si necesitás una copia de la historia clínica, pedila en el centro: se entrega en mano a la madre, el padre o el/la tutor/a, con DNI.",
+    a: "El portal es solo para turnos, avisos y pedidos: no muestra diagnósticos, informes ni la historia clínica. Si necesitás una copia de la historia clínica, la podés pedir desde el portal y te la entregamos en mano en el centro.",
+  },
+  {
+    q: "¿Puedo pedir una copia de la historia clínica?",
+    a: `Sí, desde la página del paciente: en el inicio, tocá «Ver todos los turnos» del paciente (o «Ver todos tus turnos», si es la tuya) y ahí tocá «Pedir una copia». La pueden pedir el propio paciente, si es mayor de edad, y la madre, el padre o el/la tutor/a; un adulto autorizado, no. El equipo la prepara y la entrega en mano en el centro (${CENTER.address}), con DNI, a quien la pidió. Cómo va el pedido lo ves en el inicio, en «Tus pedidos»: ahí te avisamos cuando esté lista.`,
   },
   {
     q: "Me olvidé la contraseña.",
