@@ -93,8 +93,6 @@ const RESOLUTION_TONE: Record<NoticeResolution, Tone> = {
   asistio: "ok",
 };
 
-// El turno es de un día anterior (hora del centro): ya no aparece en el portal
-const apptGone = (n: Pick<StaffNotice, "date">, today = centerNow().date) => n.date < today;
 // El turno ya empezó (el servidor no deja cancelarlo)
 const apptPast = (n: Pick<StaffNotice, "date" | "time" | "is_past">, now = centerNow()) =>
   n.is_past || `${n.date} ${n.time}` <= `${now.date} ${now.time}`;
@@ -193,11 +191,11 @@ export function PortalInboxTab({ onOpenPatient, onCountChange }: Props) {
       return;
     }
     if (how === "cancelar" && !window.confirm(
-      `¿Cancelar el turno de ${n.patient_name} del ${apptDateLabel(n)}? La familia va a ver «Cancelamos el turno por tu aviso».`,
+      `¿Cancelar el turno de ${n.patient_name} del ${apptDateLabel(n)}? ${n.family_sees ? "La familia va a ver «Cancelamos el turno por tu aviso»." : NOTICE_GONE}`,
     )) return;
     setResolving({ id: n.response_id, how });
     const r = await portalStaffApi.resolveNotice(n.response_id, how);
-    if (r.ok) toast.success(doneText(NOTICE_DONE[how], apptGone(n) ? NOTICE_GONE : null));
+    if (r.ok) toast.success(doneText(NOTICE_DONE[how], n.family_sees ? null : NOTICE_GONE));
     else toast.error(r.error);
     // Siempre se vuelve a cargar: también después de un 409 (otra persona lo
     // resolvió, la familia cambió su respuesta o el turno cambió)
@@ -628,7 +626,7 @@ function NoticeList({ list, now, resolving, onResolve, onOpenPatient }: {
   const open = list.filter((n) => n.resolution === null);
   const done = list.filter((n) => n.resolution !== null);
   const row = (n: StaffNotice) => (
-    <NoticeRow key={n.response_id} n={n} past={apptPast(n, center)} gone={apptGone(n, center.date)}
+    <NoticeRow key={n.response_id} n={n} past={apptPast(n, center)} gone={!n.family_sees}
       resolving={resolving} onResolve={onResolve} onOpenPatient={onOpenPatient} />
   );
   return (

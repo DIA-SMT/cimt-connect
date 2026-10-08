@@ -265,18 +265,21 @@ async function inChunks<T>(ids: string[], fetch: (chunk: string[]) => PromiseLik
   return out;
 }
 
-// Cómo quedó el aviso: lo que cargó el equipo, lo que se deduce del turno
-// (cancelado, falta justificada, o vinieron igual) o, si alguien del equipo
-// ya lo resolvió y después se cambió el turno, se da por visto
+// Cómo quedó el aviso: lo que cargó el equipo o lo que se deduce del turno
+// (cancelado, falta justificada, o vinieron igual). Si el turno no cambió,
+// sigue pendiente aunque alguien lo haya intentado resolver (por ejemplo, se
+// cortó la conexión antes de cambiar el turno): así se puede reintentar.
 function resolutionOf(r: RespRow, a: ApptRow): NoticeResolution | null {
   if (r.outcome) return r.outcome;
   if (a.status === "cancelado") return "cancelado";
   if (a.attendance === "justificado") return "justificado";
   if (a.attendance === "presente") return "asistio";
-  return r.resolved_at ? "otro" : null;
+  return null;
 }
 
-export async function staffNotices(ctx: Ctx): Promise<StaffNotice[]> {
+// withVisibility: calcula si la familia todavía ve cada turno pendiente
+// (consulta los vínculos de cada cuenta; el número de la pestaña no lo necesita)
+export async function staffNotices(ctx: Ctx, withVisibility = false): Promise<StaffNotice[]> {
   const since = new Date(Date.now() - NOTICE_DAYS * DAY_MS).toISOString();
   const { data: resps, error } = await ctx.admin.from("portal_appointment_responses")
     .select(RESP_COLS).gte("created_at", since).order("created_at", { ascending: false }).limit(3000);
@@ -294,10 +297,21 @@ export async function staffNotices(ctx: Ctx): Promise<StaffNotice[]> {
   const [patients, pros, accounts] = await Promise.all([
     inChunks<NameRow>([...new Set(appts.map((a) => a.patient_id))], (ids) => ctx.admin.from("patients").select("id, first_name, last_name, dni").in("id", ids)),
     inChunks<{ id: string; name: string }>(proIds, (ids) => ctx.admin.from("professionals").select("id, name").in("id", ids)),
-    inChunks<NameRow>([...new Set(notices.map((r) => r.account_id))], (ids) => ctx.admin.from("portal_accounts").select("id, first_name, last_name, dni").in("id", ids)),
+    inChunks<NameRow & { active: boolean }>([...new Set(notices.map((r) => r.account_id))], (ids) => ctx.admin.from("portal_accounts").select("id, first_name, last_name, dni, active").in("id", ids)),
   ]);
 
   const now = centerNow();
+  // ¿La cuenta que avisó todavía ve a ese paciente en el portal?
+  const visible = new Map<string, Set<string>>(); // cuenta → pacientes que ve
+  if (withVisibility) {
+    const pendingAccounts = new Set(notices
+      .filter((r) => { const a = apptById.get(r.appointment_id); return a && !resolutionOf(r, a); })
+      .map((r) => r.account_id));
+    await Promise.all(accounts.filter((acc) => acc.active && pendingAccounts.has(acc.id)).map(async (acc) => {
+      const links = await accountLinks(ctx, { id: acc.id, dni: acc.dni ?? "" });
+      visible.set(acc.id, new Set(links.filter((l) => l.valid).map((l) => l.patient_id)));
+    }));
+  }
   const resolvedSince = Date.now() - RESOLVED_DAYS * DAY_MS;
   const out: StaffNotice[] = [];
   for (const r of notices) {
@@ -327,6 +341,7 @@ export async function staffNotices(ctx: Ctx): Promise<StaffNotice[]> {
       on_time: isNoticeOnTime(r.created_at, a.appointment_date),
       is_past: `${a.appointment_date} ${time}` <= `${now.date} ${now.time}`,
       resolution,
+      family_sees: a.appointment_date >= now.date && !!visible.get(r.account_id)?.has(a.patient_id),
       resolved_at: r.resolved_at,
       resolved_by_email: r.resolved_by_email,
     });
@@ -365,19 +380,26 @@ export async function staffResolveNotice(ctx: Ctx, staff: { email: string; token
     throw new PortalError(409, "El turno ya pasó: no se puede cancelar. Usá «Justificar la falta» o «Tomamos nota».");
   }
 
-  // 1. Se reserva el aviso: si dos personas lo resuelven a la vez, gana una
+  // 1. Se reserva el aviso: si dos personas lo resuelven a la vez, gana una.
+  //    Se compara con lo que se leyó, así un intento anterior que no llegó a
+  //    cambiar el turno (y por eso sigue pendiente) se puede reintentar.
   const at = new Date().toISOString();
-  const { data: claimed, error: cErr } = await ctx.admin.from("portal_appointment_responses").update({
+  let claim = ctx.admin.from("portal_appointment_responses").update({
     outcome: how === "reprogramar" ? "reprogramado" : how === "visto" ? "otro" : null,
     resolved_at: at,
     resolved_by_email: staff.email,
-  }).eq("id", r.id).is("resolved_at", null).is("outcome", null).select("id");
+  }).eq("id", r.id).is("outcome", null);
+  claim = r.resolved_at ? claim.eq("resolved_at", r.resolved_at) : claim.is("resolved_at", null);
+  const { data: claimed, error: cErr } = await claim.select("id");
   if (cErr) throw new PortalError(503, "No se pudo marcar el aviso. Probá de nuevo.");
   if (!claimed?.length) throw new PortalError(409, "Otra persona del equipo ya resolvió este aviso. Actualizá la bandeja.");
+  // Si no se pudo cambiar el turno, se deshace la reserva. Aunque esto falle,
+  // el aviso sigue pendiente (el turno no cambió) y se puede reintentar.
   const release = async () => {
-    await ctx.admin.from("portal_appointment_responses")
+    const { error } = await ctx.admin.from("portal_appointment_responses")
       .update({ outcome: null, resolved_at: null, resolved_by_email: null })
       .eq("id", r.id).eq("resolved_at", at);
+    if (error) console.error("[portal] no se pudo deshacer la reserva de un aviso");
   };
 
   // 2. Si la familia cambió su respuesta mientras tanto, no se toca nada

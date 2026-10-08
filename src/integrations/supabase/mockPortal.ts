@@ -1038,15 +1038,16 @@ async function allAppts(db: Db): Promise<Map<string, Appt>> {
   return new Map([...db.appts, ...(await agendaAppts(agendaIds))].map((a) => [a.id, a]));
 }
 
-// Cómo quedó el aviso: lo que cargó el equipo, lo que se deduce del turno
-// (cancelado, falta justificada, o vinieron igual) o, si alguien del equipo
-// ya lo resolvió y después se cambió el turno, se da por visto
+// Cómo quedó el aviso: lo que cargó el equipo o lo que se deduce del turno
+// (cancelado, falta justificada, o vinieron igual). Si el turno no cambió,
+// sigue pendiente aunque alguien lo haya intentado resolver: así se puede
+// reintentar (igual que el servidor).
 function resolutionOf(r: Response, a: Appt): NoticeResolution | null {
   if (r.outcome) return r.outcome;
   if (a.status === "cancelado") return "cancelado";
   if (a.attendance === "justificado") return "justificado";
   if (a.attendance === "presente") return "asistio";
-  return r.resolved_at ? "otro" : null;
+  return null;
 }
 
 async function staffNotices(db: Db): Promise<StaffNotice[]> {
@@ -1088,6 +1089,8 @@ async function staffNotices(db: Db): Promise<StaffNotice[]> {
       on_time: isNoticeOnTime(r.at, a.date),
       is_past: `${a.date} ${a.time}` <= `${now.date} ${now.time}`,
       resolution,
+      // La cuenta sigue activa y vinculada, y el turno es de hoy en adelante
+      family_sees: a.date >= now.date && !!acc?.active && childIdsOf(db, acc.id).includes(a.child_id),
       resolved_at: r.resolved_at,
       resolved_by_email: r.resolved_by_email,
     });
@@ -1216,7 +1219,9 @@ export async function staffResolveNotice(responseId: string, how: NoticeAction, 
   const at = new Date().toISOString();
   const claimDb = load();
   const claimed = claimDb.responses.find((x) => x.id === r.id);
-  if (!claimed || claimed.resolved_at !== null || claimed.outcome !== null) {
+  // Se compara con lo que se leyó: un intento anterior que no llegó a
+  // cambiar el turno se puede reintentar
+  if (!claimed || claimed.resolved_at !== r.resolved_at || claimed.outcome !== null) {
     return fail(409, "Otra persona del equipo ya resolvió este aviso. Actualizá la bandeja.");
   }
   claimed.outcome = how === "reprogramar" ? "reprogramado" : how === "visto" ? "otro" : null;

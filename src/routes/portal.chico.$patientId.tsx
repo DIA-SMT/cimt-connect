@@ -113,11 +113,15 @@ function HcSection({ data, first, onChanged, onRefresh }: {
   const focusNext = useRef<"ask" | "button" | "done" | null>(null);
 
   // Se llegó desde "Ver detalle" de un pedido (#copia): la sección se monta
-  // recién con los datos cargados, así que acá se la muestra y se le da el foco
+  // recién con los datos cargados, así que acá se la muestra y se le da el
+  // foco. Después se saca el #copia de la dirección, así volver a esta
+  // página (desde un turno o con "atrás") no salta de nuevo a la copia.
   useEffect(() => {
     if (window.location.hash !== "#copia") return;
     sectionRef.current?.scrollIntoView({ block: "start" });
     titleRef.current?.focus({ preventScroll: true });
+    navigate({ to: "/portal/chico/$patientId", params: { patientId: child.id }, replace: true, resetScroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
   }, []);
 
   useEffect(() => {
