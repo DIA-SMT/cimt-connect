@@ -16,6 +16,7 @@ export default defineEventHandler((event) => handle(event, async () => {
       id: c.patient_id,
       first_name: c.display,
       last_initial: `${c.last_name.charAt(0)}.`,
+      self: c.self,
       next: all.find((a) => a.child_id === c.patient_id && a.date > weekEnd && a.state === "agendado") ?? null,
     })),
   };

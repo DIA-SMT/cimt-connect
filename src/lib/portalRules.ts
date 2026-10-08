@@ -23,6 +23,7 @@ export type ApptDTO = {
   id: string;
   child_id: string;
   child_first_name: string;
+  is_self: boolean; // el turno es del propio titular de la cuenta (paciente adulto)
   date: string; // AAAA-MM-DD (hora del centro)
   time: string; // HH:MM
   duration_minutes: number;
@@ -74,6 +75,9 @@ export function ageOn(birth: string, today: string): number {
   return age;
 }
 
+// Edad desde la que el paciente puede usar el portal por su cuenta (titular)
+export const SELF_ACCESS_AGE = 18;
+
 export function confirmFrom(date: string): string {
   return addDaysKey(date, -CONFIRM_WINDOW_DAYS);
 }
@@ -90,6 +94,42 @@ export function normalizeDni(raw: string): string {
 
 export function isValidDni(dni: string): boolean {
   return /^\d{6,10}$/.test(dni);
+}
+
+// Teléfono argentino como 10 dígitos (característica + número, sin 0 ni 15):
+// el mismo número al que apunta WhatsApp (ver whatsappNumber en reminders.ts).
+// null si no se puede interpretar.
+export function arPhone10(raw: string): string | null {
+  let d = raw.replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("54")) {
+    d = d.slice(2);
+    if (d.startsWith("9")) d = d.slice(1);
+  }
+  if (d.startsWith("0")) d = d.slice(1);
+  if (d.length === 7) d = `381${d}`; // sin característica: San Miguel de Tucumán
+  if (d.length === 12) {
+    for (const areaLen of [3, 4, 2]) {
+      if (d.slice(areaLen, areaLen + 2) === "15") { d = d.slice(0, areaLen) + d.slice(areaLen + 2); break; }
+    }
+  }
+  return d.length === 10 ? d : null;
+}
+
+// Mismo teléfono escrito distinto ("3863 15 421234" y "+54 9 3863 421234").
+// Un campo puede traer más de un número ("381-4001122 / 381-5556677").
+export function samePhone(a: string | null | undefined, b: string | null | undefined): boolean {
+  const list = (s: string | null | undefined) => (s ?? "").split(/[/,;|]|\s+[yo]\s+/i).map((x) => x.trim()).filter(Boolean);
+  for (const x of list(a)) {
+    for (const y of list(b)) {
+      const nx = arPhone10(x), ny = arPhone10(y);
+      if (nx && ny) { if (nx === ny) return true; continue; }
+      // Si alguno no se puede interpretar, alcanza con los últimos 7 dígitos
+      const dx = x.replace(/\D/g, ""), dy = y.replace(/\D/g, "");
+      if (dx.length >= 7 && dy.length >= 7 && dx.slice(-7) === dy.slice(-7)) return true;
+    }
+  }
+  return false;
 }
 
 export function normalizeCode(raw: string): string {
@@ -113,7 +153,7 @@ export function passwordProblem(password: string, repeat: string, dni: string): 
 // ── El turno tal como lo ve la familia ──────────────────────────────────────
 
 export type ApptInput = {
-  id: string; child_id: string; child_first_name: string;
+  id: string; child_id: string; child_first_name: string; is_self?: boolean;
   date: string; time: string; duration_minutes: number;
   modality: "presencial" | "telemedicina"; professional_name: string | null;
   cancelled: boolean;
@@ -144,6 +184,7 @@ export function computeApptDto(
     id: a.id,
     child_id: a.child_id,
     child_first_name: a.child_first_name,
+    is_self: !!a.is_self,
     date: a.date,
     time: a.time,
     duration_minutes: a.duration_minutes,

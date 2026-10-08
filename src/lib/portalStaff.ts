@@ -37,7 +37,19 @@ export type StaffInviteResult = {
   purpose: "activacion" | "vincular";
   expires_at: string;
   first_name: string;
-  children: string[];
+  children: string[]; // chicos a cargo
+  self?: boolean; // incluye los turnos del propio paciente adulto
+  replaced?: boolean; // anuló otro código pendiente de la misma persona
+};
+
+// Invitación para el propio paciente adulto (vínculo "titular")
+export type StaffInviteSelfInput = {
+  patient: { id: string; dni: string | null; first_name: string; last_name: string; phone: string | null };
+  identity_checked_on: string;
+  in_person: boolean;
+  channel: "whatsapp" | "impresa";
+  expires_days: number;
+  issued_by: string;
 };
 
 export type AccessStatus =
@@ -70,11 +82,13 @@ export function inviteLink(rawCode: string): string {
 
 // Mensaje de WhatsApp: sin datos clínicos, con aviso antiestafa
 export function inviteMessage(r: StaffInviteResult): string {
-  const kids = r.children.join(" y ");
   const until = new Date(r.expires_at).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+  // Qué va a ver: sus propios turnos, los de sus chicos, o los dos
+  const what = [r.self ? "tus turnos" : null, r.children.length ? `los de ${r.children.join(" y ")}` : null]
+    .filter(Boolean).join(" y ").replace(/^los de/, "los turnos de");
   const intro = r.purpose === "vincular"
-    ? `Hola ${r.first_name}, te escribimos del CIMT. Te mandamos un código para sumar a ${kids} a tu cuenta del Portal de familias.`
-    : `Hola ${r.first_name}, te escribimos del CIMT. Te invitamos al Portal de familias para ver los turnos de ${kids} y avisarnos si pueden venir.`;
+    ? `Hola ${r.first_name}, te escribimos del CIMT. Te mandamos un código para sumar ${what} a tu cuenta del Portal de familias.`
+    : `Hola ${r.first_name}, te escribimos del CIMT. Te invitamos al Portal de familias para ver ${what} y avisarnos si ${r.self && !r.children.length ? "podés" : "pueden"} venir.`;
   return [
     intro,
     `Entrá a ${inviteLink(r.raw_code)}`,
@@ -133,5 +147,24 @@ export const portalStaffApi = {
     if (MOCK) return (await mock()).staffAccessStatus(guardian.dni, patientId);
     const r = await staffCall<AccessStatus>({ action: "status", guardian_id: guardian.id, patient_id: patientId });
     return r.ok ? r.data : null;
+  },
+  // Acceso del propio paciente adulto
+  async selfAccessStatus(patient: { id: string; dni: string | null }): Promise<AccessStatus | null> {
+    if (!PORTAL_ENABLED) return null;
+    if (MOCK) return (await mock()).staffAccessStatus(patient.dni, patient.id, true);
+    const r = await staffCall<AccessStatus>({ action: "status", patient_id: patient.id });
+    return r.ok ? r.data : null;
+  },
+  async inviteSelf(input: StaffInviteSelfInput): Promise<ApiResult<StaffInviteResult>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).staffInviteSelf(input);
+    return staffCall({
+      action: "invite_self",
+      patient_id: input.patient.id,
+      identity_checked_on: input.identity_checked_on,
+      in_person: input.in_person,
+      channel: input.channel,
+      expires_days: input.expires_days,
+    });
   },
 };

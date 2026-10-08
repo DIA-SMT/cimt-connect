@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
-import { CircleCheck, CircleX, Copy, MessageCircle, Printer, UserRound } from "lucide-react";
+import { CircleCheck, CircleX, UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CENTER } from "@/lib/center";
 import type { Guardian } from "@/lib/patients";
 import { todayKey } from "@/lib/patients";
 import { whatsappNumber } from "@/lib/reminders";
 import {
   type AccessStatus, type RelationshipKind, type StaffInviteResult,
   INVITE_EXPIRY_DAYS, RELATIONSHIP_KIND_LABEL,
-  ageOn, dniWithDots, inviteLink, inviteMessage, portalStaffApi,
+  ageOn, dniWithDots, portalStaffApi,
 } from "@/lib/portalStaff";
+import { InviteResultView } from "./InviteResultView";
 
 // Acceso al Portal de familias desde la ficha: estado del acceso de cada
 // adulto responsable y el botón "Invitar al portal". Se muestra en la fila de
@@ -30,11 +29,15 @@ type Candidate = PatientLite & {
   access: AccessStatus["state"] | null; // estado del portal de ese chico para este adulto
 };
 
-function eligibility(p: PatientLite): { problem: string | null; age: number | null } {
+function eligibility(p: PatientLite, sibling = false): { problem: string | null; age: number | null } {
   if (!p.birth_date) return { problem: "Falta la fecha de nacimiento (se carga en Datos personales de la ficha)", age: null };
   const age = ageOn(p.birth_date);
-  if (age >= 18) return { problem: "Es mayor de edad: maneja sus turnos por su cuenta", age };
   if (p.discharge_date && p.discharge_date <= todayKey()) return { problem: "Tiene el alta cargada", age };
+  if (age >= 18) {
+    return { problem: sibling
+      ? "Es mayor de edad: puede tener su propio acceso desde su ficha («Invitar al paciente al portal»)"
+      : "Es mayor de edad: puede tener su propio acceso con «Invitar al paciente al portal», arriba en esta sección", age };
+  }
   return { problem: null, age };
 }
 
@@ -131,7 +134,7 @@ function InvitePortalDialog({ guardian, patientId, hasPending, onClose }: {
           const { data: sp } = await supabase.from("patients").select(cols).eq("id", g.patient_id).single();
           if (!sp) continue;
           const access = (await portalStaffApi.accessStatus({ id: g.id, dni: g.dni }, g.patient_id))?.state ?? null;
-          sibs.push({ ...(sp as PatientLite), guardian_id: g.id, ...eligibility(sp as PatientLite), access });
+          sibs.push({ ...(sp as PatientLite), guardian_id: g.id, ...eligibility(sp as PatientLite, true), access });
         }
         sibs = sibs.sort((a, b) => a.first_name.localeCompare(b.first_name));
       }
@@ -190,38 +193,6 @@ function InvitePortalDialog({ guardian, patientId, hasPending, onClose }: {
     setResult(r.data);
   }
 
-  async function copyMessage() {
-    if (!result) return;
-    try {
-      await navigator.clipboard.writeText(inviteMessage(result));
-      toast.success("Mensaje copiado");
-    } catch {
-      toast.error("No se pudo copiar. Seleccioná el texto a mano.");
-    }
-  }
-
-  function print() {
-    if (!result) return;
-    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const until = new Date(result.expires_at).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const portalUrl = `${window.location.host}/portal/activar`;
-    const w = window.open("", "_blank");
-    if (!w) { toast.error("Permití las ventanas emergentes para imprimir"); return; }
-    w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Invitación al Portal de familias</title>
-      <style>html{color-scheme:light;background:#fff}body{font-family:system-ui,sans-serif;margin:32px;font-size:13pt;color:#1a2b3c;max-width:640px}
-      h1{font-size:18pt;margin:0 0 4px}.code{font-size:30pt;font-weight:800;letter-spacing:4px;border:2px dashed #1a2b3c;border-radius:12px;padding:12px;text-align:center;margin:16px 0}
-      .url{font-size:16pt;font-weight:700}ol{line-height:1.7}.warn{border-left:4px solid #b45309;padding:8px 12px;background:#fff7ed}</style></head><body>
-      <h1>CIMT — Portal de familias</h1>
-      <p>${esc(guardian.full_name)} · para ver los turnos de ${esc(result.children.join(" y "))}</p>
-      <div class="code">${esc(result.code)}</div>
-      <p>Vence el ${esc(until)}.</p>
-      <ol><li>Entrá a <span class="url">${esc(portalUrl)}</span></li><li>Escribí este código y <b>tu</b> DNI (no el de tu hijo o hija).</li><li>${result.purpose === "vincular" ? "Confirmá con tu contraseña del portal." : "Elegí una contraseña y aceptá el aviso de privacidad."}</li></ol>
-      <p class="warn">No le pases este código a nadie. Nadie del CIMT te lo va a pedir por teléfono ni por WhatsApp.</p>
-      <p>¿Dudas? ${esc(CENTER.phoneDisplay)} (solo llamadas) · ${esc(CENTER.hoursLong)} · ${esc(CENTER.address)}</p>
-      <script>window.onload=()=>window.print()</script></body></html>`);
-    w.document.close();
-  }
-
   const radio = "flex min-h-10 cursor-pointer items-start gap-2 rounded-xl border border-border/60 p-2.5 text-sm has-[:checked]:border-primary has-[:checked]:bg-[color:var(--primary-soft)]";
 
   return (
@@ -235,53 +206,8 @@ function InvitePortalDialog({ guardian, patientId, hasPending, onClose }: {
         </DialogHeader>
 
         {result ? (
-          <div className="space-y-4">
-            <div className="rounded-2xl bg-[color:var(--primary-soft)] p-4 text-center">
-              <p className="text-sm font-semibold text-[color:var(--primary-deep)]">Código de {result.first_name}</p>
-              <p className="font-display text-4xl font-extrabold tracking-widest text-[color:var(--primary-deep)]">{result.code}</p>
-              <p className="mt-1 text-sm">Vence el {new Date(result.expires_at).toLocaleDateString("es-AR")}</p>
-            </div>
-            <p className="rounded-xl bg-[color:var(--status-pending-bg)] px-3 py-2 text-sm font-semibold text-[oklch(0.42_0.1_70)]">
-              Anotalo o envialo ahora: no se vuelve a mostrar.
-            </p>
-            {result.purpose === "vincular" && (
-              <p className="text-sm">{result.first_name} ya tiene cuenta: este código suma a {result.children.join(" y ")} a su cuenta. Lo confirma con su contraseña.</p>
-            )}
-            {channel === "whatsapp" && waNumber ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Se va a enviar al <b className="text-foreground">{guardian.phone}</b> (teléfono de {firstName} en la ficha).</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild className="rounded-full bg-[oklch(0.55_0.15_150)] hover:bg-[oklch(0.48_0.14_150)]">
-                    <a href={`https://wa.me/${waNumber}?text=${encodeURIComponent(inviteMessage(result))}`} target="_blank" rel="noreferrer">
-                      <MessageCircle className="mr-1.5 h-4 w-4" aria-hidden="true" /> Abrir WhatsApp
-                    </a>
-                  </Button>
-                  <Button type="button" variant="outline" className="rounded-full" onClick={copyMessage}>
-                    <Copy className="mr-1.5 h-4 w-4" aria-hidden="true" /> Copiar mensaje
-                  </Button>
-                  <Button type="button" variant="outline" className="rounded-full" onClick={print}>
-                    <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" /> Imprimir
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" className="rounded-full" onClick={print}>
-                  <Printer className="mr-1.5 h-4 w-4" aria-hidden="true" /> Imprimir invitación
-                </Button>
-                <Button type="button" variant="outline" className="rounded-full" onClick={copyMessage}>
-                  <Copy className="mr-1.5 h-4 w-4" aria-hidden="true" /> Copiar mensaje
-                </Button>
-              </div>
-            )}
-            <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Link de activación</summary>
-              <code className="break-all">{inviteLink(result.raw_code)}</code>
-            </details>
-            <div className="flex justify-end">
-              <Button type="button" variant="ghost" onClick={onClose}>Listo</Button>
-            </div>
-          </div>
+          <InviteResultView result={result} personName={guardian.full_name} phone={guardian.phone}
+            waNumber={waNumber} channel={channel} onClose={onClose} />
         ) : (
           <form onSubmit={generate} className="space-y-5">
             <ul className="space-y-1.5 text-sm" aria-label="Requisitos">

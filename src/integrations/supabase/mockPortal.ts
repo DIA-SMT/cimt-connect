@@ -38,7 +38,7 @@ import {
   CONFIRM_WINDOW_DAYS, PRIVACY_VERSION, REASON_CODES, REASON_TEXT_MAX,
   addDaysKey as addDays, centerNow, computeApptDto, isValidDni, normalizeCode, normalizeDni, passwordProblem,
 } from "@/lib/portalRules";
-import type { AccessStatus, RelationshipKind, StaffInviteInput, StaffInviteResult } from "@/lib/portalStaff";
+import type { AccessStatus, RelationshipKind, StaffInviteInput, StaffInviteResult, StaffInviteSelfInput } from "@/lib/portalStaff";
 import { mockSupabase } from "./mockClient";
 
 // ── Modelo ──────────────────────────────────────────────────────────────────
@@ -49,9 +49,10 @@ type Account = {
   recovery_requested_at: string | null;
 };
 type Child = { id: string; first_name: string; last_name: string; source: "demo" | "agenda" };
+// "titular": el propio paciente adulto, que usa el portal por su cuenta
 type Link = {
   account_id: string; child_id: string;
-  relationship_kind: RelationshipKind; guardian_id: string | null;
+  relationship_kind: RelationshipKind | "titular"; guardian_id: string | null;
 };
 type Appt = {
   id: string; child_id: string; date: string; time: string; duration_minutes: number;
@@ -69,7 +70,10 @@ type Invitation = {
   first_name: string; last_name: string;
   child_ids: string[];
   guardian_ids: Record<string, string>; // chico → fila de responsable en su ficha
-  relationship_kind: RelationshipKind; authorized_by: string | null;
+  self_ids?: string[]; // fichas del propio titular (paciente adulto)
+  // vínculo de cada chico (una invitación junta chicos de invitaciones anteriores)
+  kinds?: Record<string, { kind: RelationshipKind; authorized_by: string | null }>;
+  relationship_kind: RelationshipKind | "titular"; authorized_by: string | null;
   account_id: string | null;
   phone: string | null; in_person: boolean; channel: "whatsapp" | "impresa" | null;
   identity_checked_on: string | null; issued_by: string | null;
@@ -272,6 +276,10 @@ function childIdsOf(db: Db, accountId: string): string[] {
 
 function lastInitial(c: Pick<Child, "last_name">) { return `${c.last_name.charAt(0)}.`; }
 
+function isSelfLink(db: Db, accountId: string, childId: string): boolean {
+  return db.links.some((l) => l.account_id === accountId && l.child_id === childId && l.relationship_kind === "titular");
+}
+
 function childNames(db: Db, ids: string[]): string[] {
   return ids.map((id) => db.children.find((c) => c.id === id)).filter((c): c is Child => !!c).map((c) => `${c.first_name} ${lastInitial(c)}`);
 }
@@ -326,6 +334,7 @@ function toDto(db: Db, a: Appt, accountId: string): ApptDTO {
   return computeApptDto(
     {
       id: a.id, child_id: child.id, child_first_name: displayName(db, accountId, child),
+      is_self: isSelfLink(db, accountId, child.id),
       date: a.date, time: a.time, duration_minutes: a.duration_minutes,
       modality: a.modality, professional_name: a.professional_name,
       cancelled: a.status === "cancelado",
@@ -428,13 +437,15 @@ export async function activationCheck(rawDni: string, rawCode: string): Promise<
     if (inv.purpose === "activacion" && account) {
       return fail(409, "Ya tenés una cuenta con este DNI. Ingresá con tu contraseña.", { code: "ACCOUNT_EXISTS" });
     }
-    const names = inv.purpose === "recuperacion"
-      ? childNames(db, childIdsOf(db, inv.account_id ?? ""))
-      : childNames(db, inv.child_ids);
+    const ids = inv.purpose === "recuperacion" ? childIdsOf(db, inv.account_id ?? "") : inv.child_ids;
+    const selfIds = inv.purpose === "recuperacion"
+      ? ids.filter((id) => isSelfLink(db, inv.account_id ?? "", id))
+      : inv.self_ids ?? [];
     return ok({
       purpose: inv.purpose,
       guardian_first_name: inv.first_name,
-      children: names,
+      children: childNames(db, ids.filter((id) => !selfIds.includes(id))),
+      self: selfIds.length > 0,
       needs: inv.purpose === "vincular" ? "current_password" : "new_password",
       needs_privacy: inv.purpose === "activacion",
     });
@@ -443,7 +454,7 @@ export async function activationCheck(rawDni: string, rawCode: string): Promise<
 
 export async function activationComplete(input: {
   dni: string; code: string; password: string; password_repeat: string; accept_privacy_version?: string;
-}): Promise<ApiResult<{ first_name: string; children: string[] }>> {
+}): Promise<ApiResult<{ first_name: string; children: string[]; self: boolean }>> {
   const dni = normalizeDni(input.dni);
   const code = normalizeCode(input.code);
   return withFloor(() => {
@@ -496,10 +507,11 @@ export async function activationComplete(input: {
     delete db.login_failures[dni];
     save(db);
     setSession(account.id);
-    const names = (inv.purpose === "vincular" ? added : childIdsOf(db, account.id))
+    const ids = inv.purpose === "vincular" ? added : childIdsOf(db, account.id);
+    const names = ids.filter((id) => !isSelfLink(db, account.id, id))
       .map((id) => db.children.find((c) => c.id === id)?.first_name)
       .filter((n): n is string => !!n);
-    return ok({ first_name: account.first_name, children: names });
+    return ok({ first_name: account.first_name, children: names, self: ids.some((id) => isSelfLink(db, account.id, id)) });
   });
 }
 
@@ -509,9 +521,12 @@ function linkChildren(db: Db, accountId: string, inv: Invitation): string[] {
   for (const child_id of inv.child_ids) {
     if (already.has(child_id)) continue;
     already.add(child_id);
+    const self = (inv.self_ids ?? []).includes(child_id);
+    const legacyKind = inv.relationship_kind === "titular" ? "representante_legal" : inv.relationship_kind;
     db.links.push({
       account_id: accountId, child_id,
-      relationship_kind: inv.relationship_kind, guardian_id: inv.guardian_ids[child_id] ?? null,
+      relationship_kind: self ? "titular" : inv.kinds?.[child_id]?.kind ?? legacyKind,
+      guardian_id: self ? null : inv.guardian_ids[child_id] ?? null,
     });
     added.push(child_id);
   }
@@ -532,12 +547,12 @@ export async function me(): Promise<ApiResult<MeDTO>> {
     const c = db.children.find((x) => x.id === id)!;
     const later = (await apptsOf(db, acc.id, [id], addDays(weekEnd, 1), addDays(today, 90)))
       .find((a) => a.state === "agendado") ?? null;
-    children.push({ id, first_name: displayName(db, acc.id, c), last_initial: lastInitial(c), next: later });
+    children.push({ id, first_name: displayName(db, acc.id, c), last_initial: lastInitial(c), self: isSelfLink(db, acc.id, id), next: later });
   }
   return ok({ guardian_first_name: acc.first_name, week, children });
 }
 
-export async function childAppointments(patientId: string): Promise<ApiResult<{ child: { id: string; first_name: string }; appointments: ApptDTO[] }>> {
+export async function childAppointments(patientId: string): Promise<ApiResult<{ child: { id: string; first_name: string; self?: boolean }; appointments: ApptDTO[] }>> {
   await wait(300);
   const db = load();
   const acc = requireAccount(db);
@@ -547,7 +562,7 @@ export async function childAppointments(patientId: string): Promise<ApiResult<{ 
   const c = db.children.find((x) => x.id === patientId)!;
   const today = centerNow().date;
   return ok({
-    child: { id: c.id, first_name: displayName(db, acc.id, c) },
+    child: { id: c.id, first_name: displayName(db, acc.id, c), self: isSelfLink(db, acc.id, c.id) },
     appointments: await apptsOf(db, acc.id, [c.id], today, addDays(today, 90)),
   });
 }
@@ -641,16 +656,9 @@ export async function staffInvite(input: StaffInviteInput): Promise<ApiResult<St
   const nowIso = new Date().toISOString();
   const childIds = pending.map((c) => c.id);
   const guardianIds: Record<string, string> = Object.fromEntries(pending.map((c) => [c.id, c.guardian_id]));
-  for (const inv of db.invitations) {
-    if (inv.dni !== dni || inv.used_at || inv.revoked_at || inv.purpose === "recuperacion") continue;
-    inv.revoked_at = nowIso;
-    if (Date.parse(inv.expires_at) < Date.now()) continue;
-    for (const id of inv.child_ids) {
-      if (linked.has(id) || childIds.includes(id)) continue;
-      childIds.push(id);
-      if (inv.guardian_ids[id]) guardianIds[id] = inv.guardian_ids[id];
-    }
-  }
+  const authorizedBy = input.relationship_kind === "autorizado" ? input.authorized_by!.trim() : null;
+  const kinds: NonNullable<Invitation["kinds"]> = Object.fromEntries(pending.map((c) => [c.id, { kind: input.relationship_kind, authorized_by: authorizedBy }]));
+  const { selfIds, replaced } = carryPending(db, dni, linked, childIds, guardianIds, kinds, nowIso);
 
   const code = newCode();
   const purpose: Purpose = account ? "vincular" : "activacion";
@@ -660,8 +668,10 @@ export async function staffInvite(input: StaffInviteInput): Promise<ApiResult<St
     code, dni, purpose, first_name, last_name,
     child_ids: childIds,
     guardian_ids: guardianIds,
+    self_ids: selfIds,
+    kinds,
     relationship_kind: input.relationship_kind,
-    authorized_by: input.relationship_kind === "autorizado" ? input.authorized_by!.trim() : null,
+    authorized_by: authorizedBy,
     account_id: account?.id ?? null,
     phone: input.guardian.phone, in_person: input.in_person, channel: input.channel,
     identity_checked_on: input.identity_checked_on, issued_by: input.issued_by,
@@ -674,20 +684,89 @@ export async function staffInvite(input: StaffInviteInput): Promise<ApiResult<St
     purpose,
     expires_at: expires,
     first_name,
-    children: childIds.map((id) => db.children.find((c) => c.id === id)?.first_name).filter((n): n is string => !!n),
+    children: childIds.filter((id) => !selfIds.includes(id)).map((id) => db.children.find((c) => c.id === id)?.first_name).filter((n): n is string => !!n),
+    self: selfIds.length > 0,
+    replaced,
   });
 }
 
-export async function staffAccessStatus(rawDni: string | null, patientId: string): Promise<AccessStatus> {
+// Una invitación nueva reemplaza a las pendientes del mismo DNI, pero
+// conserva sus chicos (con su vínculo) y la ficha propia, si la había.
+// Devuelve los ids del titular y si anuló un código que todavía servía.
+function carryPending(
+  db: Db, dni: string, linked: Set<string>, childIds: string[], guardianIds: Record<string, string>,
+  kinds: NonNullable<Invitation["kinds"]>, nowIso: string, selfIds: string[] = [],
+): { selfIds: string[]; replaced: boolean } {
+  let replaced = false;
+  for (const inv of db.invitations) {
+    if (inv.dni !== dni || inv.used_at || inv.revoked_at || inv.purpose === "recuperacion") continue;
+    inv.revoked_at = nowIso;
+    if (Date.parse(inv.expires_at) < Date.now()) continue;
+    if (inv.failed_attempts < INVITATION_MAX_FAILS) replaced = true;
+    const legacyKind = inv.relationship_kind === "titular" ? "representante_legal" : inv.relationship_kind;
+    for (const id of inv.child_ids) {
+      if (linked.has(id) || childIds.includes(id)) continue;
+      childIds.push(id);
+      if (inv.guardian_ids[id]) guardianIds[id] = inv.guardian_ids[id];
+      if ((inv.self_ids ?? []).includes(id)) selfIds.push(id);
+      else kinds[id] = inv.kinds?.[id] ?? { kind: legacyKind, authorized_by: inv.authorized_by };
+    }
+  }
+  return { selfIds, replaced };
+}
+
+// Invitar al propio paciente adulto (vínculo "titular")
+export async function staffInviteSelf(input: StaffInviteSelfInput): Promise<ApiResult<StaffInviteResult>> {
+  await wait(400);
+  const dni = normalizeDni(input.patient.dni ?? "");
+  if (!isValidDni(dni)) return fail(400, "Falta el DNI del paciente en la ficha.");
+  const db = load();
+  const account = db.accounts.find((a) => a.dni === dni);
+  if (account && !account.active) return fail(409, "La cuenta de esta persona está pausada. Reactivala antes de invitar.");
+  const linked = new Set(account ? childIdsOf(db, account.id) : []);
+  if (linked.has(input.patient.id)) return fail(409, input.patient.first_name + " ya tiene acceso a sus turnos en el portal.");
+  const existing = db.children.find((x) => x.id === input.patient.id);
+  if (existing) Object.assign(existing, { first_name: input.patient.first_name, last_name: input.patient.last_name });
+  else db.children.push({ id: input.patient.id, first_name: input.patient.first_name, last_name: input.patient.last_name, source: "agenda" });
+  const nowIso = new Date().toISOString();
+  const childIds = [input.patient.id];
+  const guardianIds: Record<string, string> = {};
+  const kinds: NonNullable<Invitation["kinds"]> = {};
+  const { selfIds, replaced } = carryPending(db, dni, linked, childIds, guardianIds, kinds, nowIso, [input.patient.id]);
+  const code = newCode();
+  const purpose: Purpose = account ? "vincular" : "activacion";
+  const expires = new Date(Date.now() + input.expires_days * 24 * 60 * 60 * 1000).toISOString();
+  db.invitations.push({
+    code, dni, purpose,
+    first_name: input.patient.first_name, last_name: input.patient.last_name,
+    child_ids: childIds, guardian_ids: guardianIds, self_ids: selfIds, kinds,
+    relationship_kind: "titular", authorized_by: null,
+    account_id: account?.id ?? null,
+    phone: input.patient.phone, in_person: input.in_person, channel: input.channel,
+    identity_checked_on: input.identity_checked_on, issued_by: input.issued_by,
+    created_at: nowIso, expires_at: expires, used_at: null, revoked_at: null, failed_attempts: 0,
+  });
+  save(db);
+  return ok({
+    code: formatCode(code), raw_code: code, purpose, expires_at: expires,
+    first_name: input.patient.first_name,
+    children: childIds.filter((id) => !selfIds.includes(id)).map((id) => db.children.find((c) => c.id === id)?.first_name).filter((n): n is string => !!n),
+    self: true,
+    replaced,
+  });
+}
+
+export async function staffAccessStatus(rawDni: string | null, patientId: string, self = false): Promise<AccessStatus> {
   const dni = normalizeDni(rawDni ?? "");
   if (!isValidDni(dni)) return { state: "sin_dni" };
   const db = load();
   const account = db.accounts.find((a) => a.dni === dni);
-  if (account && childIdsOf(db, account.id).includes(patientId)) {
+  if (account && childIdsOf(db, account.id).includes(patientId) && isSelfLink(db, account.id, patientId) === self) {
     return { state: account.active ? "activo" : "pausado" };
   }
   const inv = db.invitations
-    .filter((i) => i.dni === dni && !i.used_at && !i.revoked_at && i.child_ids.includes(patientId))
+    .filter((i) => i.dni === dni && !i.used_at && !i.revoked_at && i.child_ids.includes(patientId)
+      && (i.self_ids ?? []).includes(patientId) === self)
     .sort((x, y) => y.created_at.localeCompare(x.created_at))[0];
   if (inv) {
     if (inv.failed_attempts >= INVITATION_MAX_FAILS) return { state: "bloqueada" };

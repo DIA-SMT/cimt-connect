@@ -9,12 +9,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Chip, Section, TextField } from "./fields";
 import { GUARDIAN_RELATIONSHIPS, type Guardian } from "@/lib/patients";
 import { PortalGuardianAccess } from "./portal/PortalGuardianAccess";
+import { PortalPatientAccess } from "./portal/PortalPatientAccess";
 
 // Adultos responsables (relevamiento 21: "todos los datos de los adultos
 // responsables para el acompañamiento de la terapia"). Datos de contacto:
 // los carga todo el panel. No se borran: se quitan (active = false).
 
-export function GuardiansSection({ patientId, onChanged }: { patientId: string; onChanged: () => void }) {
+// patientRev: la ficha guardada; el acceso propio al portal se relee al guardar
+export function GuardiansSection({ patientId, onChanged, patientRev }: { patientId: string; onChanged: () => void; patientRev?: unknown }) {
   const [guardians, setGuardians] = useState<Guardian[]>([]);
   const [editing, setEditing] = useState<Guardian | "new" | null>(null);
 
@@ -37,6 +39,7 @@ export function GuardiansSection({ patientId, onChanged }: { patientId: string; 
   return (
     <Section icon={UsersRound} title="Adultos responsables"
       action={<Button size="sm" variant="outline" onClick={() => setEditing("new")}><Plus className="mr-1 h-3.5 w-3.5" /> Agregar</Button>}>
+      <PortalPatientAccess patientId={patientId} rev={patientRev} />
       {guardians.length === 0 ? (
         <p className="text-sm text-muted-foreground">Sin adultos responsables cargados.</p>
       ) : (

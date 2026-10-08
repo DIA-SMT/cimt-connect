@@ -2,16 +2,23 @@
 // El código nunca se guarda: solo HMAC(PORTAL_CODE_PEPPER, código).
 
 import { normalizeDni } from "../../src/lib/portalRules";
-import { type Ctx, PortalError, eligibility, hmac } from "./portal";
+import { type Ctx, PortalError, eligibility, hmac, selfEligibility } from "./portal";
 
 export const INVITATION_MAX_FAILS = 5;
 export const GENERIC_CODE = "El código o el DNI no coinciden, o el código venció. Revisalos o pedí uno nuevo en el centro.";
 
-export type InviteChild = { patient_id: string; guardian_id: string; consent?: boolean };
+export type GuardianKind = "representante_legal" | "autorizado";
+// self: el propio paciente adulto (vínculo "titular", sin adulto responsable).
+// kind/authorized_by van por chico: una invitación nueva junta los chicos de
+// las pendientes, que pueden tener otro tipo de vínculo.
+export type InviteChild = {
+  patient_id: string; guardian_id: string | null; consent?: boolean; self?: boolean;
+  kind?: GuardianKind; authorized_by?: string | null;
+};
 export type Invitation = {
   id: string; dni: string; purpose: "activacion" | "vincular" | "recuperacion";
   first_name: string; last_name: string; account_id: string | null;
-  children: InviteChild[]; relationship_kind: "representante_legal" | "autorizado" | null;
+  children: InviteChild[]; relationship_kind: GuardianKind | "titular" | null;
   authorized_by: string | null; phone: string | null; in_person: boolean;
   issued_by_email: string | null; expires_at: string; used_at: string | null; revoked_at: string | null;
   failed_attempts: number;
@@ -56,20 +63,31 @@ export async function release(ctx: Ctx, inv: Invitation) {
   await ctx.admin.from("portal_invitations").update({ used_at: null }).eq("id", inv.id);
 }
 
-type PatientRow = { id: string; first_name: string; last_name: string; birth_date: string | null; discharge_date: string | null };
+type PatientRow = { id: string; first_name: string; last_name: string; dni: string | null; birth_date: string | null; discharge_date: string | null };
 type GuardianRow = { id: string; patient_id: string; dni: string | null; active: boolean };
 
 // Revalida cada chico contra la ficha: la fila del adulto sigue activa, es de
 // ese chico y tiene el mismo DNI; el chico es menor, sin alta y, con 16 o 17
-// años, con conformidad registrada.
+// años, con conformidad registrada. El titular (paciente adulto) tiene que
+// tener el mismo DNI que la cuenta, ser mayor de edad y no tener el alta.
 export async function validChildren(ctx: Ctx, dni: string, children: InviteChild[]) {
   if (!children.length) return [];
+  const guardianIds = children.map((c) => c.guardian_id).filter((x): x is string => !!x);
   const [{ data: guardians }, { data: patients }] = await Promise.all([
-    ctx.admin.from("patient_guardians").select("id, patient_id, dni, active").in("id", children.map((c) => c.guardian_id)),
-    ctx.admin.from("patients").select("id, first_name, last_name, birth_date, discharge_date").in("id", children.map((c) => c.patient_id)),
+    guardianIds.length
+      ? ctx.admin.from("patient_guardians").select("id, patient_id, dni, active").in("id", guardianIds)
+      : Promise.resolve({ data: [] as GuardianRow[] }),
+    ctx.admin.from("patients").select("id, first_name, last_name, dni, birth_date, discharge_date").in("id", children.map((c) => c.patient_id)),
   ]);
   const out: { child: InviteChild; patient: PatientRow; age: number }[] = [];
   for (const c of children) {
+    const p0 = (patients as PatientRow[] | null)?.find((x) => x.id === c.patient_id);
+    if (c.self) {
+      if (!p0 || normalizeDni(p0.dni ?? "") !== dni) continue;
+      const el = selfEligibility(p0);
+      if (el.ok && el.age !== null) out.push({ child: c, patient: p0, age: el.age });
+      continue;
+    }
     const g = (guardians as GuardianRow[] | null)?.find((x) => x.id === c.guardian_id);
     const p = (patients as PatientRow[] | null)?.find((x) => x.id === c.patient_id);
     if (!g || !p || !g.active || g.patient_id !== p.id || normalizeDni(g.dni ?? "") !== dni) continue;
@@ -94,30 +112,34 @@ export async function linkChildren(ctx: Ctx, accountId: string, inv: Invitation)
   const current = new Map((existing ?? []).map((l) => [l.patient_id as string, l.id as string]));
   const done = new Set<string>();
   const added: string[] = [];
+  let addedSelf = false;
   for (const v of valid) {
     if (done.has(v.patient.id)) continue;
     done.add(v.patient.id);
     const linkId = current.get(v.patient.id);
+    const self = !!v.child.self;
+    // Invitaciones anteriores a este cambio no traen el vínculo por chico
+    const legacyKind = inv.relationship_kind === "titular" ? null : inv.relationship_kind;
+    const kind = v.child.kind ?? legacyKind ?? "representante_legal";
+    const fields = {
+      guardian_id: self ? null : v.child.guardian_id,
+      relationship_kind: self ? "titular" : kind,
+      authorized_by: self || kind !== "autorizado" ? null : v.child.kind ? v.child.authorized_by ?? null : inv.authorized_by,
+      adolescent_consent_at: !self && v.age >= 16 ? new Date().toISOString() : null,
+    };
     if (linkId) {
-      const { error } = await ctx.admin.from("portal_links").update({
-        guardian_id: v.child.guardian_id,
-        relationship_kind: inv.relationship_kind ?? "representante_legal",
-        authorized_by: inv.authorized_by,
-        adolescent_consent_at: v.age >= 16 ? new Date().toISOString() : null,
-      }).eq("id", linkId);
-      if (!error) added.push(v.patient.first_name);
+      const { error } = await ctx.admin.from("portal_links").update(fields).eq("id", linkId);
+      if (!error) { if (self) addedSelf = true; else added.push(v.patient.first_name); }
       continue;
     }
     const { error } = await ctx.admin.from("portal_links").insert({
       account_id: accountId,
       patient_id: v.patient.id,
-      guardian_id: v.child.guardian_id,
-      relationship_kind: inv.relationship_kind ?? "representante_legal",
-      authorized_by: inv.authorized_by,
-      adolescent_consent_at: v.age >= 16 ? new Date().toISOString() : null,
+      ...fields,
       created_by_email: inv.issued_by_email,
     });
-    if (!error) added.push(v.patient.first_name);
+    if (!error) { if (self) addedSelf = true; else added.push(v.patient.first_name); }
   }
-  return added;
+  // Nombres de los chicos a cargo sumados, y si se sumó el propio titular
+  return { children: added, self: addedSelf };
 }
