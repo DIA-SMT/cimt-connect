@@ -149,6 +149,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
 
     setSaving(true);
     const payload = Object.fromEntries(EDITABLE_FIELDS.map((k) => [k, emptyToNull(draft[k])]));
+    payload.dni = draft.dni.replace(/\D/g, ""); // se aceptan puntos y espacios
     if (draft.has_health_insurance !== true) payload.health_insurance = null;
     if (!draft.consent_signed) payload.consent_date = null;
     if (payload.diagnosis_code) payload.diagnosis_code = String(payload.diagnosis_code).toUpperCase();
@@ -865,7 +866,7 @@ function emptyToNull(v: unknown) {
 
 function validate(p: PatientRecord): string | null {
   if (p.first_name.trim().length < 2 || p.last_name.trim().length < 2) return "Nombre y apellido son obligatorios";
-  if (!/^\d{6,10}$/.test(p.dni.trim())) return "DNI inválido";
+  if (!/^\d{6,10}$/.test(p.dni.replace(/\D/g, ""))) return "DNI inválido";
   if (p.birth_date && p.birth_date > todayKey()) return "La fecha de nacimiento no puede ser futura";
   if (!Number.isInteger(p.age) || p.age < 1 || p.age > 120) return "Edad inválida";
   if (p.discharge_date && p.discharge_date > todayKey()) return "La fecha de alta no puede ser futura";

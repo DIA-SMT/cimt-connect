@@ -96,12 +96,13 @@ function GuardianDialog({ patientId, guardian, isFirst, onClose, onSaved }: {
 
   async function save() {
     if (form.full_name.trim().length < 3) { toast.error("Indicá el nombre y apellido"); return; }
-    if (form.dni.trim() && !/^\d{6,10}$/.test(form.dni.trim())) { toast.error("DNI inválido"); return; }
+    const dni = form.dni.replace(/\D/g, ""); // se aceptan puntos y espacios
+    if (dni && !/^\d{6,10}$/.test(dni)) { toast.error("DNI inválido"); return; }
     setSaving(true);
     const payload = {
       full_name: form.full_name.trim(),
       relationship: form.relationship.trim() || null,
-      dni: form.dni.trim() || null,
+      dni: dni || null,
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
       lives_with_patient: form.lives_with_patient,
