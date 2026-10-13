@@ -1,0 +1,16 @@
+{
+  // Typecheck del código del servidor (server/**), que tsconfig.json no
+  // incluye. Las reglas puras de src/lib que importa el servidor entran solas.
+  "include": ["server/**/*.ts"],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}

@@ -14,7 +14,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getRequestHeader, setResponseStatus } from "nitro/h3";
 import {
   type ApptDTO, type Outcome, type ReasonCode, type ResponseKind,
-  SELF_ACCESS_AGE, addDaysKey, ageOn, centerNow, computeApptDto, normalizeDni,
+  addDaysKey, centerNow, computeApptDto, guardianEligibility, linkValidity, selfEligibility,
 } from "../../src/lib/portalRules";
 
 export type H3Event = Parameters<typeof setResponseStatus>[0];
@@ -61,6 +61,10 @@ export type Ctx = ReturnType<typeof setup>;
 // Envuelve un endpoint: errores con formato { error, code?, retry_at? } y
 // sin filtrar detalles de la base (que pueden traer datos personales)
 export async function handle<T>(event: H3Event, fn: () => Promise<T>) {
+  // Respuestas con datos personales: que no queden guardadas en el celular
+  // ni en un proxy, y que ningún buscador las indexe
+  event.res.headers.set("Cache-Control", "no-store");
+  event.res.headers.set("X-Robots-Tag", "noindex");
   try {
     return await fn();
   } catch (err) {
@@ -193,23 +197,9 @@ export async function requireStaff(ctx: Ctx, event: H3Event): Promise<{ user_id:
 type PatientRow = { id: string; first_name: string; last_name: string; dni?: string | null; birth_date: string | null; discharge_date: string | null };
 type GuardianRow = { id: string; patient_id: string; dni: string | null; active: boolean };
 
-// Menor a cargo de un adulto responsable
-export function eligibility(p: PatientRow, today = centerNow().date): { ok: boolean; age: number | null; problem: string | null } {
-  if (!p.birth_date) return { ok: false, age: null, problem: "Falta la fecha de nacimiento del chico" };
-  const age = ageOn(p.birth_date, today);
-  if (age >= SELF_ACCESS_AGE) return { ok: false, age, problem: "Es mayor de edad" };
-  if (p.discharge_date && p.discharge_date <= today) return { ok: false, age, problem: "Tiene el alta cargada" };
-  return { ok: true, age, problem: null };
-}
-
-// Paciente adulto que usa el portal por su cuenta (vínculo "titular")
-export function selfEligibility(p: PatientRow, today = centerNow().date): { ok: boolean; age: number | null; problem: string | null } {
-  if (!p.birth_date) return { ok: false, age: null, problem: "Falta la fecha de nacimiento del paciente" };
-  const age = ageOn(p.birth_date, today);
-  if (age < SELF_ACCESS_AGE) return { ok: false, age, problem: "Es menor de edad: entra por su adulto responsable" };
-  if (p.discharge_date && p.discharge_date <= today) return { ok: false, age, problem: "Tiene el alta cargada" };
-  return { ok: true, age, problem: null };
-}
+// Reglas puras en src/lib/portalRules.ts (las comparte el modo mock)
+export const eligibility = guardianEligibility;
+export { selfEligibility };
 
 export type ActiveChild = { patient_id: string; first_name: string; last_name: string; display: string; kind: string; self: boolean };
 
@@ -237,27 +227,13 @@ export async function accountLinks(ctx: Ctx, account: Pick<Account, "id" | "dni"
   const today = centerNow().date;
   return links.map((l) => {
     const p = (patients as PatientRow[] | null)?.find((x) => x.id === l.patient_id) ?? null;
+    const g = (guardians as GuardianRow[] | null)?.find((x) => x.id === l.guardian_id) ?? null;
     const self = l.relationship_kind === "titular";
-    let valid: boolean;
-    // Derecho a pedir copia de la historia clínica: el alta y la conformidad
-    // del adolescente cortan el acceso al portal, pero no ese derecho
-    let hc_ok: boolean;
-    if (self) {
-      // Titular: la cuenta es del propio paciente (mismo DNI), mayor de edad y sin alta
-      const same = !!p && normalizeDni(p.dni ?? "") === account.dni;
-      valid = same && selfEligibility(p!, today).ok;
-      hc_ok = same;
-    } else {
-      const g = (guardians as GuardianRow[] | null)?.find((x) => x.id === l.guardian_id);
-      const same = !!g && !!p && g.active && g.patient_id === p.id && normalizeDni(g.dni ?? "") === account.dni;
-      const age = p?.birth_date ? ageOn(p.birth_date, today) : null;
-      valid = same;
-      if (valid && p) {
-        const el = eligibility(p, today);
-        valid = el.ok && !((el.age ?? 0) >= 16 && !l.adolescent_consent_at);
-      }
-      hc_ok = same && l.relationship_kind === "representante_legal" && age !== null && age < SELF_ACCESS_AGE;
-    }
+    const { valid, hc_ok } = linkValidity({
+      kind: l.relationship_kind as string, account_dni: account.dni,
+      patient: p ? { id: p.id, dni: p.dni ?? null, birth_date: p.birth_date, discharge_date: p.discharge_date } : null,
+      guardian: g, adolescent_consent_at: (l.adolescent_consent_at as string | null) ?? null,
+    }, today);
     return { id: l.id as string, patient_id: l.patient_id as string, kind: l.relationship_kind as string, self, patient: p, valid, hc_ok };
   });
 }

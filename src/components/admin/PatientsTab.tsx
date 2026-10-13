@@ -250,7 +250,7 @@ function NewPatientDialog({ open, onClose, onCreated }: {
     const payload = {
       first_name: get("first_name"),
       last_name: get("last_name"),
-      dni: get("dni"),
+      dni: get("dni").replace(/\D/g, ""), // se aceptan puntos y espacios
       age: Number(get("age")),
       phone: get("phone"),
       patient_type: get("patient_type") as PatientType,
