@@ -64,11 +64,14 @@ export default defineEventHandler((event) => handle(event, async () => {
       await claim(ctx, inv);
       const { error } = await ctx.admin.auth.admin.updateUserById(acc.user_id as string, { password });
       if (error) { await release(ctx, inv); throw new PortalError(503, "No pudimos guardar la contraseña. Probá de nuevo."); }
-      // Pendiente: cerrar las sesiones abiertas en otros dispositivos
       await ctx.admin.from("portal_accounts").update({ recovery_requested_at: null, updated_at: new Date().toISOString() }).eq("id", acc.id);
       await clearFailures(ctx, dni);
       const session = await signIn(acc.id as string);
       if (!session) throw new PortalError(503, "Tu contraseña se guardó. Ingresá con tu DNI y la contraseña nueva.");
+      // Con la contraseña nueva se cierran las sesiones abiertas en otros
+      // celulares (por ejemplo, uno perdido o de otra persona)
+      const { error: outErr } = await ctx.admin.auth.admin.signOut(session.access_token, "others");
+      if (outErr) console.error("[portal] no se pudieron cerrar las otras sesiones:", outErr.status ?? "");
       return { first_name: acc.first_name, children: [], self: false, session: tokens(session) };
     }
 

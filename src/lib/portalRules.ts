@@ -353,3 +353,57 @@ export type StaffNotice = {
 
 export type StaffInbox = { hc: StaffHcRequest[]; notices: StaffNotice[] };
 export type StaffInboxCount = { hc_pending: number; notices_pending: number };
+
+// ── Vigencia de los vínculos ────────────────────────────────────────────────
+// Una sola regla para el portal (cada cuenta) y para el panel (cada paciente):
+// así las dos miradas no pueden contradecirse.
+
+export type EligibilityPatient = { birth_date: string | null; discharge_date: string | null };
+export type Eligibility = { ok: boolean; age: number | null; problem: string | null };
+
+// Menor a cargo de un adulto responsable
+export function guardianEligibility(p: EligibilityPatient, today = centerNow().date): Eligibility {
+  if (!p.birth_date) return { ok: false, age: null, problem: "Falta la fecha de nacimiento del chico" };
+  const age = ageOn(p.birth_date, today);
+  if (age >= SELF_ACCESS_AGE) return { ok: false, age, problem: "Es mayor de edad" };
+  if (p.discharge_date && p.discharge_date <= today) return { ok: false, age, problem: "Tiene el alta cargada" };
+  return { ok: true, age, problem: null };
+}
+
+// Paciente adulto que usa el portal por su cuenta (vínculo "titular")
+export function selfEligibility(p: EligibilityPatient, today = centerNow().date): Eligibility {
+  if (!p.birth_date) return { ok: false, age: null, problem: "Falta la fecha de nacimiento del paciente" };
+  const age = ageOn(p.birth_date, today);
+  if (age < SELF_ACCESS_AGE) return { ok: false, age, problem: "Es menor de edad: entra por su adulto responsable" };
+  if (p.discharge_date && p.discharge_date <= today) return { ok: false, age, problem: "Tiene el alta cargada" };
+  return { ok: true, age, problem: null };
+}
+
+export type LinkValidityInput = {
+  kind: string; // titular | representante_legal | autorizado
+  account_dni: string;
+  patient: (EligibilityPatient & { id: string; dni: string | null }) | null;
+  guardian: { patient_id: string; dni: string | null; active: boolean } | null; // fila del adulto en la ficha
+  adolescent_consent_at: string | null;
+};
+
+// valid: el vínculo da acceso al portal hoy. hc_ok: derecho a pedir la copia
+// del historial, que no se corta con el alta ni por la conformidad del
+// adolescente (solo el propio paciente o su representante legal, menor de edad).
+export function linkValidity(l: LinkValidityInput, today = centerNow().date): { valid: boolean; hc_ok: boolean } {
+  const p = l.patient;
+  if (l.kind === "titular") {
+    const same = !!p && normalizeDni(p.dni ?? "") === l.account_dni;
+    return { valid: same && selfEligibility(p!, today).ok, hc_ok: same };
+  }
+  const g = l.guardian;
+  const same = !!g && !!p && g.active && g.patient_id === p.id && normalizeDni(g.dni ?? "") === l.account_dni;
+  let valid = same;
+  if (valid && p) {
+    const el = guardianEligibility(p, today);
+    valid = el.ok && !((el.age ?? 0) >= 16 && !l.adolescent_consent_at);
+  }
+  const age = p?.birth_date ? ageOn(p.birth_date, today) : null;
+  const hc_ok = same && l.kind === "representante_legal" && age !== null && age < SELF_ACCESS_AGE;
+  return { valid, hc_ok };
+}

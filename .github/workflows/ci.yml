@@ -1,0 +1,40 @@
+name: CI
+
+# En cada PR y en cada cambio de main: typecheck (sitio y servidor) y las
+# pruebas de las reglas del portal. No hace deploy (eso lo hace Vercel).
+# Las dependencias se instalan con npm desde package-lock.json, igual que en
+# Vercel; bun se usa solo para correr las pruebas.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Instalar dependencias (package-lock.json)
+        run: npm ci --ignore-scripts
+      - name: Typecheck del sitio
+        run: node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+      - name: Typecheck del servidor
+        run: node node_modules/typescript/bin/tsc --noEmit -p tsconfig.server.json
+      - name: Pruebas
+        run: bun test
