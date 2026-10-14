@@ -8,14 +8,18 @@
 import { supabase } from "@/integrations/supabase/client";
 import { CENTER } from "@/lib/center";
 import { PORTAL_ENABLED, type ApiResult } from "@/lib/portal";
+import type { ClinicalBlock, ClinicalFeature, StaffClinicalDTO } from "@/lib/portalClinicalRules";
+import type { StaffInfoDTO, WithdrawReason } from "@/lib/portalInfoRules";
+import type { ApptReqRejectReason, ApptReqStaffTarget, ApptReqStatus, StaffApptRequest } from "@/lib/apptRequestRules";
 import type {
-  HcEventKind, HcRejectReason, HcStaffTarget, HcStatus, NoticeAction, NoticeResolution,
+  HcEventKind, HcRejectReason, HcSendAcks, HcStaffTarget, HcStatus, NoticeAction, NoticeResolution,
   StaffHcRequest, StaffInbox, StaffInboxCount,
 } from "@/lib/portalRules";
 
 export {
   type HcEvent, type HcEventKind, type HcRejectReason, type HcStaffTarget, type HcStatus, type NoticeAction,
-  type NoticeResolution, type StaffHcRequest,
+  type NoticeResolution, type StaffHcRequest, type StaffHcDocument, type HcSendAcks, type HcChannel,
+  HC_DOC_MAX_BYTES, HC_DOC_MAX_FILES,
   type StaffInbox, type StaffInboxCount, type StaffNotice,
   HC_REJECT_REASONS, HC_TRANSITIONS, NOTICE_ACTIONS,
 } from "@/lib/portalRules";
@@ -71,7 +75,8 @@ export type AccessStatus =
   | { state: "vencida" }
   | { state: "bloqueada" }
   | { state: "activo" }
-  | { state: "pausado" };
+  | { state: "pausado" }
+  | { state: "bloqueo_judicial" }; // adulto bloqueado por orden judicial para este paciente
 
 export const INVITE_EXPIRY_DAYS = { whatsapp: 7, impresa: 14 } as const;
 
@@ -119,7 +124,7 @@ function mock(): Promise<MockPortal> {
   return mockApi;
 }
 
-async function staffCall<T>(body: unknown, path: "access" | "inbox" = "access"): Promise<ApiResult<T>> {
+async function staffCall<T>(body: unknown, path: "access" | "inbox" | "clinical" = "access"): Promise<ApiResult<T>> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`/api/portal-staff/${path}`, {
@@ -128,7 +133,13 @@ async function staffCall<T>(body: unknown, path: "access" | "inbox" = "access"):
       body: JSON.stringify(body),
     });
     const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    if (!res.ok) return { ok: false, status: res.status, error: typeof json.error === "string" ? json.error : "No se pudo conectar con el servidor." };
+    if (!res.ok) {
+      return {
+        ok: false, status: res.status,
+        error: typeof json.error === "string" ? json.error : "No se pudo conectar con el servidor.",
+        code: typeof json.code === "string" ? json.code : undefined,
+      };
+    }
     return { ok: true, data: json as T };
   } catch {
     return { ok: false, status: 503, error: "No se pudo conectar con el servidor." };
@@ -156,7 +167,7 @@ export const portalStaffApi = {
   },
   async accessStatus(guardian: { id: string; dni: string | null }, patientId: string): Promise<AccessStatus | null> {
     if (!PORTAL_ENABLED) return null;
-    if (MOCK) return (await mock()).staffAccessStatus(guardian.dni, patientId);
+    if (MOCK) return (await mock()).staffAccessStatus(guardian.dni, patientId, false, guardian.id);
     const r = await staffCall<AccessStatus>({ action: "status", guardian_id: guardian.id, patient_id: patientId });
     return r.ok ? r.data : null;
   },
@@ -199,10 +210,66 @@ export const portalStaffApi = {
     if (MOCK) return (await mock()).staffHcUpdate(input, issuedBy);
     return staffCall({ action: "hc_update", ...input }, "inbox");
   },
+  // ── Copia digital (E1): solo profesionales y Dirección ──
+  // Sube un PDF al pedido (pide un enlace de subida al servidor, sube el
+  // archivo directo al almacenamiento privado y lo registra: el servidor
+  // revisa que sea un PDF de hasta 10 MB y calcula su huella)
+  async hcDocUpload(requestId: string, file: File): Promise<ApiResult<StaffHcRequest>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffHcDocUpload(requestId, file, issuedBy);
+    const slot = await staffCall<{ path: string; token: string }>(
+      { action: "hc_doc_upload_url", request_id: requestId, file_name: file.name, size_bytes: file.size }, "inbox");
+    if (!slot.ok) return slot;
+    const { error } = await supabase.storage.from(HC_DOCS_BUCKET)
+      // cacheControl "0": que el navegador no guarde el PDF (historia clínica) al abrirlo o bajarlo
+      .uploadToSignedUrl(slot.data.path, slot.data.token, file, { contentType: "application/pdf", cacheControl: "0" });
+    if (error) return { ok: false, status: 503, error: "No se pudo subir el archivo. Probá de nuevo." };
+    return staffCall({ action: "hc_doc_register", request_id: requestId, path: slot.data.path, file_name: file.name }, "inbox");
+  },
+  // Quita un PDF que todavía no se envió
+  async hcDocRemove(documentId: string): Promise<ApiResult<StaffHcRequest>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffHcDocRemove(documentId, issuedBy);
+    return staffCall({ action: "hc_doc_remove", document_id: documentId }, "inbox");
+  },
+  // Abre un PDF para revisarlo: enlace que vence en 60 segundos (queda registrado)
+  async hcDocOpen(documentId: string): Promise<ApiResult<{ url: string }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffHcDocOpen(documentId, issuedBy);
+    return staffCall({ action: "hc_doc_open", document_id: documentId }, "inbox");
+  },
+  // Envía la copia por el portal (con las confirmaciones del profesional)
+  // documentIds: los PDF que quien envía tenía en pantalla y revisó. Si la
+  // lista del servidor es otra (alguien subió o quitó uno), responde 409
+  async hcSend(requestId: string, acks: HcSendAcks, documentIds: string[]): Promise<ApiResult<StaffHcRequest>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffHcSend(requestId, acks, documentIds, issuedBy);
+    return staffCall({ action: "hc_send", request_id: requestId, acks, document_ids: documentIds }, "inbox");
+  },
   async hcNotes(id: string, notes: string): Promise<ApiResult<{ ok: true }>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).staffHcNotes(id, notes);
     return staffCall({ action: "hc_notes", id, notes }, "inbox");
+  },
+  // Pedidos de turno: agendado (con el turno enlazado, si se eligió), "los
+  // llamamos", no se puede (con motivo) o volver a pendiente
+  async apptUpdate(input: {
+    id: string; to: ApptReqStaffTarget; appointment_id?: string | null; reject_reason?: ApptReqRejectReason;
+  }): Promise<ApiResult<StaffApptRequest>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffApptUpdate(input, issuedBy);
+    return staffCall({ action: "appt_update", ...input }, "inbox");
+  },
+  async apptNotes(id: string, notes: string): Promise<ApiResult<{ ok: true }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffApptNotes(id, notes, issuedBy);
+    return staffCall({ action: "appt_notes", id, notes }, "inbox");
   },
   async resolveNotice(responseId: string, how: NoticeAction): Promise<ApiResult<{ ok: true }>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
@@ -210,6 +277,94 @@ export const portalStaffApi = {
     if (MOCK) return (await mock()).staffResolveNotice(responseId, how, issuedBy);
     return staffCall({ action: "notice_resolve", response_id: responseId, how }, "inbox");
   },
+  // ── Portal del paciente (ficha): información de salud ──
+  // null si no se pudo saber (por ejemplo, sin conexión)
+  async clinicalFeatures(): Promise<ClinicalFeature[] | null> {
+    if (!PORTAL_ENABLED) return [];
+    if (MOCK) return (await mock()).staffClinicalFeatures();
+    const r = await staffCall<{ features: ClinicalFeature[] }>({ action: "features" }, "clinical");
+    return r.ok ? r.data.features : null;
+  },
+  // Una sola entrada para todas las acciones de la sección (ver
+  // server/api/portal-staff/clinical.ts); todas devuelven la sección actualizada
+  async clinical(body: ClinicalAction): Promise<ApiResult<StaffClinicalDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffClinicalAction(body, issuedBy);
+    return staffCall(body, "clinical");
+  },
+  // "Mi información" (etapa info): ver, publicar y retirar
+  async info(body: InfoAction): Promise<ApiResult<StaffInfoDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffInfoAction(body, issuedBy);
+    return staffCall(body, "clinical");
+  },
+};
+
+export type InfoAction =
+  | { action: "info_get"; patient_id: string }
+  | {
+      action: "publish_summary"; patient_id: string; expected_id: string | null;
+      que_trabajamos: string; show_code: boolean; show_team: boolean; acompanar: string; tips: string[];
+      discussed_ack: boolean; adolescent_ack?: boolean; review_note?: string;
+    }
+  | {
+      action: "publish_report"; patient_id: string; expected_id: string | null; report_id: string;
+      report_edited_at: string; // StaffReportRow.edited_at del informe que se revisó
+      mode: "familia" | "tal_cual"; text?: string; include_progress?: boolean; include_evolution?: boolean;
+      discussed_ack: boolean; adolescent_ack?: boolean; review_note?: string; // review_note: ver lintText
+    }
+  | { action: "withdraw"; patient_id: string; publication_id: string; reason: Exclude<WithdrawReason, "reemplazada"> };
+
+export type { StaffInfoDTO, StaffPublication, StaffReportRow } from "@/lib/portalInfoRules";
+
+export type { StaffApptRequest, StaffApptSlot, ApptReqStatus } from "@/lib/apptRequestRules";
+
+// ── Etiquetas de los pedidos de turno (bandeja) ──
+export const APPT_REQ_STATUS_LABEL: Record<ApptReqStatus, string> = {
+  pendiente: "Pendiente",
+  contactar: "La vamos a llamar",
+  agendado: "Agendado",
+  rechazado: "No se dio turno",
+  cancelado: "Cancelado por la familia",
+};
+
+export const APPT_REQ_REJECT_LABEL: Record<ApptReqRejectReason, { label: string; family: string }> = {
+  ya_tiene_turnos: { label: "Ya tiene turnos asignados", family: "La familia ve «Ya tiene turnos asignados: los ves en la lista»." },
+  otro: { label: "Otro motivo (se lo explicamos por teléfono)", family: "La familia ve «No pudimos darte turno: te llamamos para explicarte»." },
+  bloqueo: { label: "Cerrado por bloqueo judicial", family: "Los otros adultos de la familia ven «Este pedido se cerró sin turno»." },
+};
+
+export const WITHDRAW_LABEL: Record<WithdrawReason, string> = {
+  reemplazada: "Reemplazada por una versión nueva",
+  error: "Tenía un error",
+  pedido_familia: "A pedido de la familia",
+  otro: "Otro motivo",
+};
+
+export type ClinicalAction =
+  | { action: "get"; patient_id: string }
+  | { action: "set"; patient_id: string; info_enabled?: boolean; practice_enabled?: boolean }
+  | { action: "pause"; patient_id: string; reason: "indicacion_profesional" | "judicial" | null }
+  | { action: "adolescent"; patient_id: string; agreed_on?: string; withdrawn?: true }
+  | { action: "verify_link"; patient_id: string; link_id: string; in_person_on: string; parental_on?: string | null }
+  | { action: "block"; patient_id: string; guardian_id: string; reason: "orden_judicial" | "otro" }
+  | { action: "unblock"; patient_id: string; block_id: string }
+  | { action: "consent_paper"; patient_id: string; account_id: string; file_id: string };
+
+export type { ClinicalBlock, ClinicalFeature, StaffClinicalDTO, StaffAccessRow, StaffGuardianRow } from "@/lib/portalClinicalRules";
+
+// Por qué una cuenta todavía no ve la información de salud (lo ve solo el equipo)
+export const CLINICAL_BLOCK_LABEL: Record<ClinicalBlock, string> = {
+  autorizado: "Adulto autorizado: solo ve los turnos",
+  bloqueado: "Bloqueado por orden judicial",
+  sin_vinculo: "Su acceso no vale hoy (por ejemplo, cumplió 18 o tiene el alta)",
+  no_habilitado: "Todavía no está prendido para este paciente",
+  pausado: "En pausa",
+  conformidad_adolescente: "Falta la conformidad del adolescente",
+  no_verificado: "Falta verificar el vínculo en persona",
+  consentimiento: "Todavía no activó la información de salud",
 };
 
 // ── Etiquetas de la bandeja ──
@@ -219,7 +374,12 @@ export const HC_STATUS_LABEL: Record<HcStatus, string> = {
   entregada: "Entregada",
   rechazada: "Rechazada",
   cancelada: "Cancelada por la familia",
+  enviada: "Enviada por el portal",
 };
+
+// Almacenamiento privado de las copias digitales (solo lo usa el servidor;
+// el panel sube con un enlace de un solo uso que da el servidor)
+export const HC_DOCS_BUCKET = "portal-documents";
 
 export const HC_REJECT_LABEL: Record<HcRejectReason, string> = {
   no_habilitado: "Quien la pidió no está habilitado",
@@ -251,4 +411,7 @@ export const HC_EVENT_LABEL: Record<HcEventKind, string> = {
   rechazada: "Rechazada",
   cancelada: "Cancelado por la familia",
   nota: "Notas internas editadas",
+  documento: "PDF subido",
+  documento_quitado: "PDF quitado",
+  enviada: "Enviada por el portal",
 };

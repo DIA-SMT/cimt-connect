@@ -34,6 +34,7 @@ const CHIP: Partial<Record<AccessStatus["state"], { text: (s: AccessStatus) => s
   invitado: { text: (s) => `Invitado al portal · vence ${s.state === "invitado" ? shortDate(s.expires_at) : ""}`, cls: "bg-[color:var(--status-pending-bg)] text-[oklch(0.45_0.11_70)]" },
   vencida: { text: () => "Invitación al portal vencida", cls: "bg-muted text-muted-foreground" },
   bloqueada: { text: () => "Invitación bloqueada por intentos", cls: "bg-[color:var(--status-occupied-bg)] text-[oklch(0.48_0.19_25)]" },
+  bloqueo_judicial: { text: () => "Bloqueado por orden judicial", cls: "bg-[color:var(--status-occupied-bg)] text-[oklch(0.48_0.19_25)]" },
   activo: { text: () => "Portal activo", cls: "bg-[color:var(--status-available-bg)] text-[oklch(0.42_0.12_150)]" },
   pausado: { text: () => "Acceso al portal pausado", cls: "bg-muted text-muted-foreground" },
 };
@@ -72,7 +73,7 @@ export function PortalPatientAccess({ patientId, rev }: { patientId: string; rev
   if (patient.discharge_date && patient.discharge_date <= todayKey()) return null;
 
   const chip = status ? CHIP[status.state] : undefined;
-  const canInvite = status?.state !== "activo" && status?.state !== "pausado";
+  const canInvite = status?.state !== "activo" && status?.state !== "pausado" && status?.state !== "bloqueo_judicial";
   const label = status?.state === "invitado" ? "Reenviar invitación"
     : status?.state === "vencida" || status?.state === "bloqueada" ? "Generar una nueva invitación"
     : "Invitar al paciente al portal";

@@ -450,7 +450,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             icon={<Inbox className="h-4 w-4" />} label="Solicitudes" badge={newRequests} />
           {portalStaffApi.enabled && (
             <TabButton active={activeTab === "portal"} onClick={() => setActiveTab("portal")}
-              icon={<MailOpen className="h-4 w-4" />} label="Portal" badge={portalCounts.hc + portalCounts.notices}
+              icon={<MailOpen className="h-4 w-4" />} label="Portal" badge={portalCounts.hc + portalCounts.notices + portalCounts.turnos}
               urgent={portalCounts.notices > 0} />
           )}
           <TabButton active={activeTab === "pacientes"} onClick={() => setActiveTab("pacientes")}

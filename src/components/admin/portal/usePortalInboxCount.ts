@@ -3,19 +3,20 @@ import { toast } from "sonner";
 import { portalStaffApi } from "@/lib/portalStaff";
 
 // Números de la pestaña "Portal" del panel: pedidos de copia de la historia
-// clínica pendientes y avisos de turnos sin resolver, por separado. Los avisos
-// de "no vamos a poder ir" son más urgentes (hay que liberar el horario), así
-// que el panel los resalta y, si llega uno nuevo mientras está abierto, avisa.
+// clínica pendientes, avisos de turnos sin resolver y pedidos de turno
+// pendientes, por separado. Los avisos de "no vamos a poder ir" son más
+// urgentes (hay que liberar el horario), así que el panel los resalta y, si
+// llega uno nuevo mientras está abierto, avisa.
 // Se pide al abrir el panel, cada minuto mientras la pestaña del navegador
 // está a la vista y al volver a la ventana. La bandeja lo corrige con setCounts
 // después de cada acción.
 
 const POLL_MS = 60_000;
 
-export type PortalCounts = { hc: number; notices: number };
+export type PortalCounts = { hc: number; notices: number; turnos: number };
 
 export function usePortalInboxCount(onOpenNotices?: () => void): [PortalCounts, Dispatch<SetStateAction<PortalCounts>>] {
-  const [counts, setCounts] = useState<PortalCounts>({ hc: 0, notices: 0 });
+  const [counts, setCounts] = useState<PortalCounts>({ hc: 0, notices: 0, turnos: 0 });
   const lastNotices = useRef<number | null>(null);
   const openRef = useRef(onOpenNotices);
   openRef.current = onOpenNotices;
@@ -41,7 +42,8 @@ export function usePortalInboxCount(onOpenNotices?: () => void): [PortalCounts, 
         });
       }
       lastNotices.current = c.notices_pending;
-      setCounts({ hc: c.hc_pending, notices: c.notices_pending });
+      // turnos_pending puede faltar si el servidor es anterior a los pedidos de turno
+      setCounts({ hc: c.hc_pending, notices: c.notices_pending, turnos: c.turnos_pending ?? 0 });
     }
 
     refresh();

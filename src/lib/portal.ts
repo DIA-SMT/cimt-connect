@@ -14,12 +14,23 @@
 import { longDate } from "@/lib/agenda";
 import { CENTER } from "@/lib/center";
 import {
-  type ApptDTO, type HcRejectReason, type HcRequestDTO, type ReasonCode, type ResponseKind,
+  type ApptDTO, type HcChannel, type HcDigitalBlock, type HcRejectReason, type HcRequestDTO, type ReasonCode,
+  type ResponseKind,
   centerNow,
 } from "@/lib/portalRules";
+import type { ChildClinicalDTO, FamilyClinicalDTO } from "@/lib/portalClinicalRules";
+import type { InfoDTO } from "@/lib/portalInfoRules";
+import type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";
 
 export {
-  type ApptDTO, type HcRejectReason, type HcRequestDTO, type HcStatus, type Outcome, type ReasonCode, type ResponseKind,
+  type ChildClinicalDTO, type ClinicalFeature, type FamilyClinicalDTO, type PublicOutcome,
+  CLINICAL_NOTICE_VERSION,
+} from "@/lib/portalClinicalRules";
+
+export {
+  type ApptDTO, type HcChannel, type HcDigitalBlock, type HcDocumentDTO, type HcRejectReason, type HcRequestDTO,
+  type HcStatus, type Outcome, type ReasonCode, type ResponseKind,
+  HC_CHANNELS, HC_DOC_MAX_BYTES,
   CONFIRM_WINDOW_DAYS, NOTICE_MIN_DAYS, PRIVACY_VERSION, REASON_TEXT_MAX,
   confirmFrom, isValidDni, normalizeCode, normalizeDni, passwordProblem,
 } from "@/lib/portalRules";
@@ -37,6 +48,8 @@ export type ChildDTO = {
   self: boolean; // es el propio titular de la cuenta (paciente adulto)
   can_request_hc: boolean; // esta cuenta puede pedir copia de su historia clínica
   next: ApptDTO | null; // próximo turno después de esta semana
+  // Información de salud: si esta cuenta puede verla (solo con la etapa prendida)
+  clinical?: ChildClinicalDTO;
 };
 
 export type MeDTO = {
@@ -44,13 +57,28 @@ export type MeDTO = {
   week: ApptDTO[]; // próximos 7 días, todos los chicos
   children: ChildDTO[];
   requests: HcRequestDTO[]; // pedidos de copia de la historia clínica (abiertos y recientes)
+  appt_requests: ApptRequestDTO[]; // pedidos de turno (abiertos y recientes, de todas las personas)
+  // Se pueden pedir turnos desde el portal (false si el servidor todavía no
+  // los tiene: no hay que invitar a pedirlos)
+  can_request_appts: boolean;
+  clinical?: FamilyClinicalDTO; // solo con la etapa "consent" prendida
 };
 
 // Página de un chico: sus turnos y la copia de su historia clínica
 export type ChildPageDTO = {
   child: { id: string; first_name: string; self?: boolean };
+  // El servidor tiene prendida "Mi información" (etapa info): si no, la página
+  // de información no la pide y muestra solo la copia del historial
+  info_on: boolean;
   appointments: ApptDTO[];
-  hc: { can_request: boolean; requests: HcRequestDTO[] };
+  // digital (etapa E1): si se ofrece recibirla por el portal y, si no se
+  // puede, por qué (consent: activar la información de salud; verify: pasar
+  // por el centro). Sin la etapa prendida: { offered: false, blocked: null }
+  hc: { can_request: boolean; requests: HcRequestDTO[]; digital: { offered: boolean; blocked: HcDigitalBlock | null } };
+  // Pedidos de turno de esta persona (de cualquier adulto de la familia).
+  // enabled: el servidor tiene los pedidos de turno · can_request: se puede
+  // pedir uno ahora (no hay otro abierto)
+  turnos: { enabled: boolean; can_request: boolean; requests: ApptRequestDTO[] };
 };
 
 export type ActivationInfo = {
@@ -82,6 +110,18 @@ export const REASONS: { code: ReasonCode; label: string }[] = [
 ];
 
 // ── Aviso de privacidad (versión a validar con el área legal) ───────────────
+
+// ── Información de salud en el portal (borrador hasta que lo apruebe Legales) ──
+
+export const CLINICAL_NOTICE_POINTS = [
+  "Tu profesional puede compartir acá lo que trabajan en el tratamiento, explicado de forma simple, y más adelante documentos, ejercicios, devoluciones y medallas.",
+  "Nada aparece hasta que tu profesional lo revisa y lo publica. Lo importante te lo decimos primero en el centro.",
+  "Para adaptar ejercicios, el equipo puede usar una herramienta de inteligencia artificial. No le pasamos nada que permita saber quién es la persona, y alguien del equipo revisa todo antes de publicarlo.",
+  "Lo que marcás en los ejercicios y tus comentarios los ve solo el equipo profesional del CIMT.",
+  "Un adulto autorizado sigue viendo solo los turnos.",
+  "Si compartís el celular, tocá «Salir» al terminar: acá hay información de salud.",
+  "Podés dejar de verla cuando quieras desde esta misma pantalla. Los turnos siguen funcionando igual.",
+];
 
 export const PRIVACY_POINTS = [
   `El responsable de tus datos es el CIMT (Municipalidad de San Miguel de Tucumán), ${CENTER.address}.`,
@@ -182,6 +222,10 @@ export function hcStatus(r: HcRequestDTO): { tone: ApptTone; text: string } {
     case "entregada": return { tone: "muted", text: `Entregada el ${stampLabel(r.delivered_at ?? r.created_at)}` };
     case "rechazada": return { tone: "bad", text: r.reject_reason ? HC_REJECT_TEXT[r.reject_reason] : "No pudimos prepararla. Llamanos." };
     case "cancelada": return { tone: "muted", text: "Cancelaste el pedido" };
+    case "enviada":
+      return r.documents.length
+        ? { tone: "ok", text: `Lista para descargar hasta el ${stampLabel(r.available_until ?? r.created_at).split(" a las")[0]}` }
+        : { tone: "muted", text: "Enviada por el portal: ya no está disponible para descargar" };
   }
 }
 
@@ -310,14 +354,54 @@ export const portalApi = {
     return call("respond", { method: "POST", body: input });
   },
   // Pedido de copia de la historia clínica (se entrega en mano en el centro)
-  async hcCreate(patientId: string): Promise<ApiResult<HcRequestDTO>> {
+  // channel: cómo la quiere recibir ("portal" solo con la etapa E1 y si la cuenta puede)
+  async hcCreate(patientId: string, channel: HcChannel = "mano"): Promise<ApiResult<HcRequestDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
-    if (MOCK) return (await mock()).hcCreate(patientId);
-    return call("hc", { method: "POST", body: { action: "create", patient_id: patientId } });
+    if (MOCK) return (await mock()).hcCreate(patientId, channel);
+    return call("hc", { method: "POST", body: { action: "create", patient_id: patientId, channel } });
+  },
+  // Descargar un PDF de la copia enviada por el portal: enlace que vence en
+  // 60 segundos (403 code REAUTH: pedir la contraseña; CONSENT, VERIFY)
+  async hcDocument(documentId: string): Promise<ApiResult<{ url: string; expires_in: number; file_name: string }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).hcDocument(documentId);
+    return call("document", { method: "POST", body: { id: documentId } });
   },
   async hcCancel(id: string): Promise<ApiResult<HcRequestDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).hcCancel(id);
     return call("hc", { method: "POST", body: { action: "cancel", id } });
   },
+  // Información de salud: activarla (con la contraseña) o dejar de verla
+  async clinicalConsent(accept: boolean, password?: string): Promise<ApiResult<FamilyClinicalDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).clinicalConsent(accept, password);
+    return call("consent", { method: "POST", body: accept ? { accept: true, password } : { accept: false } });
+  },
+  // "Volvé a poner tu contraseña" antes de ver información de salud
+  async reauth(password: string): Promise<ApiResult<{ ok: true }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).reauth(password);
+    return call("reauth", { method: "POST", body: { password } });
+  },
+  // Pedir un turno (el centro lo asigna) y cancelar el pedido
+  async apptRequestCreate(patientId: string, input: ApptRequestInput): Promise<ApiResult<ApptRequestDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).apptRequestCreate(patientId, input);
+    return call("pedido-turno", { method: "POST", body: { action: "create", patient_id: patientId, ...input } });
+  },
+  async apptRequestCancel(id: string): Promise<ApiResult<ApptRequestDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).apptRequestCancel(id);
+    return call("pedido-turno", { method: "POST", body: { action: "cancel", id } });
+  },
+  // "Mi información": lo que publicó el profesional (403 code REAUTH: pedir la contraseña)
+  async info(patientId: string): Promise<ApiResult<InfoDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).info(patientId);
+    return call(`info?id=${encodeURIComponent(patientId)}`);
+  },
 };
+
+export type { InfoDTO, InfoReportDTO, InfoSummaryDTO } from "@/lib/portalInfoRules";
+export type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";

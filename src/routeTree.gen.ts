@@ -21,8 +21,12 @@ import { Route as TurnosRouteImport } from './routes/turnos'
 import { Route as PortalIndexRouteImport } from './routes/portal.index'
 import { Route as PortalActivarRouteImport } from './routes/portal.activar'
 import { Route as PortalAyudaRouteImport } from './routes/portal.ayuda'
+import { Route as PortalInformacionSaludRouteImport } from './routes/portal.informacion-salud'
 import { Route as PortalIngresarRouteImport } from './routes/portal.ingresar'
+import { Route as PortalPrivacidadRouteImport } from './routes/portal.privacidad'
 import { Route as PortalChicoPatientIdRouteImport } from './routes/portal.chico.$patientId'
+import { Route as PortalInformacionPatientIdRouteImport } from './routes/portal.informacion.$patientId'
+import { Route as PortalPedirTurnoPatientIdRouteImport } from './routes/portal.pedir-turno.$patientId'
 import { Route as PortalTurnoAppointmentIdRouteImport } from './routes/portal.turno.$appointmentId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -85,9 +89,19 @@ const PortalAyudaRoute = PortalAyudaRouteImport.update({
   path: '/ayuda',
   getParentRoute: () => PortalRoute,
 } as any)
+const PortalInformacionSaludRoute = PortalInformacionSaludRouteImport.update({
+  id: '/informacion-salud',
+  path: '/informacion-salud',
+  getParentRoute: () => PortalRoute,
+} as any)
 const PortalIngresarRoute = PortalIngresarRouteImport.update({
   id: '/ingresar',
   path: '/ingresar',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalPrivacidadRoute = PortalPrivacidadRouteImport.update({
+  id: '/privacidad',
+  path: '/privacidad',
   getParentRoute: () => PortalRoute,
 } as any)
 const PortalChicoPatientIdRoute = PortalChicoPatientIdRouteImport.update({
@@ -95,6 +109,18 @@ const PortalChicoPatientIdRoute = PortalChicoPatientIdRouteImport.update({
   path: '/chico/$patientId',
   getParentRoute: () => PortalRoute,
 } as any)
+const PortalInformacionPatientIdRoute =
+  PortalInformacionPatientIdRouteImport.update({
+    id: '/informacion/$patientId',
+    path: '/informacion/$patientId',
+    getParentRoute: () => PortalRoute,
+  } as any)
+const PortalPedirTurnoPatientIdRoute =
+  PortalPedirTurnoPatientIdRouteImport.update({
+    id: '/pedir-turno/$patientId',
+    path: '/pedir-turno/$patientId',
+    getParentRoute: () => PortalRoute,
+  } as any)
 const PortalTurnoAppointmentIdRoute =
   PortalTurnoAppointmentIdRouteImport.update({
     id: '/turno/$appointmentId',
@@ -114,9 +140,13 @@ export interface FileRoutesByFullPath {
   '/turnos': typeof TurnosRoute
   '/portal/activar': typeof PortalActivarRoute
   '/portal/ayuda': typeof PortalAyudaRoute
+  '/portal/informacion-salud': typeof PortalInformacionSaludRoute
   '/portal/ingresar': typeof PortalIngresarRoute
+  '/portal/privacidad': typeof PortalPrivacidadRoute
   '/portal/': typeof PortalIndexRoute
   '/portal/chico/$patientId': typeof PortalChicoPatientIdRoute
+  '/portal/informacion/$patientId': typeof PortalInformacionPatientIdRoute
+  '/portal/pedir-turno/$patientId': typeof PortalPedirTurnoPatientIdRoute
   '/portal/turno/$appointmentId': typeof PortalTurnoAppointmentIdRoute
 }
 export interface FileRoutesByTo {
@@ -130,9 +160,13 @@ export interface FileRoutesByTo {
   '/turnos': typeof TurnosRoute
   '/portal/activar': typeof PortalActivarRoute
   '/portal/ayuda': typeof PortalAyudaRoute
+  '/portal/informacion-salud': typeof PortalInformacionSaludRoute
   '/portal/ingresar': typeof PortalIngresarRoute
+  '/portal/privacidad': typeof PortalPrivacidadRoute
   '/portal': typeof PortalIndexRoute
   '/portal/chico/$patientId': typeof PortalChicoPatientIdRoute
+  '/portal/informacion/$patientId': typeof PortalInformacionPatientIdRoute
+  '/portal/pedir-turno/$patientId': typeof PortalPedirTurnoPatientIdRoute
   '/portal/turno/$appointmentId': typeof PortalTurnoAppointmentIdRoute
 }
 export interface FileRoutesById {
@@ -148,9 +182,13 @@ export interface FileRoutesById {
   '/turnos': typeof TurnosRoute
   '/portal/activar': typeof PortalActivarRoute
   '/portal/ayuda': typeof PortalAyudaRoute
+  '/portal/informacion-salud': typeof PortalInformacionSaludRoute
   '/portal/ingresar': typeof PortalIngresarRoute
+  '/portal/privacidad': typeof PortalPrivacidadRoute
   '/portal/': typeof PortalIndexRoute
   '/portal/chico/$patientId': typeof PortalChicoPatientIdRoute
+  '/portal/informacion/$patientId': typeof PortalInformacionPatientIdRoute
+  '/portal/pedir-turno/$patientId': typeof PortalPedirTurnoPatientIdRoute
   '/portal/turno/$appointmentId': typeof PortalTurnoAppointmentIdRoute
 }
 export interface FileRouteTypes {
@@ -167,9 +205,13 @@ export interface FileRouteTypes {
     | '/turnos'
     | '/portal/activar'
     | '/portal/ayuda'
+    | '/portal/informacion-salud'
     | '/portal/ingresar'
+    | '/portal/privacidad'
     | '/portal/'
     | '/portal/chico/$patientId'
+    | '/portal/informacion/$patientId'
+    | '/portal/pedir-turno/$patientId'
     | '/portal/turno/$appointmentId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -183,9 +225,13 @@ export interface FileRouteTypes {
     | '/turnos'
     | '/portal/activar'
     | '/portal/ayuda'
+    | '/portal/informacion-salud'
     | '/portal/ingresar'
+    | '/portal/privacidad'
     | '/portal'
     | '/portal/chico/$patientId'
+    | '/portal/informacion/$patientId'
+    | '/portal/pedir-turno/$patientId'
     | '/portal/turno/$appointmentId'
   id:
     | '__root__'
@@ -200,9 +246,13 @@ export interface FileRouteTypes {
     | '/turnos'
     | '/portal/activar'
     | '/portal/ayuda'
+    | '/portal/informacion-salud'
     | '/portal/ingresar'
+    | '/portal/privacidad'
     | '/portal/'
     | '/portal/chico/$patientId'
+    | '/portal/informacion/$patientId'
+    | '/portal/pedir-turno/$patientId'
     | '/portal/turno/$appointmentId'
   fileRoutesById: FileRoutesById
 }
@@ -304,6 +354,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalAyudaRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/portal/informacion-salud': {
+      id: '/portal/informacion-salud'
+      path: '/informacion-salud'
+      fullPath: '/portal/informacion-salud'
+      preLoaderRoute: typeof PortalInformacionSaludRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/portal/ingresar': {
       id: '/portal/ingresar'
       path: '/ingresar'
@@ -311,11 +368,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalIngresarRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/portal/privacidad': {
+      id: '/portal/privacidad'
+      path: '/privacidad'
+      fullPath: '/portal/privacidad'
+      preLoaderRoute: typeof PortalPrivacidadRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/portal/chico/$patientId': {
       id: '/portal/chico/$patientId'
       path: '/chico/$patientId'
       fullPath: '/portal/chico/$patientId'
       preLoaderRoute: typeof PortalChicoPatientIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/informacion/$patientId': {
+      id: '/portal/informacion/$patientId'
+      path: '/informacion/$patientId'
+      fullPath: '/portal/informacion/$patientId'
+      preLoaderRoute: typeof PortalInformacionPatientIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/pedir-turno/$patientId': {
+      id: '/portal/pedir-turno/$patientId'
+      path: '/pedir-turno/$patientId'
+      fullPath: '/portal/pedir-turno/$patientId'
+      preLoaderRoute: typeof PortalPedirTurnoPatientIdRouteImport
       parentRoute: typeof PortalRoute
     }
     '/portal/turno/$appointmentId': {
@@ -331,18 +409,26 @@ declare module '@tanstack/react-router' {
 interface PortalRouteChildren {
   PortalActivarRoute: typeof PortalActivarRoute
   PortalAyudaRoute: typeof PortalAyudaRoute
+  PortalInformacionSaludRoute: typeof PortalInformacionSaludRoute
   PortalIngresarRoute: typeof PortalIngresarRoute
+  PortalPrivacidadRoute: typeof PortalPrivacidadRoute
   PortalIndexRoute: typeof PortalIndexRoute
   PortalChicoPatientIdRoute: typeof PortalChicoPatientIdRoute
+  PortalInformacionPatientIdRoute: typeof PortalInformacionPatientIdRoute
+  PortalPedirTurnoPatientIdRoute: typeof PortalPedirTurnoPatientIdRoute
   PortalTurnoAppointmentIdRoute: typeof PortalTurnoAppointmentIdRoute
 }
 
 const PortalRouteChildren: PortalRouteChildren = {
   PortalActivarRoute: PortalActivarRoute,
   PortalAyudaRoute: PortalAyudaRoute,
+  PortalInformacionSaludRoute: PortalInformacionSaludRoute,
   PortalIngresarRoute: PortalIngresarRoute,
+  PortalPrivacidadRoute: PortalPrivacidadRoute,
   PortalIndexRoute: PortalIndexRoute,
   PortalChicoPatientIdRoute: PortalChicoPatientIdRoute,
+  PortalInformacionPatientIdRoute: PortalInformacionPatientIdRoute,
+  PortalPedirTurnoPatientIdRoute: PortalPedirTurnoPatientIdRoute,
   PortalTurnoAppointmentIdRoute: PortalTurnoAppointmentIdRoute,
 }
 
