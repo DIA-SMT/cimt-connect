@@ -19,6 +19,7 @@ import { PatientHistory } from "./PatientHistory";
 import { GuardiansSection } from "./GuardiansSection";
 import { ClinicalFormsSection } from "./ClinicalFormsSection";
 import { AttachmentsSection } from "./AttachmentsSection";
+import { PortalPatientSection } from "./portal/PortalPatientSection";
 import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { LOCALITY_OPTIONS } from "@/lib/center";
@@ -438,6 +439,8 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 staffEmail={staff.email}
                 onChange={(f) => { setFollowups(f); changed.current = true; }}
               />
+
+              <PortalPatientSection patientId={draft.id} />
 
               <Section icon={CalendarDays} title="Turnos y asistencia">
                 <AttendanceSummary appts={appts} />

@@ -1,13 +1,10 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { CENTER } from "@/lib/center";
-import { TONE_CLASS, apptMeta, card, pillOutline, pillPrimary } from "./styles";
-import {
-  type ApptDTO, type ApptTone, type HcRequestDTO,
-  apptDateLabel, apptStatus, hcStatus, portalApi, shortDayLabel, stampLabel,
-} from "@/lib/portal";
+import { TONE_CLASS, apptMeta, card, inputClass, pillOutline, pillPrimary } from "./styles";
+import { type ApptDTO, type ApptTone, apptDateLabel, apptStatus, portalApi, shortDayLabel } from "@/lib/portal";
 
 // Piezas comunes del Portal de familias. Texto de 16 px como mínimo, botones
 // de 48 px de alto y estados siempre con texto (no solo color).
@@ -36,6 +33,55 @@ export function FormAlert({ children }: { children: React.ReactNode }) {
     <div role="alert" className="flex items-start gap-2 rounded-2xl bg-[color:var(--status-occupied-bg)] px-4 py-3 text-base font-semibold text-[oklch(0.48_0.19_25)]">
       <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
       <span>{children}</span>
+    </div>
+  );
+}
+
+// Lista de puntos de un aviso (privacidad, información de salud)
+export function NoticeList({ points }: { points: readonly string[] }) {
+  return (
+    <ul className="flex flex-col gap-2.5">
+      {points.map((p) => (
+        <li key={p} className="flex gap-2.5 text-base">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+          <span>{p}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Campo de contraseña con "Mostrar / Ocultar" (como en Ingresar)
+export function PasswordField({
+  id, label, value, onChange, autoComplete = "current-password", help, invalid = false, inputRef,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete?: "current-password" | "new-password";
+  help?: React.ReactNode;
+  invalid?: boolean;
+  inputRef?: React.Ref<HTMLInputElement>;
+}) {
+  const [show, setShow] = useState(false);
+  const helpId = `${id}-help`;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-base font-bold">{label}</label>
+      <div className="relative">
+        <input ref={inputRef} id={id} name="password" type={show ? "text" : "password"} autoComplete={autoComplete}
+          value={value} onChange={(e) => onChange(e.target.value)}
+          aria-invalid={invalid || undefined} aria-describedby={help ? helpId : undefined}
+          className={`${inputClass} pr-24`} />
+        <button type="button" onClick={() => setShow((v) => !v)} aria-pressed={show}
+          aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+          className="absolute inset-y-0 right-1 my-auto flex h-11 items-center gap-1 rounded-full px-3 text-sm font-bold text-primary">
+          {show ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+          {show ? "Ocultar" : "Mostrar"}
+        </button>
+      </div>
+      {help && <p id={helpId} className="text-sm text-muted-foreground">{help}</p>}
     </div>
   );
 }
@@ -117,102 +163,6 @@ export function AppointmentCard({
           </Link>
         </div>
       )}
-    </article>
-  );
-}
-
-// Pedido de copia de la historia clínica tal como lo ve la familia: estado
-// (siempre con texto), cómo retirarla y, mientras sigue pendiente, cancelarlo.
-// La copia nunca viaja por el portal: se entrega en mano en el centro.
-// title: de quién es la copia, cuando la tarjeta no está dentro de la página
-// del paciente (por ejemplo, en el inicio).
-export function HcRequestCard({
-  req, title, onChanged,
-}: { req: HcRequestDTO; title?: string; onChanged?: (updated?: HcRequestDTO) => void }) {
-  const navigate = useNavigate();
-  const pathname = useRouterState({ select: (st) => st.location.pathname });
-  const askId = useId();
-  const titleId = useId();
-  const [confirming, setConfirming] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const statusRef = useRef<HTMLDivElement>(null);
-  const askRef = useRef<HTMLParagraphElement>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  // Adónde va el foco después de abrir, cerrar o resolver la confirmación
-  const focusNext = useRef<"status" | "ask" | "button" | null>(null);
-  const status = hcStatus(req);
-  const stamp = stampLabel(req.created_at);
-
-  useEffect(() => {
-    const target = focusNext.current;
-    if (!target) return;
-    focusNext.current = null;
-    (target === "status" ? statusRef : target === "ask" ? askRef : cancelRef).current?.focus();
-  });
-
-  async function cancel() {
-    setSaving(true);
-    setError(null);
-    const r = await portalApi.hcCancel(req.id);
-    setSaving(false);
-    if (!r.ok) {
-      if (r.status === 401) {
-        navigate({ to: "/portal/ingresar", search: { volver: pathname } });
-        return;
-      }
-      setError(r.error);
-      // El pedido ya cambió de estado (por ejemplo, la copia está lista): se actualiza
-      if (r.status === 409) {
-        setConfirming(false);
-        focusNext.current = "status";
-        onChanged?.();
-      }
-      return;
-    }
-    setConfirming(false);
-    focusNext.current = "status";
-    onChanged?.(r.data);
-  }
-
-  return (
-    <article className={`${card} flex flex-col gap-3`}
-      aria-labelledby={title ? titleId : undefined} aria-label={title ? undefined : `Pedido del ${stamp}`}>
-      {title && <h3 id={titleId} className="font-display text-lg font-bold leading-snug">{title}</h3>}
-      <div ref={statusRef} tabIndex={-1} className="flex flex-col gap-2 outline-none">
-        <StatusChip tone={status.tone}>{status.text}</StatusChip>
-        <p className="text-base text-muted-foreground">Pedida el {stamp}</p>
-      </div>
-
-      {req.status === "lista" && (
-        <p className="text-base">
-          Retirala en {CENTER.address} · {CENTER.hoursLong}. <b>Traé tu DNI:</b> se la entregamos a quien la pidió.
-        </p>
-      )}
-      {req.status === "pendiente" && <p className="text-base">Te avisamos acá cuando esté lista.</p>}
-      {req.status === "rechazada" && <p className="text-base">Si tenés dudas, <CallUs />.</p>}
-
-      {req.can_cancel && (confirming ? (
-        <div role="group" aria-labelledby={askId} className="flex flex-col gap-3 rounded-2xl bg-muted p-4">
-          <p id={askId} ref={askRef} tabIndex={-1} className="text-base font-bold outline-none">¿Cancelar el pedido?</p>
-          <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
-            <button type="button" onClick={() => void cancel()} disabled={saving} className={pillPrimary}>
-              {saving ? "Cancelando…" : "Sí, cancelar"}
-            </button>
-            <button type="button" disabled={saving} className={pillOutline}
-              onClick={() => { focusNext.current = "button"; setConfirming(false); }}>
-              No
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button ref={cancelRef} type="button" className={`${pillOutline} min-[420px]:self-start`}
-          onClick={() => { focusNext.current = "ask"; setError(null); setConfirming(true); }}>
-          Cancelar pedido
-        </button>
-      ))}
-
-      <FormAlert>{error}</FormAlert>
     </article>
   );
 }

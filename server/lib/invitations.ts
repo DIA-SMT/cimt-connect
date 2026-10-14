@@ -2,7 +2,7 @@
 // El código nunca se guarda: solo HMAC(PORTAL_CODE_PEPPER, código).
 
 import { normalizeDni } from "../../src/lib/portalRules";
-import { type Ctx, PortalError, eligibility, hmac, selfEligibility } from "./portal";
+import { type Ctx, PortalError, blockedPatients, eligibility, hmac, selfEligibility } from "./portal";
 
 export const INVITATION_MAX_FAILS = 5;
 export const GENERIC_CODE = "El código o el DNI no coinciden, o el código venció. Revisalos o pedí uno nuevo en el centro.";
@@ -79,8 +79,10 @@ export async function validChildren(ctx: Ctx, dni: string, children: InviteChild
       : Promise.resolve({ data: [] as GuardianRow[] }),
     ctx.admin.from("patients").select("id, first_name, last_name, dni, birth_date, discharge_date").in("id", children.map((c) => c.patient_id)),
   ]);
+  const blocked = await blockedPatients(ctx, dni, children.map((c) => ({ patient_id: c.patient_id, guardian_id: c.guardian_id })));
   const out: { child: InviteChild; patient: PatientRow; age: number }[] = [];
   for (const c of children) {
+    if (blocked.has(c.patient_id)) continue; // orden judicial: no se invita
     const p0 = (patients as PatientRow[] | null)?.find((x) => x.id === c.patient_id);
     if (c.self) {
       if (!p0 || normalizeDni(p0.dni ?? "") !== dni) continue;

@@ -158,7 +158,7 @@ export async function clearFailures(ctx: Ctx, dni: string) {
 
 // ── Quién llama ─────────────────────────────────────────────────────────────
 
-function bearer(event: H3Event): string | null {
+export function bearer(event: H3Event): string | null {
   return getRequestHeader(event, "authorization")?.replace(/^Bearer\s+/i, "") || null;
 }
 
@@ -224,6 +224,8 @@ export async function accountLinks(ctx: Ctx, account: Pick<Account, "id" | "dni"
     ctx.admin.from("patients").select("id, first_name, last_name, dni, birth_date, discharge_date").in("id", links.map((l) => l.patient_id)),
   ]);
   if (gErr || pErr) throw new PortalError(503, "No pudimos conectar. Probá de nuevo.");
+  const blocked = await blockedPatients(ctx, account.dni,
+    links.map((l) => ({ patient_id: l.patient_id as string, guardian_id: (l.guardian_id as string | null) ?? null })));
   const today = centerNow().date;
   return links.map((l) => {
     const p = (patients as PatientRow[] | null)?.find((x) => x.id === l.patient_id) ?? null;
@@ -233,9 +235,40 @@ export async function accountLinks(ctx: Ctx, account: Pick<Account, "id" | "dni"
       kind: l.relationship_kind as string, account_dni: account.dni,
       patient: p ? { id: p.id, dni: p.dni ?? null, birth_date: p.birth_date, discharge_date: p.discharge_date } : null,
       guardian: g, adolescent_consent_at: (l.adolescent_consent_at as string | null) ?? null,
+      blocked: blocked.has(l.patient_id as string),
     }, today);
     return { id: l.id as string, patient_id: l.patient_id as string, kind: l.relationship_kind as string, self, patient: p, valid, hc_ok };
   });
+}
+
+// La tabla todavía no existe (script nuevo sin correr): se toma como vacía
+export function missingTable(e: { code?: string; message?: string } | null | undefined): boolean {
+  if (!e) return false;
+  return e.code === "42P01" || e.code === "PGRST205" || /does not exist|schema cache/i.test(e.message ?? "");
+}
+
+// Pacientes para los que esta persona tiene un bloqueo por orden judicial
+// vigente (script 22). Un adulto bloqueado no ve nada de ese paciente, ni los
+// turnos. El bloqueo vale por el DNI con que se cargó y por su fila en la
+// ficha: si después se corrige su DNI, sigue bloqueado.
+export async function blockedPatients(
+  ctx: Ctx, dni: string, pairs: { patient_id: string; guardian_id: string | null }[],
+): Promise<Set<string>> {
+  if (!pairs.length) return new Set();
+  const { data, error } = await ctx.admin.from("portal_guardian_blocks")
+    .select("patient_id, guardian_id, dni").is("lifted_at", null)
+    .in("patient_id", [...new Set(pairs.map((p) => p.patient_id))]);
+  if (error) {
+    if (missingTable(error)) return new Set();
+    throw new PortalError(503, "No pudimos conectar. Probá de nuevo.");
+  }
+  const out = new Set<string>();
+  for (const b of (data ?? []) as { patient_id: string; guardian_id: string | null; dni: string }[]) {
+    for (const p of pairs) {
+      if (p.patient_id === b.patient_id && (b.dni === dni || (!!p.guardian_id && b.guardian_id === p.guardian_id))) out.add(p.patient_id);
+    }
+  }
+  return out;
 }
 
 export async function activeChildren(ctx: Ctx, account: Account): Promise<ActiveChild[]> {

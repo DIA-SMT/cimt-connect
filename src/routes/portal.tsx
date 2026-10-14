@@ -20,7 +20,7 @@ export const Route = createFileRoute("/portal")({
 });
 
 // Pantallas que se ven sin sesión
-const PUBLIC_PATHS = ["/portal/ingresar", "/portal/activar", "/portal/ayuda"];
+const PUBLIC_PATHS = ["/portal/ingresar", "/portal/activar", "/portal/ayuda", "/portal/privacidad"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname === `${p}/`);
@@ -61,7 +61,8 @@ function PortalLayout() {
       <a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground">
         Saltar al contenido
       </a>
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-md">
+      {/* Al imprimir un informe no salen el encabezado ni la barra de abajo */}
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-md print:hidden">
         <div className="mx-auto flex h-16 max-w-2xl items-center justify-between gap-3 px-4">
           <Link to="/portal" className="flex shrink-0 items-center gap-2.5">
             <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-border/40 bg-white shadow-[var(--shadow-card)]">
@@ -125,7 +126,7 @@ function BottomNav({ pathname }: { pathname: string }) {
     { to: "/portal/ayuda", label: "Ayuda", icon: CircleHelp, active: pathname.startsWith("/portal/ayuda") },
   ] as const;
   return (
-    <nav aria-label="Portal" className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
+    <nav aria-label="Portal" className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md print:hidden">
       <div className="mx-auto grid max-w-2xl grid-cols-2">
         {items.map(({ to, label, icon: Icon, active }) => (
           <Link key={to} to={to} aria-current={active ? "page" : undefined}

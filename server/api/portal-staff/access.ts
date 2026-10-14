@@ -1,7 +1,7 @@
 import { defineEventHandler, readBody } from "nitro/h3";
 import { isValidDni, normalizeDni, samePhone } from "../../../src/lib/portalRules";
 import { type GuardianKind, type InviteChild, type Invitation, INVITATION_MAX_FAILS, codeHash, validChildren } from "../../lib/invitations";
-import { type Ctx, PortalError, accountLinks, formatCode, handle, newCode, requireStaff, setup } from "../../lib/portal";
+import { type Ctx, PortalError, accountLinks, blockedPatients, formatCode, handle, newCode, requireStaff, setup } from "../../lib/portal";
 
 // POST /api/portal-staff/access — acciones del equipo sobre el portal.
 // Cualquier persona activa del panel (todos los roles) puede usarlas.
@@ -100,6 +100,8 @@ export default defineEventHandler((event) => handle(event, async () => {
       patient_id: c.id, guardian_id: c.guardian_id, consent: consents.has(c.id),
       kind: body.relationship_kind, authorized_by: authorizedBy,
     }));
+  const blockedKids = await blockedPatients(ctx, dni, requested.map((c) => ({ patient_id: c.patient_id, guardian_id: c.guardian_id })));
+  if (blockedKids.size) throw new PortalError(409, "Ese adulto tiene un bloqueo por orden judicial para alguno de los chicos elegidos: no se lo puede invitar.");
   if ((await validChildren(ctx, dni, requested)).length !== requested.length) {
     throw new PortalError(400, "Algún chico no cumple los requisitos (fecha de nacimiento, menor de 18, sin alta o conformidad a partir de los 16). Revisá las fichas.");
   }
@@ -119,6 +121,8 @@ async function status(ctx: Ctx, body: StatusBody) {
     : await ctx.admin.from("patient_guardians").select("dni").eq("id", body.guardian_id!).maybeSingle();
   const dni = normalizeDni(row?.dni ?? "");
   if (!isValidDni(dni)) return { state: "sin_dni" };
+  const blocked = await blockedPatients(ctx, dni, [{ patient_id: body.patient_id, guardian_id: body.guardian_id ?? null }]);
+  if (blocked.has(body.patient_id)) return { state: "bloqueo_judicial" };
   const { data: acc } = await ctx.admin.from("portal_accounts").select("id, active").eq("dni", dni).maybeSingle();
   if (acc) {
     // Solo cuenta un vínculo que hoy vale (si no, se puede volver a invitar)

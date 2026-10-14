@@ -3,6 +3,8 @@
 // ruta relativa. Las fechas y horas son las del centro (Tucumán), así el
 // servidor, que corre en UTC, calcula igual que el navegador.
 
+import type { StaffApptRequest } from "./apptRequestRules";
+
 export const CENTER_TZ = "America/Argentina/Tucuman";
 
 // "Vamos a ir" se habilita desde N días antes del turno.
@@ -217,14 +219,31 @@ export function canRequestHc(linkKind: string): linkKind is HcLinkKind {
   return (HC_REQUEST_KINDS as readonly string[]).includes(linkKind);
 }
 
-export type HcStatus = "pendiente" | "lista" | "entregada" | "rechazada" | "cancelada";
+// enviada: copia digital (etapa E1) que la familia descarga desde el portal
+export type HcStatus = "pendiente" | "lista" | "entregada" | "rechazada" | "cancelada" | "enviada";
 export const HC_OPEN_STATUSES: readonly HcStatus[] = ["pendiente", "lista"];
 export const HC_REJECT_REASONS = ["no_habilitado", "duplicado", "otro"] as const;
 export type HcRejectReason = (typeof HC_REJECT_REASONS)[number];
 // Pedidos nuevos por cuenta y por día (contra pedidos repetidos por error)
 export const HC_DAILY_MAX = 3;
-// Hasta cuándo la familia sigue viendo un pedido cerrado
+// Hasta cuándo la familia sigue viendo un pedido cerrado (y, si se envió por
+// el portal, hasta cuándo puede descargar la copia)
 export const HC_VISIBLE_DAYS = 60;
+
+// ── Copia digital (etapa E1, interruptor "hc_digital") ──────────────────────
+// La familia elige cómo recibirla. "portal": el equipo imprime la historia de
+// la ficha a PDF, la Dirección la firma digitalmente, el profesional revisa y
+// la sube; la familia la descarga (con la contraseña de los últimos 15
+// minutos). La entrega en mano sigue estando siempre.
+export const HC_CHANNELS = ["mano", "portal"] as const;
+export type HcChannel = (typeof HC_CHANNELS)[number];
+export const HC_DOC_MAX_BYTES = 10 * 1024 * 1024; // por archivo
+export const HC_DOC_MAX_FILES = 5; // por pedido
+// Por qué no se ofrece recibirla en el portal (lo ve la familia)
+export type HcDigitalBlock = "consent" | "verify" | "not_available";
+
+// Un PDF de la copia, tal como lo ve la familia (para descargarlo)
+export type HcDocumentDTO = { id: string; label: string; code: string };
 
 // Lo que la familia ve de un pedido (nunca más que esto)
 export type HcRequestDTO = {
@@ -241,14 +260,29 @@ export type HcRequestDTO = {
   // Si se puede abrir la página del chico (deja de poder, por ejemplo, con
   // el alta cargada; el pedido se sigue viendo igual)
   child_page: boolean;
+  channel: HcChannel; // cómo pidió recibirla
+  sent_at: string | null; // enviada por el portal
+  available_until: string | null; // hasta cuándo se puede descargar (enviada)
+  documents: HcDocumentDTO[]; // solo si está enviada y todavía disponible
 };
 
 export type HcRow = {
   id: string; patient_id: string; status: HcStatus; created_at: string; updated_at: string;
   ready_at: string | null; delivered_at: string | null; reject_reason: HcRejectReason | null;
+  channel?: HcChannel | null; sent_at?: string | null; // sin el script 25: "mano" y null
 };
 
-export function computeHcDto(r: HcRow, child: { display: string; self: boolean; page?: boolean }): HcRequestDTO {
+// Hasta cuándo se puede descargar una copia enviada por el portal
+export function hcAvailableUntil(sentAt: string | null): string | null {
+  return sentAt ? new Date(Date.parse(sentAt) + HC_VISIBLE_DAYS * 24 * 60 * 60 * 1000).toISOString() : null;
+}
+
+// docs: los PDF de una copia enviada (solo se muestran mientras sigue disponible)
+export function computeHcDto(
+  r: HcRow, child: { display: string; self: boolean; page?: boolean }, docs: HcDocumentDTO[] = [], now: Date = new Date(),
+): HcRequestDTO {
+  const until = r.status === "enviada" ? hcAvailableUntil(r.sent_at ?? null) : null;
+  const available = !!until && Date.parse(until) > now.getTime();
   return {
     id: r.id,
     patient_id: r.patient_id,
@@ -261,6 +295,10 @@ export function computeHcDto(r: HcRow, child: { display: string; self: boolean; 
     reject_reason: r.status === "rechazada" ? r.reject_reason : null,
     can_cancel: r.status === "pendiente",
     child_page: child.page ?? true,
+    channel: r.channel ?? "mano",
+    sent_at: r.status === "enviada" ? r.sent_at ?? null : null,
+    available_until: until,
+    documents: available ? docs : [],
   };
 }
 
@@ -271,7 +309,8 @@ export function hcVisible(r: Pick<HcRow, "status" | "created_at" | "updated_at">
 }
 
 // Constancia de cada paso de un pedido (solo la ve el equipo)
-export type HcEventKind = "pedido" | "lista" | "pendiente" | "entregada" | "rechazada" | "cancelada" | "nota";
+export type HcEventKind = "pedido" | "lista" | "pendiente" | "entregada" | "rechazada" | "cancelada" | "nota"
+  | "documento" | "documento_quitado" | "enviada"; // copia digital (E1)
 export type HcEvent = { kind: HcEventKind; by_email: string | null; at: string }; // by_email null: la familia
 
 // ── Bandeja del equipo (panel) ──────────────────────────────────────────────
@@ -302,17 +341,48 @@ export type StaffHcRequest = {
   cancelled_at: string | null;
   staff_notes: string | null;
   events: HcEvent[]; // del más viejo al más nuevo
+  // Copia digital (E1)
+  channel: HcChannel;
+  sent_at: string | null;
+  sent_by_email: string | null;
+  documents: StaffHcDocument[]; // los que no se quitaron
+  // ¿La cuenta que pidió puede recibirla hoy por el portal? (información de
+  // salud activada y vínculo verificado). null: no se puede saber
+  digital_ok: boolean | null;
+  patient_age: number | null; // de 13 a 17 se suma una casilla al enviarla
+};
+
+// Un PDF subido a un pedido de copia (solo lo abren profesionales y Dirección)
+export type StaffHcDocument = {
+  id: string;
+  file_name: string; // nombre original (solo lo ve el equipo)
+  size_bytes: number;
+  sha256: string;
+  code: string; // código de verificación (el mismo que ve la familia)
+  uploaded_by_email: string;
+  uploaded_at: string;
+};
+
+// Al enviar la copia por el portal, el profesional confirma
+export type HcSendAcks = {
+  complete: boolean; // está completa y es de este paciente
+  no_third_parties: boolean; // no tiene datos de otras personas
+  signed: boolean; // cada PDF tiene la firma digital de la Dirección
+  adolescent?: boolean; // 13 a 17: no incluye lo que contó en confianza
 };
 
 export type HcStaffTarget = "pendiente" | "lista" | "entregada" | "rechazada";
 
 // Pasos que el equipo puede dar desde cada estado
+// (Enviar por el portal no es un paso de acá: va por su propia acción, con
+// los PDF y las confirmaciones)
 export const HC_TRANSITIONS: Record<HcStatus, readonly HcStaffTarget[]> = {
   pendiente: ["lista", "entregada", "rechazada"],
   lista: ["entregada", "rechazada", "pendiente"],
   entregada: [],
   rechazada: [],
   cancelada: [],
+  enviada: [],
 };
 
 // Cómo resuelve el equipo un aviso de "no vamos a poder ir"
@@ -351,8 +421,9 @@ export type StaffNotice = {
   resolved_by_email: string | null;
 };
 
-export type StaffInbox = { hc: StaffHcRequest[]; notices: StaffNotice[] };
-export type StaffInboxCount = { hc_pending: number; notices_pending: number };
+// turnos: pedidos de turno (src/lib/apptRequestRules.ts)
+export type StaffInbox = { hc: StaffHcRequest[]; notices: StaffNotice[]; turnos: StaffApptRequest[] };
+export type StaffInboxCount = { hc_pending: number; notices_pending: number; turnos_pending: number };
 
 // ── Vigencia de los vínculos ────────────────────────────────────────────────
 // Una sola regla para el portal (cada cuenta) y para el panel (cada paciente):
@@ -385,12 +456,14 @@ export type LinkValidityInput = {
   patient: (EligibilityPatient & { id: string; dni: string | null }) | null;
   guardian: { patient_id: string; dni: string | null; active: boolean } | null; // fila del adulto en la ficha
   adolescent_consent_at: string | null;
+  blocked?: boolean; // adulto bloqueado por orden judicial para este paciente
 };
 
 // valid: el vínculo da acceso al portal hoy. hc_ok: derecho a pedir la copia
 // del historial, que no se corta con el alta ni por la conformidad del
 // adolescente (solo el propio paciente o su representante legal, menor de edad).
 export function linkValidity(l: LinkValidityInput, today = centerNow().date): { valid: boolean; hc_ok: boolean } {
+  if (l.blocked) return { valid: false, hc_ok: false };
   const p = l.patient;
   if (l.kind === "titular") {
     const same = !!p && normalizeDni(p.dni ?? "") === l.account_dni;

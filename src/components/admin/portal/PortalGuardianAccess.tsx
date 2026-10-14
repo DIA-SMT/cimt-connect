@@ -51,6 +51,7 @@ const CHIP: Record<AccessStatus["state"], { text: (s: AccessStatus) => string; c
   invitado: { text: (s) => `Invitado al portal · vence ${s.state === "invitado" ? shortDate(s.expires_at) : ""}`, cls: "bg-[color:var(--status-pending-bg)] text-[oklch(0.45_0.11_70)]" },
   vencida: { text: () => "Invitación al portal vencida", cls: "bg-muted text-muted-foreground" },
   bloqueada: { text: () => "Invitación bloqueada por intentos", cls: "bg-[color:var(--status-occupied-bg)] text-[oklch(0.48_0.19_25)]" },
+  bloqueo_judicial: { text: () => "Bloqueado por orden judicial", cls: "bg-[color:var(--status-occupied-bg)] text-[oklch(0.48_0.19_25)]" },
   activo: { text: () => "Portal activo", cls: "bg-[color:var(--status-available-bg)] text-[oklch(0.42_0.12_150)]" },
   pausado: { text: () => "Acceso al portal pausado", cls: "bg-muted text-muted-foreground" },
 };
@@ -72,7 +73,7 @@ export function PortalGuardianAccess({ guardian, patientId }: { guardian: Guardi
   const label = status?.state === "invitado" ? "Reenviar invitación"
     : status?.state === "vencida" || status?.state === "bloqueada" ? "Generar una nueva invitación"
     : "Invitar al portal";
-  const canInvite = status?.state !== "activo" && status?.state !== "pausado";
+  const canInvite = status?.state !== "activo" && status?.state !== "pausado" && status?.state !== "bloqueo_judicial";
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -134,7 +135,11 @@ function InvitePortalDialog({ guardian, patientId, hasPending, onClose }: {
           const { data: sp } = await supabase.from("patients").select(cols).eq("id", g.patient_id).single();
           if (!sp) continue;
           const access = (await portalStaffApi.accessStatus({ id: g.id, dni: g.dni }, g.patient_id))?.state ?? null;
-          sibs.push({ ...(sp as PatientLite), guardian_id: g.id, ...eligibility(sp as PatientLite, true), access });
+          const el = eligibility(sp as PatientLite, true);
+          sibs.push({
+            ...(sp as PatientLite), guardian_id: g.id, ...el, access,
+            ...(access === "bloqueo_judicial" ? { problem: "Tiene un bloqueo por orden judicial para este chico" } : {}),
+          });
         }
         sibs = sibs.sort((a, b) => a.first_name.localeCompare(b.first_name));
       }
