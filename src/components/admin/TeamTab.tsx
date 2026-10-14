@@ -421,13 +421,13 @@ function NewUserDialog({ professionals, onClose, onCreated }: {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 rounded-2xl bg-[color:var(--primary-soft)] p-4 text-sm">
-            <div><span className="text-muted-foreground">Ingreso:</span> <strong>{window.location.origin}/admin</strong></div>
+            <div><span className="text-muted-foreground">Ingreso:</span> <strong>{window.location.origin}/ingresar</strong></div>
             <div><span className="text-muted-foreground">Email:</span> <strong>{email.trim()}</strong></div>
             <div><span className="text-muted-foreground">Contraseña inicial:</span> <strong className="font-mono">{password}</strong></div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => {
-              navigator.clipboard?.writeText(`Ingreso: ${window.location.origin}/admin\nEmail: ${email.trim()}\nContraseña inicial: ${password}`);
+              navigator.clipboard?.writeText(`Ingreso: ${window.location.origin}/ingresar\nEmail: ${email.trim()}\nContraseña inicial: ${password}`);
               toast.success("Copiado");
             }}>Copiar</Button>
             <Button onClick={onCreated} className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">Listo</Button>
