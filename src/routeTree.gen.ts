@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as EncuestaRouteImport } from './routes/encuesta'
 import { Route as ExploraRouteImport } from './routes/explora'
 import { Route as FamiliasRouteImport } from './routes/familias'
+import { Route as IngresarRouteImport } from './routes/ingresar'
 import { Route as PortalRouteImport } from './routes/portal'
 import { Route as ProfesionalesRouteImport } from './routes/profesionales'
 import { Route as RinconRouteImport } from './routes/rincon'
@@ -52,6 +53,11 @@ const ExploraRoute = ExploraRouteImport.update({
 const FamiliasRoute = FamiliasRouteImport.update({
   id: '/familias',
   path: '/familias',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IngresarRoute = IngresarRouteImport.update({
+  id: '/ingresar',
+  path: '/ingresar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PortalRoute = PortalRouteImport.update({
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/encuesta': typeof EncuestaRoute
   '/explora': typeof ExploraRoute
   '/familias': typeof FamiliasRoute
+  '/ingresar': typeof IngresarRoute
   '/portal': typeof PortalRouteWithChildren
   '/profesionales': typeof ProfesionalesRoute
   '/rincon': typeof RinconRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByTo {
   '/encuesta': typeof EncuestaRoute
   '/explora': typeof ExploraRoute
   '/familias': typeof FamiliasRoute
+  '/ingresar': typeof IngresarRoute
   '/profesionales': typeof ProfesionalesRoute
   '/rincon': typeof RinconRoute
   '/turnos': typeof TurnosRoute
@@ -176,6 +184,7 @@ export interface FileRoutesById {
   '/encuesta': typeof EncuestaRoute
   '/explora': typeof ExploraRoute
   '/familias': typeof FamiliasRoute
+  '/ingresar': typeof IngresarRoute
   '/portal': typeof PortalRouteWithChildren
   '/profesionales': typeof ProfesionalesRoute
   '/rincon': typeof RinconRoute
@@ -199,6 +208,7 @@ export interface FileRouteTypes {
     | '/encuesta'
     | '/explora'
     | '/familias'
+    | '/ingresar'
     | '/portal'
     | '/profesionales'
     | '/rincon'
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/encuesta'
     | '/explora'
     | '/familias'
+    | '/ingresar'
     | '/profesionales'
     | '/rincon'
     | '/turnos'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/encuesta'
     | '/explora'
     | '/familias'
+    | '/ingresar'
     | '/portal'
     | '/profesionales'
     | '/rincon'
@@ -262,6 +274,7 @@ export interface RootRouteChildren {
   EncuestaRoute: typeof EncuestaRoute
   ExploraRoute: typeof ExploraRoute
   FamiliasRoute: typeof FamiliasRoute
+  IngresarRoute: typeof IngresarRoute
   PortalRoute: typeof PortalRouteWithChildren
   ProfesionalesRoute: typeof ProfesionalesRoute
   RinconRoute: typeof RinconRoute
@@ -303,6 +316,13 @@ declare module '@tanstack/react-router' {
       path: '/familias'
       fullPath: '/familias'
       preLoaderRoute: typeof FamiliasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ingresar': {
+      id: '/ingresar'
+      path: '/ingresar'
+      fullPath: '/ingresar'
+      preLoaderRoute: typeof IngresarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/portal': {
@@ -441,6 +461,7 @@ const rootRouteChildren: RootRouteChildren = {
   EncuestaRoute: EncuestaRoute,
   ExploraRoute: ExploraRoute,
   FamiliasRoute: FamiliasRoute,
+  IngresarRoute: IngresarRoute,
   PortalRoute: PortalRouteWithChildren,
   ProfesionalesRoute: ProfesionalesRoute,
   RinconRoute: RinconRoute,

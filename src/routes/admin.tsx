@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +63,7 @@ type Tab = "agenda" | "solicitudes" | "portal" | "pacientes" | "estadisticas" | 
 
 type AuthState =
   | { kind: "loading" }
-  | { kind: "signed_out" }
+  | { kind: "signed_out"; salir?: boolean }
   | { kind: "forbidden"; email: string }
   | { kind: "admin"; staff: Staff }
   | { kind: "must_change" } // la Dirección le pidió que cambie la contraseña al ingresar
@@ -73,6 +73,7 @@ type AuthState =
 // La protección real está en la base (RLS): esto solo decide qué pantalla mostrar.
 function AdminPage() {
   const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
+  const leaving = useRef(false); // cerró sesión con el botón: se avisa en /ingresar
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +89,7 @@ function AdminPage() {
         return;
       }
       if (!session) {
-        if (!cancelled) setAuth({ kind: "signed_out" });
+        if (!cancelled) setAuth({ kind: "signed_out", salir: leaving.current });
         return;
       }
       const email = session.user?.email ?? "";
@@ -116,8 +117,9 @@ function AdminPage() {
   }, []);
 
   async function signOut() {
+    leaving.current = true;
     await supabase.auth.signOut();
-    setAuth({ kind: "signed_out" });
+    setAuth({ kind: "signed_out", salir: true });
   }
 
   if (auth.kind === "loading") {
@@ -129,104 +131,26 @@ function AdminPage() {
       </Layout>
     );
   }
-  if (auth.kind === "signed_out") return <AdminLogin />;
+  if (auth.kind === "signed_out") return <ToIngresar salir={auth.salir} />;
   if (auth.kind === "recovery") return <SetNewPassword />;
   if (auth.kind === "must_change") return <SetNewPassword forced onSignOut={signOut} />;
   if (auth.kind === "forbidden") return <AdminForbidden email={auth.email} onSignOut={signOut} />;
   return <AdminPanel staff={auth.staff} onSignOut={signOut} />;
 }
 
-function AdminLogin() {
-  const [mode, setMode] = useState<"login" | "forgot" | "sent">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSubmitting(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setSubmitting(false);
-    if (error) toast.error("Email o contraseña incorrectos");
-    // Si sale bien, onAuthStateChange en AdminPage cambia la pantalla
-  }
-
-  async function handleForgot(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSubmitting(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/admin`,
-    });
-    setSubmitting(false);
-    if (error?.status === 429) {
-      toast.error("Ya se pidieron varios emails. Esperá unos minutos antes de pedir otro.");
-      return;
-    }
-    if (error) {
-      toast.error("No se pudo enviar el email. Intentá de nuevo más tarde.");
-      return;
-    }
-    // No se confirma si el email existe o no (evita que se puedan averiguar cuentas)
-    setMode("sent");
-  }
-
-  if (mode === "sent") {
-    return (
-      <AuthCard title="Revisá tu email" subtitle="">
-        <p className="text-center text-sm text-muted-foreground">
-          Si <strong>{email.trim()}</strong> tiene una cuenta, te llegó un email con un link para crear una
-          contraseña nueva. Puede tardar unos minutos; revisá también la carpeta de spam.
-        </p>
-        <Button variant="outline" className="w-full" onClick={() => setMode("login")}>
-          Volver a ingresar
-        </Button>
-      </AuthCard>
-    );
-  }
-
-  if (mode === "forgot") {
-    return (
-      <AuthCard title="Recuperar contraseña" subtitle="Te mandamos un link para crear una nueva" onSubmit={handleForgot}>
-        <div className="space-y-1.5">
-          <Label htmlFor="forgot-email">Email</Label>
-          <Input id="forgot-email" type="email" autoComplete="username" required
-            value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <Button type="submit" disabled={submitting}
-          className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
-          {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Enviar link
-        </Button>
-        <button type="button" onClick={() => setMode("login")}
-          className="block w-full text-center text-sm text-muted-foreground hover:text-foreground">
-          Volver
-        </button>
-      </AuthCard>
-    );
-  }
-
+// Ya no hay un login propio del panel: todos entran por /ingresar (con email
+// van al panel, con DNI al portal). Los links viejos a /admin siguen andando.
+function ToIngresar({ salir }: { salir?: boolean }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate({ to: "/ingresar", search: salir ? { salir: 1 } : {}, replace: true });
+  }, [navigate, salir]);
   return (
-    <AuthCard title="Panel de administración" subtitle="Ingresá con tu cuenta del CIMT" onSubmit={handleSubmit}>
-      <div className="space-y-1.5">
-        <Label htmlFor="admin-email">Email</Label>
-        <Input id="admin-email" type="email" autoComplete="username" required
-          value={email} onChange={(e) => setEmail(e.target.value)} />
+    <Layout plain>
+      <div className="flex justify-center py-32">
+        <Loader2 className="h-7 w-7 animate-spin text-primary" />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="admin-password">Contraseña</Label>
-        <Input id="admin-password" type="password" autoComplete="current-password" required
-          value={password} onChange={(e) => setPassword(e.target.value)} />
-      </div>
-      <Button type="submit" disabled={submitting}
-        className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
-        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Ingresar
-      </Button>
-      <button type="button" onClick={() => setMode("forgot")}
-        className="block w-full text-center text-sm text-muted-foreground hover:text-foreground">
-        ¿Olvidaste tu contraseña?
-      </button>
-    </AuthCard>
+    </Layout>
   );
 }
 
