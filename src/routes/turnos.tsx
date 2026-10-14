@@ -37,6 +37,9 @@ const schema = z.object({
   phone: z.string().trim().min(6, "Teléfono requerido").max(25),
   email: z.string().trim().email("Email inválido").max(120).optional().or(z.literal("")),
   locality: z.string().trim().min(2, "Indicá la localidad").max(80),
+  // Calle y número (o "s/n"): el centro lo necesita para la ficha y para ubicar a la familia
+  address: z.string().trim().min(5, "Indicá el domicilio: calle y número").max(150)
+    .refine((v) => /\d/.test(v) || /(^|[^a-z])s\s*\/\s*n([^a-z]|$)/i.test(v), "Indicá el número de la calle (o «s/n» si no tiene)"),
   preferred_modality: z.enum(["presencial", "telemedicina"]),
   referred_by: z.string().trim().max(120),
   reason: z.string().trim().min(5, "Contanos brevemente el motivo").max(800),
@@ -60,7 +63,7 @@ function TurnosPage() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const raw = Object.fromEntries(
-      ["first_name", "last_name", "dni", "age", "patient_type", "guardian_name", "phone", "email", "locality",
+      ["first_name", "last_name", "dni", "age", "patient_type", "guardian_name", "phone", "email", "locality", "address",
         "preferred_modality", "referred_by", "reason"].map((k) => [k, String(fd.get(k) ?? "")]),
     );
     const parsed = schema.safeParse(raw);
@@ -80,6 +83,7 @@ function TurnosPage() {
       p_email: d.email || null,
       p_guardian_name: d.patient_type === "adulto" ? null : d.guardian_name,
       p_locality: d.locality,
+      p_address: d.address,
       p_preferred_modality: d.preferred_modality,
       p_referred_by: d.referred_by || null,
       p_reason: d.reason,
@@ -166,6 +170,12 @@ function TurnosPage() {
                   <datalist id="locality-options">
                     {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
                   </datalist>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="address">Domicilio<span className="text-destructive"> *</span></Label>
+                  <Input id="address" name="address" required maxLength={150} autoComplete="street-address"
+                    placeholder="Calle y número. Ej: Av. Sarmiento 1250, Barrio Norte" />
+                  <p className="text-xs text-muted-foreground">Si la calle no tiene número, escribí «s/n» y alguna referencia.</p>
                 </div>
               </div>
 

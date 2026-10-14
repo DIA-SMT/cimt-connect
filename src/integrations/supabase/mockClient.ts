@@ -576,7 +576,7 @@ function rpc(fn: string, args: Row = {}) {
     const row: Row = {
       id: `req-${Date.now()}`, first_name: args.p_first_name, last_name: args.p_last_name, dni: args.p_dni,
       age: Number(args.p_age), patient_type: args.p_patient_type, phone: args.p_phone, email: args.p_email ?? null,
-      guardian_name: args.p_guardian_name ?? null, locality: args.p_locality ?? null,
+      guardian_name: args.p_guardian_name ?? null, locality: args.p_locality ?? null, address: args.p_address ?? null,
       preferred_modality: args.p_preferred_modality ?? "presencial", referred_by: args.p_referred_by ?? null,
       reason: args.p_reason, status: "nueva", workshop_id: null, workshop_attended: null, patient_id: null,
       notes: null, created_at: nowIso, updated_at: nowIso,

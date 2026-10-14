@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import {
   MapPin, Clock, Phone, Mail, CalendarCheck, Stethoscope,
-  HeartHandshake, Users, ShieldCheck, Sparkles, ArrowRight,
+  HeartHandshake, Users, Sparkles, ArrowRight,
   Info, AlertCircle, Baby, Activity, CheckCircle2, Scale,
 } from "lucide-react";
 import heroImg from "@/assets/hero.jpg";
@@ -95,7 +95,7 @@ function Index() {
             <div className="mt-8 flex flex-col gap-3 sm:max-w-md">
               <InfoChip icon={MapPin} title={CENTER.address} subtitle={CENTER.city} />
               <InfoChip icon={Clock} title="Lun a Vie" subtitle={CENTER.hoursShort} />
-              <InfoChip icon={ShieldCheck} title="Gratuito" subtitle="Equipo interdisciplinario" />
+              <InfoChip icon={Phone} title={CENTER.phoneDisplay} subtitle={CENTER.phoneNote} href={CENTER.phoneHref} />
             </div>
           </div>
 
@@ -311,9 +311,9 @@ function Index() {
   );
 }
 
-function InfoChip({ icon: Icon, title, subtitle }: { icon: typeof MapPin; title: string; subtitle: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-background/80 px-4 py-3 backdrop-blur">
+function InfoChip({ icon: Icon, title, subtitle, href }: { icon: typeof MapPin; title: string; subtitle: string; href?: string }) {
+  const content = (
+    <>
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
         <Icon className="h-4 w-4" />
       </div>
@@ -321,7 +321,14 @@ function InfoChip({ icon: Icon, title, subtitle }: { icon: typeof MapPin; title:
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <div className="text-xs text-muted-foreground">{subtitle}</div>
       </div>
-    </div>
+    </>
+  );
+  const box = "flex items-center gap-3 rounded-2xl border border-border/60 bg-background/80 px-4 py-3 backdrop-blur";
+  // Con href (el teléfono) se puede tocar para llamar desde el celular
+  return href ? (
+    <a href={href} className={`${box} transition-colors hover:border-primary/40 hover:bg-[color:var(--primary-soft)]`}>{content}</a>
+  ) : (
+    <div className={box}>{content}</div>
   );
 }
 

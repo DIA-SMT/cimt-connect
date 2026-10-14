@@ -168,6 +168,7 @@ export type Database = {
           guardian_name: string | null
           id: string
           last_name: string
+          address: string | null
           locality: string | null
           notes: string | null
           patient_id: string | null
@@ -190,6 +191,7 @@ export type Database = {
           guardian_name?: string | null
           id?: string
           last_name: string
+          address?: string | null
           locality?: string | null
           notes?: string | null
           patient_id?: string | null
@@ -212,6 +214,7 @@ export type Database = {
           guardian_name?: string | null
           id?: string
           last_name?: string
+          address?: string | null
           locality?: string | null
           notes?: string | null
           patient_id?: string | null
@@ -850,6 +853,7 @@ export type Database = {
           p_preferred_modality: string
           p_referred_by: string | null
           p_reason: string
+          p_address?: string | null
         }
         Returns: string
       }
