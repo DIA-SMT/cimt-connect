@@ -19,7 +19,7 @@ import { staffHcList, staffHcNotes, staffHcPendingCount, staffHcUpdate, staffNot
 //   { action: "notice_resolve", response_id, how }
 //
 // Copia digital de la historia clínica (etapa "hc_digital"; apagada o sin el
-// script 24: 404):
+// script 25: 404):
 //   { action: "hc_doc_upload_url", request_id, file_name, size_bytes } → { path, token }
 //       enlace para subir el PDF al bucket privado (el panel lo sube con uploadToSignedUrl)
 //   { action: "hc_doc_register", request_id, path, file_name } → StaffHcRequest

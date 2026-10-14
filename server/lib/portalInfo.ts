@@ -236,7 +236,7 @@ async function checkCanPublish(ctx: Ctx, patientId: string, body: Record<string,
 }
 
 // Retira la versión vigente (si hay) y guarda la nueva, en un solo paso
-// (función portal_publish del script 22). expected_id: la versión vigente que
+// (función portal_publish del script 23). expected_id: la versión vigente que
 // el profesional tenía en pantalla; si cambió, no se pisa.
 async function publishVersion(ctx: Ctx, staff: Staff, expected: unknown, row: {
   patient_id: string; kind: "resumen" | "informe"; title: string; body: SummaryBody | ReportBody;

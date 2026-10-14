@@ -38,7 +38,7 @@ export async function logEvent(ctx: Ctx, requestId: string, kind: HcEventKind, b
 
 // ── Copia digital (E1): columnas, PDF y quién puede recibirla ───────────────
 // Las columnas channel, sent_at y sent_by_email (y la tabla de PDF y el
-// bucket) las crea el script 24. Se leen siempre que existan, aunque la etapa
+// bucket) las crea el script 25. Se leen siempre que existan, aunque la etapa
 // esté apagada: un pedido que ya se envió por el portal sigue mostrando cómo
 // y cuándo se envió. Los PDF, la descarga y los pedidos nuevos "en el portal"
 // van solo con la etapa prendida y el script corrido (digitalReady). Sin el
@@ -93,7 +93,7 @@ async function staffDocs(ctx: Ctx, requestIds: string[]): Promise<Map<string, St
 // rechazada o cancelada por la familia), los PDF que no se enviaron se marcan
 // como quitados y se borran del bucket, junto con las subidas que no llegaron
 // a registrarse. Si algo falla no se frena el cierre: queda en el log del
-// servidor. Sin el script 24 no hay nada que quitar.
+// servidor. Sin el script 25 no hay nada que quitar.
 export async function discardDrafts(ctx: Ctx, requestId: string, byEmail: string) {
   const { data, error } = await ctx.admin.from("portal_hc_documents")
     .update({ removed_at: new Date().toISOString(), removed_by_email: byEmail })
@@ -174,7 +174,7 @@ type LinkChecks = Map<string, { verified: boolean; parental: boolean }>;
 // Lo lee el equipo cuando el portal del paciente está en pausa
 export const HC_DIGITAL_PAUSED_STAFF = "El portal de este paciente está en pausa: entregala en mano.";
 
-// Configuración del portal de cada paciente (script 21). Para la copia
+// Configuración del portal de cada paciente (script 22). Para la copia
 // digital solo cuenta la pausa. Sin la tabla, ningún paciente está en pausa.
 const GATE_SETTINGS_COLS = "patient_id, info_enabled, practice_enabled, paused_at, adolescent_agreed_on, adolescent_withdrawn_on";
 
@@ -373,7 +373,7 @@ export async function createHcRequest(
     link_kind: child.kind,
     requester_name: `${account.first_name} ${account.last_name}`.trim(),
     requester_dni: account.dni,
-    // "mano" es el valor por defecto de la columna (y, sin el script 24, no hay columna)
+    // "mano" es el valor por defecto de la columna (y, sin el script 25, no hay columna)
     ...(channel === "portal" ? { channel } : {}),
   }).select(cols).single();
   if (error?.code === "23505") {
@@ -417,7 +417,7 @@ const HC_STAFF_COLS = "id, patient_id, account_id, link_kind, requester_name, re
 
 const staffCols = async (ctx: Ctx) => ((await e1Columns(ctx)) ? HC_STAFF_COLS + E1_STAFF_COLS : HC_STAFF_COLS);
 
-// Columnas de la copia digital: sin el script 24 no vienen (se toma "mano")
+// Columnas de la copia digital: sin el script 25 no vienen (se toma "mano")
 type E1Fields = "channel" | "sent_at" | "sent_by_email" | "documents" | "digital_ok" | "patient_age";
 export type HcStaffRow = Omit<StaffHcRequest, "patient_name" | "patient_dni" | "still_allowed" | "events" | E1Fields> & {
   account_id: string | null; updated_at: string;

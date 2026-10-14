@@ -7,7 +7,7 @@
 // enlaza), avisa que la va a llamar o lo rechaza con un motivo. El portal
 // solo muestra el estado. Reglas puras en src/lib/apptRequestRules.ts.
 //
-// Si todavía no se corrió el script 23, las lecturas dan listas vacías (el
+// Si todavía no se corrió el script 24, las lecturas dan listas vacías (el
 // portal y la bandeja siguen andando) y pedir un turno avisa que todavía no
 // se puede.
 
@@ -70,7 +70,7 @@ async function linkedSlots(ctx: Ctx, rows: { id: string; patient_id: string; app
 const FAMILY_COLS = "id, patient_id, account_id, status, reason, days, band, modality, note, reject_reason, appointment_id, created_at, updated_at";
 type FamilyRow = ApptRequestRow & { appointment_id: string | null };
 
-// ¿Ya existe la tabla de pedidos de turno (script 23)? Para una cuenta sin
+// ¿Ya existe la tabla de pedidos de turno (script 24)? Para una cuenta sin
 // personas, que no llega a leerla. Una consulta común de una fila: un conteo
 // (head) no sirve, porque sin la tabla no da error (la respuesta no trae cuerpo).
 async function apptRequestsReady(ctx: Ctx): Promise<boolean> {
@@ -83,7 +83,7 @@ async function apptRequestsReady(ctx: Ctx): Promise<boolean> {
 // Pedidos de turno de estas personas, los haya hecho el adulto que sea (la
 // familia ve uno solo por persona): abiertos y cerrados recientes, los más
 // nuevos primero. El comentario solo lo ve quien lo escribió.
-// null: la tabla todavía no existe (falta el script 23), también sin personas.
+// null: la tabla todavía no existe (falta el script 24), también sin personas.
 export async function apptRequestsFor(
   ctx: Ctx, account: Account, children: ActiveChild[], onlyPatientId?: string,
 ): Promise<ApptRequestDTO[] | null> {
@@ -192,7 +192,7 @@ type EventRow = { request_id: string; kind: ApptReqEventKind; by_email: string |
 
 const digits = (phone: string | null | undefined) => String(phone ?? "").replace(/\D/g, "");
 
-// Bloqueos por orden judicial vigentes de estas personas (script 21; sin la
+// Bloqueos por orden judicial vigentes de estas personas (script 22; sin la
 // tabla, ninguno)
 async function liveBlocks(ctx: Ctx, patientIds: string[]): Promise<BlockRow[]> {
   const { data, error } = await ctx.admin.from("portal_guardian_blocks")
@@ -512,7 +512,7 @@ function withBlockNote(prev: string | null): string {
 // en la ficha): rechazados con motivo "bloqueo" y la constancia en las notas.
 // No hay que contactarlo ni darle el día y la hora, y mientras el bloqueo siga
 // vigente el equipo no los puede reabrir (staffApptUpdate). Sin la tabla (falta
-// el script 23) no hay nada que cerrar. false: no se pudo cerrar alguno (la
+// el script 24) no hay nada que cerrar. false: no se pudo cerrar alguno (la
 // constancia en el historial no frena: si falla, queda en el log).
 export async function closeApptRequestsOnBlock(ctx: Ctx, staffEmail: string, patientId: string, accountIds: string[]): Promise<boolean> {
   if (!accountIds.length) return true;

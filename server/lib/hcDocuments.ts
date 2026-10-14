@@ -8,7 +8,7 @@
 // descarga, durante 60 días, con la contraseña confirmada en los últimos 15
 // minutos y con la información de salud activada.
 //
-// Los archivos viven en el bucket privado "portal-documents" (script 24), sin
+// Los archivos viven en el bucket privado "portal-documents" (script 25), sin
 // policies: solo este servidor los toca (service role key) y los abre con
 // enlaces que vencen en 60 segundos. Cada apertura queda en
 // portal_access_log. Los PDF no se modifican: un sello rompería la firma.
@@ -37,7 +37,7 @@ const OFFLINE = "No pudimos conectar. Probá de nuevo.";
 const GONE = "Ese PDF ya no está. Actualizá la bandeja.";
 const isUuid = (s: unknown): s is string => typeof s === "string" && /^[0-9a-f-]{36}$/i.test(s);
 
-// Con la etapa apagada (o sin el script 24) nada de esto existe (mismo 404
+// Con la etapa apagada (o sin el script 25) nada de esto existe (mismo 404
 // que cualquier ruta)
 async function requireDigital(ctx: Ctx) {
   if (!(await digitalReady(ctx))) throw new PortalError(404, "No disponible.");

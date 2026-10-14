@@ -12,7 +12,7 @@ import { hcRequestsFor } from "../../lib/requests";
 // clinical (y children[].clinical) solo viajan con la etapa "consent" prendida;
 // children[].clinical.info_new (lo nuevo en "Mi información"), con la etapa "info".
 // clinical.features nombra "hc_digital" solo si la copia digital está
-// disponible de verdad (con el script 24 corrido): familyClinical lo averigua.
+// disponible de verdad (con el script 25 corrido): familyClinical lo averigua.
 export default defineEventHandler((event) => handle(event, async () => {
   const ctx = setup();
   const account = await requireFamily(ctx, event);

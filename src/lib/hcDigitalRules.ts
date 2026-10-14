@@ -11,7 +11,7 @@
 import { ADOLESCENT_FROM, ADULT_FROM } from "./portalClinicalRules";
 import { HC_DOC_MAX_BYTES, type HcRow, type HcSendAcks, centerDateOf, hcAvailableUntil } from "./portalRules";
 
-// Bucket privado de Storage (script 24). Solo lo toca el servidor.
+// Bucket privado de Storage (script 25). Solo lo toca el servidor.
 export const HC_BUCKET = "portal-documents";
 export const HC_DOC_NAME_MAX = 200;
 // Los enlaces para abrir o descargar un PDF vencen enseguida

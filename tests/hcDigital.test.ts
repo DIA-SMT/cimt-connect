@@ -2,7 +2,7 @@
 // familia de un pedido enviado por el portal, las reglas puras de los PDF
 // (src/lib/hcDigitalRules.ts) y el servidor (server/lib/requests.ts y
 // hcDocuments.ts) contra una base de prueba en memoria: la pausa del
-// paciente, el script 24 sin correr, los archivos sueltos, los cambios y los
+// paciente, el script 25 sin correr, los archivos sueltos, los cambios y los
 // cortes mientras se sube un PDF, el envío con la lista de PDF revisados y
 // las etapas que se informan (portalClinical.ts). Correr con: bun test
 import { createHash, randomUUID } from "node:crypto";
@@ -46,7 +46,7 @@ const docId = "33333333-3333-4333-8333-333333333333";
 const docs: HcDocumentDTO[] = [{ id: docId, label: "Historia clínica", code: verificationCode(docId) }];
 
 describe("pedido de copia: canal y copia enviada", () => {
-  test("sin el script 24 (sin channel ni sent_at) es en mano y sin descarga", () => {
+  test("sin el script 25 (sin channel ni sent_at) es en mano y sin descarga", () => {
     const dto = computeHcDto(base, child);
     expect(dto.channel).toBe("mano");
     expect(dto.sent_at).toBeNull();
@@ -576,7 +576,7 @@ describe("servidor: portal del paciente en pausa", () => {
     expect(row.digital_ok).toBe(true);
   });
 
-  test("sin la tabla de configuración (script 21 sin correr) no hay pausa", async () => {
+  test("sin la tabla de configuración (script 22 sin correr) no hay pausa", async () => {
     const db = seed({ paused: true });
     db.missingTables.add("patient_portal_settings");
     expect(await hcDigitalOffer(fakeCtx(db), ACCOUNT, CHILD)).toEqual({ offered: true, blocked: null });
@@ -603,7 +603,7 @@ describe("servidor: falta verificar el vínculo", () => {
   });
 });
 
-describe("servidor: script 24 (columnas de la copia digital)", () => {
+describe("servidor: script 25 (columnas de la copia digital)", () => {
   beforeEach(featuresOn);
 
   test("con la etapa prendida y sin el script, la copia digital queda apagada y los pedidos siguen como antes", async () => {
@@ -993,7 +993,7 @@ describe("servidor: etapas que se informan al portal y al panel", () => {
     expect(await effectiveFeatures(ctx)).toEqual(["consent", "hc_digital"]);
   });
 
-  test("sin el script 24 no se nombra hc_digital (aunque esté prendida)", async () => {
+  test("sin el script 25 no se nombra hc_digital (aunque esté prendida)", async () => {
     const ctx = fakeCtx(seed({ noE1: true }));
     const out = await familyClinical(ctx, ACCOUNT);
     expect(out.features).toEqual(["consent"]);

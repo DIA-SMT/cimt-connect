@@ -11,7 +11,7 @@ import { hcDigitalOffer, hcRequestsFor } from "../../lib/requests";
 // info_on: el servidor tiene prendida "Mi información" (etapa "info"); si no,
 // la página de información no la pide y muestra solo la copia del historial.
 // Un chico ajeno da el mismo 404 que uno que no existe.
-// hc.digital (etapa "hc_digital", con el script 24 corrido): offered = se
+// hc.digital (etapa "hc_digital", con el script 25 corrido): offered = se
 // ofrece recibir la copia en el portal; blocked = por qué esta cuenta todavía
 // no puede ("consent": activar la información de salud, "verify": verificar
 // el vínculo en el centro, "not_available": no corresponde, por ejemplo con
@@ -38,7 +38,7 @@ export default defineEventHandler((event) => handle(event, async () => {
     // Copia de la historia clínica: si esta cuenta puede pedirla y sus pedidos
     hc: { can_request: canRequestHc(child.kind), requests, digital },
     // Pedidos de turno de esta persona (de cualquier adulto de la familia).
-    // enabled: el servidor tiene los pedidos de turno (null: falta el script 23)
+    // enabled: el servidor tiene los pedidos de turno (null: falta el script 24)
     // · can_request: se puede pedir uno ahora (no hay otro abierto)
     turnos: { enabled: turnos !== null, can_request: canRequestAppt(turnos, child.patient_id), requests: turnos ?? [] },
   };

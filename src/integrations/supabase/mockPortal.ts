@@ -163,7 +163,7 @@ type Link = {
   adolescent_consent_at: string | null;
   verified_in_person_on: string | null; verified_by_email: string | null; parental_checked_on: string | null;
 };
-// Información de salud (tablas del script 21)
+// Información de salud (tablas del script 22)
 type Settings = PortalSettings & {
   patient_id: string; pause_reason: "indicacion_profesional" | "judicial" | null;
   adolescent_agreed_by_email: string | null; updated_by_email: string | null; updated_at: string | null;
@@ -183,7 +183,7 @@ type AccessLog = {
   id: string; patient_id: string; account_id: string | null; staff_email: string | null;
   action: "ver_informacion" | "ver_publicacion" | "descargar" | "equipo_abrir_documento"; target_id: string | null; at: string;
 };
-// "Mi información" (tabla portal_publications del script 22). Lo publicado no
+// "Mi información" (tabla portal_publications del script 23). Lo publicado no
 // se edita: se retira (con motivo) y se publica una versión nueva
 type Publication = {
   id: string; patient_id: string; kind: "resumen" | "informe"; title: string; body: SummaryBody | ReportBody;
@@ -216,7 +216,7 @@ type HcRequest = Omit<StaffHcRequest,
   "patient_name" | "patient_dni" | "still_allowed" | "documents" | "digital_ok" | "patient_age"> & {
   account_id: string | null; updated_at: string; sent_acks: HcSendAcks | null;
 };
-// PDF de una copia digital (tabla portal_hc_documents del script 24). Los
+// PDF de una copia digital (tabla portal_hc_documents del script 25). Los
 // bytes no se guardan acá (ver docFiles). published_at: cuándo se envió a la
 // familia (hasta entonces se puede quitar). demo_pdf: el PDF de prueba de la
 // copia sembrada, que se arma en el código (demoPdfText)
@@ -226,7 +226,7 @@ type HcDocument = {
   removed_at: string | null; removed_by_email: string | null;
   demo_pdf?: boolean;
 };
-// Pedido de turno (tabla portal_appt_requests del script 23): la familia pide,
+// Pedido de turno (tabla portal_appt_requests del script 24): la familia pide,
 // el equipo agenda. Como el de copia, sus constancias van en events y
 // updated_at cambia con cada cambio de estado, no con las notas.
 // appointment_id: el turno de la agenda que se enlazó al agendarlo
@@ -278,7 +278,7 @@ const hcDigitalOn = () => FEATURES.includes("hc_digital") && FEATURES.includes("
 
 // Las etapas que ven la familia y el panel: "hc_digital" solo aparece si la
 // copia digital vale (con "consent" también prendida), como digitalReady en
-// el servidor (el mock no tiene columnas del script 24 que mirar)
+// el servidor (el mock no tiene columnas del script 25 que mirar)
 const shownFeatures = (): ClinicalFeature[] => FEATURES.filter((f) => f !== "hc_digital" || hcDigitalOn());
 
 // Modalidades de la ficha tal como las lee la familia (como en server/lib/portalInfo.ts)
@@ -1212,7 +1212,7 @@ export async function me(): Promise<ApiResult<MeDTO>> {
   return ok({
     guardian_first_name: acc.first_name, week, children, requests: hcRequestsFor(db, acc.id),
     appt_requests: await apptRequestsFor(db, acc.id, ids),
-    // El mock siempre tiene los pedidos de turno (en el servidor, si ya se corrió el script 23)
+    // El mock siempre tiene los pedidos de turno (en el servidor, si ya se corrió el script 24)
     can_request_appts: true,
     ...(clinical ? { clinical } : {}),
   });
@@ -3334,7 +3334,7 @@ function reviewNote(texts: string[], body: Record<string, unknown>): ApiResult<s
 }
 
 // Retira la versión vigente (si hay) y guarda la nueva en un solo paso, como
-// la función portal_publish del script 22. expected: la versión vigente que el
+// la función portal_publish del script 23. expected: la versión vigente que el
 // profesional tenía en pantalla; si cambió, no se pisa. Devuelve el id nuevo.
 async function publishVersion(staff: Staff, expected: unknown, row: Pick<Publication,
   "patient_id" | "kind" | "title" | "body" | "source_report_id" | "includes_diagnosis" | "adolescent_ack" | "review_note">,

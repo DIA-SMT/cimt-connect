@@ -1,7 +1,7 @@
 -- ============================================================
 -- CIMT Connect — Portal: "Mi información" (etapa C)
 -- Correlo en Supabase → SQL Editor → New query → Run
--- Requiere haber corrido antes el script 21.
+-- Requiere haber corrido antes el script 22.
 -- Es idempotente: se puede correr varias veces.
 --
 -- Qué hace (solo agrega; no modifica datos existentes):

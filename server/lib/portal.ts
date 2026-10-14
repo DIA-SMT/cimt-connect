@@ -248,7 +248,7 @@ export function missingTable(e: { code?: string; message?: string } | null | und
 }
 
 // Pacientes para los que esta persona tiene un bloqueo por orden judicial
-// vigente (script 21). Un adulto bloqueado no ve nada de ese paciente, ni los
+// vigente (script 22). Un adulto bloqueado no ve nada de ese paciente, ni los
 // turnos. El bloqueo vale por el DNI con que se cargó y por su fila en la
 // ficha: si después se corrige su DNI, sigue bloqueado.
 export async function blockedPatients(

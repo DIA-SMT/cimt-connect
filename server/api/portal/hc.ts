@@ -7,7 +7,7 @@ import { cancelHcRequest, createHcRequest } from "../../lib/requests";
 //   { action: "create", patient_id, channel? } → HcRequestDTO
 //   { action: "cancel", id }                   → HcRequestDTO (solo si sigue pendiente)
 // channel: "mano" (por defecto: se entrega en el centro; se puede siempre) o
-// "portal" (copia digital, etapa "hc_digital" con el script 24; si la cuenta
+// "portal" (copia digital, etapa "hc_digital" con el script 25; si la cuenta
 // todavía no puede recibirla o el portal del paciente está en pausa, 409 code
 // DIGITAL_BLOCKED con el texto para la familia). Acá solo viaja el pedido:
 // los PDF se descargan aparte (/api/portal/document).

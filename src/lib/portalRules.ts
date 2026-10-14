@@ -269,7 +269,7 @@ export type HcRequestDTO = {
 export type HcRow = {
   id: string; patient_id: string; status: HcStatus; created_at: string; updated_at: string;
   ready_at: string | null; delivered_at: string | null; reject_reason: HcRejectReason | null;
-  channel?: HcChannel | null; sent_at?: string | null; // sin el script 24: "mano" y null
+  channel?: HcChannel | null; sent_at?: string | null; // sin el script 25: "mano" y null
 };
 
 // Hasta cuándo se puede descargar una copia enviada por el portal

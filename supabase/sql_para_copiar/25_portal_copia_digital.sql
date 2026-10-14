@@ -1,7 +1,7 @@
 -- ============================================================
 -- CIMT Connect — Portal: copia digital de la historia clínica (etapa E1)
 -- Correlo en Supabase → SQL Editor → New query → Run
--- Requiere haber corrido antes los scripts 20 y 21.
+-- Requiere haber corrido antes los scripts 20 y 22.
 -- Es idempotente: se puede correr varias veces.
 --
 -- Qué hace (solo agrega; no borra datos):

@@ -17,11 +17,11 @@
 --     invitaciones, respuestas a turnos, intentos de ingreso, pedidos de
 --     copia de la historia clínica y su constancia (requiere el script 20).
 --     Y, si se corrieron sus scripts: configuración, consentimientos,
---     bloqueos y accesos de la información de salud (script 21), lo
---     publicado en «Mi información» (script 22), pedidos de turno y su
---     constancia (script 23) y el registro de los PDF de la copia digital
---     de la historia clínica (script 24). Las tablas de un script opcional
---     (21, 22, 23 o 24) que todavía no se corrió se saltean: el script
+--     bloqueos y accesos de la información de salud (script 22), lo
+--     publicado en «Mi información» (script 23), pedidos de turno y su
+--     constancia (script 24) y el registro de los PDF de la copia digital
+--     de la historia clínica (script 25). Las tablas de un script opcional
+--     (22, 23, 24 o 25) que todavía no se corrió se saltean: el script
 --     funciona igual.
 --   · Encuestas de satisfacción, historial de cambios, límites del chat.
 --   · Reinicia la numeración de prácticas (vuelve a empezar en 000001).
@@ -40,7 +40,7 @@
 --      de nuevo: ahí sí borra. Al final todo tiene que dar 0 (o vacío).
 --   3. A mano, en Supabase → Storage, en los buckets patient-files y
 --      portal-documents (los PDF de la copia digital, si se corrió el
---      script 24): seleccioná todo y borrá (Supabase no permite borrar
+--      script 25): seleccioná todo y borrá (Supabase no permite borrar
 --      archivos desde SQL).
 --   4. En el panel → Equipo: desactivá los usuarios de prueba y revisá los
 --      profesionales de prueba (se desactivan, no se borran).
@@ -53,10 +53,10 @@ DECLARE
   -- Tablas de los scripts opcionales: se borran solo si existen
   opcionales text[] := ARRAY[
     'portal_access_log', 'portal_step_up', 'portal_consents',
-    'portal_guardian_blocks', 'patient_portal_settings',   -- script 21
-    'portal_publications',                                 -- script 22
-    'portal_appt_request_events', 'portal_appt_requests',  -- script 23
-    'portal_hc_documents'                                  -- script 24
+    'portal_guardian_blocks', 'patient_portal_settings',   -- script 22
+    'portal_publications',                                 -- script 23
+    'portal_appt_request_events', 'portal_appt_requests',  -- script 24
+    'portal_hc_documents'                                  -- script 25
   ];
   -- Tablas que están siempre (hasta el script 20)
   tablas text[] := ARRAY[

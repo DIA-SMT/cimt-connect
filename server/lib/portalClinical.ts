@@ -9,10 +9,10 @@
 //
 // Variables de entorno:
 //   PORTAL_CLINICAL_FEATURES  etapas prendidas, separadas por coma (vacío = ninguna;
-//                             "hc_digital" necesita también "consent"; sin el script 24
+//                             "hc_digital" necesita también "consent"; sin el script 25
 //                             queda apagada sola y no se informa: effectiveFeatures)
 //   PORTAL_REAUTH_INFO_HOURS, PORTAL_REAUTH_DOWNLOAD_MIN  (12 y 15 por defecto)
-// Antes de prender cualquier etapa hay que correr el script 21.
+// Antes de prender cualquier etapa hay que correr el script 22.
 
 import {
   type ChildClinicalDTO, type ClinicalArea, type ClinicalFeature, type FamilyClinicalDTO, type PortalSettings,
@@ -33,7 +33,7 @@ export function features(): ClinicalFeature[] {
 
 // Copia digital de la historia clínica (etapa E1): vale solo junto con
 // "consent" (la cuenta tiene que haber activado la información de salud).
-// Además necesita el script 24: el servidor mira si ya están sus columnas
+// Además necesita el script 25: el servidor mira si ya están sus columnas
 // (digitalReady) y, mientras no estén, la copia digital queda apagada aunque
 // la etapa esté prendida; los pedidos de copia siguen funcionando como antes
 // (en mano). Con la etapa apagada, lo que ya se envió por el portal se sigue
@@ -43,7 +43,7 @@ export function digitalOn(): boolean {
   return f.includes("hc_digital") && f.includes("consent");
 }
 
-// ¿Ya se corrió el script 24 (columnas channel, sent_at y sent_by_email de
+// ¿Ya se corrió el script 25 (columnas channel, sent_at y sent_by_email de
 // los pedidos, la tabla de PDF y el bucket)? Se pregunta una vez por proceso
 // del servidor. Si todavía no estaba, se vuelve a preguntar cada 5 minutos:
 // después de correrlo no hace falta reiniciar.
@@ -68,13 +68,13 @@ export function e1Columns(ctx: Ctx): Promise<boolean> {
   return e1Pending;
 }
 
-// Para las pruebas: olvida lo que se sabía del script 24
+// Para las pruebas: olvida lo que se sabía del script 25
 export function resetE1Columns() {
   e1Known = null;
   e1Pending = null;
 }
 
-// La copia digital está disponible: etapa prendida (con "consent") y script 24 corrido
+// La copia digital está disponible: etapa prendida (con "consent") y script 25 corrido
 export async function digitalReady(ctx: Ctx): Promise<boolean> {
   return digitalOn() && (await e1Columns(ctx));
 }
@@ -128,7 +128,7 @@ export function sessionIdOf(event: H3Event): string | null {
   }
 }
 
-// Confirma la contraseña sin abrir una sesión nueva (función del script 21)
+// Confirma la contraseña sin abrir una sesión nueva (función del script 22)
 export async function verifyAccountPassword(ctx: Ctx, account: Account, password: string): Promise<boolean> {
   if (!password) return false;
   const { data, error } = await ctx.admin.rpc("portal_verify_password", { p_user: account.user_id, p_password: password });

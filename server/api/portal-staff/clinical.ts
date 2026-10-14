@@ -37,7 +37,7 @@ export default defineEventHandler((event) => handle(event, async () => {
   const ctx = setup();
   const staff = await requireStaffRole(ctx, event);
   const body = (await readBody(event)) as Record<string, unknown> | null;
-  // "hc_digital" solo si la copia digital está disponible (con "consent" y el script 24)
+  // "hc_digital" solo si la copia digital está disponible (con "consent" y el script 25)
   if (body?.action === "features") return { features: await effectiveFeatures(ctx) };
   if (!features().length) throw new PortalError(404, "No disponible.");
   if (!isUuid(body?.patient_id)) throw new PortalError(400, "Pedido inválido");
