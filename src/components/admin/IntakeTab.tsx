@@ -82,6 +82,7 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
         email: r.email,
         patient_type: r.patient_type,
         locality: r.locality,
+        address: r.address,
         referred_by: r.referred_by,
         guardian_name: r.guardian_name,
         guardian_phone: r.guardian_name ? r.phone : null,
@@ -282,6 +283,7 @@ function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate,
           <Item label="Email" value={r.email ?? "—"} />
           {r.guardian_name && <Item label="Adulto responsable" value={r.guardian_name} />}
           <Item label="Localidad" value={r.locality ?? "—"} />
+          <Item label="Domicilio" value={r.address ?? "—"} />
           <Item label="Modalidad preferida" value={r.preferred_modality === "telemedicina" ? "Telemedicina" : "Presencial"} />
           {r.referred_by && <Item label="Derivado por" value={r.referred_by} />}
         </dl>

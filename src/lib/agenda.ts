@@ -18,6 +18,7 @@ export type IntakeRequest = {
   email: string | null;
   guardian_name: string | null;
   locality: string | null;
+  address: string | null;
   preferred_modality: Modality;
   referred_by: string | null;
   reason: string;
