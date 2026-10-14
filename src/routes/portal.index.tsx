@@ -99,7 +99,13 @@ function InicioPage() {
   // algo). El detalle (cómo retirarla, descargarla, cancelar) está en "Mi
   // información" de esa persona o, si su página ya no se puede abrir, más
   // abajo, en "Tus pedidos"
-  const ready = data.requests.filter((r) => copyAction(r));
+  // Un aviso por persona y por cosa para hacer (puede haber más de un pedido
+  // de la misma persona: el más nuevo manda)
+  const newestFirst = [...data.requests].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const latestOf = new Map<string, HcRequestDTO>();
+  for (const r of newestFirst) if (!latestOf.has(r.patient_id)) latestOf.set(r.patient_id, r);
+  const ready = newestFirst.filter((r, i, all) =>
+    copyAction(r) && all.findIndex((x) => x.patient_id === r.patient_id && copyAction(x) === copyAction(r)) === i);
   // Por persona, lo que hay para hacer (para la marca de su acceso). Si hubiera
   // las dos cosas, descargar va primero: se hace desde acá mismo
   const readyFor = new Map<string, CopyAction>();
@@ -113,7 +119,8 @@ function InicioPage() {
   // Copias que no pudimos preparar (rechazadas, mientras el pedido se sigue
   // viendo): una línea en el mismo aviso, que lleva al pedido. Sin página a la
   // que ir no hace falta: el pedido completo ya está en "Tus pedidos"
-  const rejected = data.requests.filter((r) => r.status === "rechazada" && r.child_page);
+  // Solo si es el pedido más nuevo de esa persona (si después pidió otra, ya no aplica)
+  const rejected = newestFirst.filter((r) => r.status === "rechazada" && r.child_page && latestOf.get(r.patient_id) === r);
   // Lo listo va en verde y lo rechazado, en el tono de su estado
   const readyNotice = (ready.length > 0 || rejected.length > 0) && (
     <section aria-labelledby="portal-copia-lista" className="flex flex-col gap-2">
