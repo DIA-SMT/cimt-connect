@@ -8,6 +8,8 @@
 // la familia con muy pocas respuestas posibles (nunca el motivo real: una
 // orden judicial o que el adolescente no dio su conformidad no se revelan).
 
+import type { PracticeHomeDTO } from "./practiceRules";
+
 // ── Etapas que se prenden en el servidor (PORTAL_CLINICAL_FEATURES) ──────────
 export const CLINICAL_FEATURES = ["consent", "info", "practice", "ai", "docs", "hc_digital"] as const;
 export type ClinicalFeature = (typeof CLINICAL_FEATURES)[number];
@@ -132,6 +134,10 @@ export type FamilyClinicalDTO = {
 export type ChildClinicalDTO = {
   info: PublicOutcome; practice: PublicOutcome;
   info_new?: number; // publicaciones que esta cuenta todavía no abrió (etapa "info", solo si info = ok)
+  // Etapa "practice", solo si practice = ok: cuadraditos "Ejercicios" (con
+  // has_plan) y "Mis logros" del Inicio, y botón Ejercicios. null: no hay nada
+  // para ver (ni plan publicado, ni devoluciones, medallas o metas vigentes)
+  practice_home?: PracticeHomeDTO | null;
 };
 
 // ── Lo que ve el equipo (sección "Portal del paciente" de la ficha) ─────────

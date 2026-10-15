@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  BellRing, CalendarCheck, CalendarPlus, ChevronDown, Clock, Eye, FileText, IdCard, Loader2, NotebookPen, PackageCheck,
-  Phone, PhoneCall, RefreshCw, Scale, Send, Trash2, TriangleAlert, Undo2, Upload, UserRound, XCircle, type LucideIcon,
+  Award, BellRing, CalendarCheck, CalendarPlus, ChevronDown, Clock, Eye, FileText, IdCard, Loader2, NotebookPen, PackageCheck,
+  Phone, PhoneCall, RefreshCw, Scale, Send, ShieldAlert, Target, Trash2, TriangleAlert, Undo2, Upload, UserRound, XCircle,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,12 @@ import {
   APPT_REQ_MODALITY_LABEL, APPT_REQ_REJECT_REASONS, APPT_REQ_TRANSITIONS, TIME_BAND_LABEL, WEEKDAYS, WEEKDAY_LABEL,
   apptReqOpen,
 } from "@/lib/apptRequestRules";
+import type { PracticeAction, StaffPracticeDTO, StaffPracticeInboxItem, StaffPracticePending } from "@/lib/portalStaff";
+import { STAFF_PRACTICE_TEXT, ddmm, goalMetLine } from "@/lib/practiceRules";
+import { PortalApptSchedule } from "./PortalApptSchedule";
+import { PortalPracticeFollowup } from "./PortalPracticeFollowup";
+import { askGoalMedal, inMyPracticeList, onInboxStale, practiceCountsFromInbox } from "./practiceHandoff";
+import type { PortalCounts } from "./usePortalInboxCount";
 
 // Pestaña "Portal": bandeja de lo que mandan las familias desde el portal.
 //   - Pedidos de copia de la historia clínica: el equipo la prepara, avisa que
@@ -37,20 +44,26 @@ import {
 //     revisa y la envía; la entrega en mano sigue estando siempre.
 //   - Avisos de "no vamos a poder ir": el equipo decide qué pasa con el turno.
 //   - Pedidos de turno: la familia cuenta para qué es y qué días y horarios le
-//     quedan bien; el equipo lo carga en la Agenda y lo marca agendado (con el
-//     turno enlazado), la llama para coordinar o le dice por qué no se puede.
+//     quedan bien; el equipo le da turno (lo carga ahí mismo, con horarios
+//     libres sugeridos, o elige uno que ya está en la Agenda: queda enlazado),
+//     la llama para coordinar o le dice por qué no se puede.
+//   - Prácticas (etapa practice, solo perfiles clínicos): pacientes con
+//     prácticas sin revisar (los comentarios de riesgo en rojo y arriba) y
+//     metas de práctica cumplidas. Cada fila abre la misma vista de
+//     "Prácticas y devoluciones" de la ficha (PortalPracticeFollowup).
 // La ve todo el panel. Acá sí hay nombres y DNI: nada de esto vuelve a la familia.
 
 type Props = {
   /** Abre la ficha del paciente */
   onOpenPatient: (patientId: string) => void;
   /** Avisa al panel cuántas cosas quedan por resolver (para el número de la pestaña y el cartel de avisos) */
-  onCountChange: (pending: { hc: number; notices: number; turnos: number }) => void;
+  onCountChange: (pending: PortalCounts) => void;
   /** Con qué lista abrir (el cartel de avisos abre directo en "Avisos de turnos") */
   initialView?: View;
 };
 
-type View = "hc" | "notices" | "turnos";
+type View = "hc" | "notices" | "turnos" | "practice";
+type PracticeFilter = "mine" | "all";
 type Tone = "warn" | "ok" | "bad" | "info" | "muted";
 
 const TONE_CLASS: Record<Tone, string> = {
@@ -175,6 +188,7 @@ const apptPast = (n: Pick<StaffNotice, "date" | "time" | "is_past">, now = cente
   n.is_past || `${n.date} ${n.time}` <= `${now.date} ${now.time}`;
 
 const HOUR_MS = 60 * 60 * 1000;
+const STALE_RELOAD_MS = 300; // varias acciones seguidas en la ficha: una sola carga
 const isOpen = (s: HcStatus) => s === "pendiente" || s === "lista";
 
 function hoursSince(iso: string, now: number): number {
@@ -205,13 +219,23 @@ function sortHc(list: StaffHcRequest[]): StaffHcRequest[] {
       : closedAt(b) - closedAt(a)));
 }
 
-function pendingOf(d: StaffInbox) {
+function pendingOf(d: StaffInbox): PortalCounts {
   return {
     hc: d.hc.filter((r) => r.status === "pendiente").length,
     notices: d.notices.filter((n) => n.resolution === null).length,
     // Como en las copias: cuentan los que nadie miró todavía ("La vamos a llamar" ya tiene quien se ocupe)
     turnos: d.turnos.filter((r) => r.status === "pendiente").length,
+    // Como el contador: practice (practice_pending + practice_risk), las filas
+    // de MIS pacientes y las prácticas de otros con comentarios de riesgo sin
+    // ver; practiceRisk (practice_risk), esas prácticas de otros;
+    // practiceUrgent (practice_urgent), alguna fila con riesgo sin ver
+    ...practiceCountsFromInbox(practiceItems(d)),
   };
+}
+
+// Filas de "Prácticas": solo perfiles clínicos y con la etapa prendida
+function practiceItems(d: StaffInbox): StaffPracticeInboxItem[] {
+  return d.practice?.allowed ? d.practice.items : [];
 }
 
 // Con qué lista abrir si no se eligió ninguna: los avisos si hay alguno sin
@@ -234,19 +258,28 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
   const [resolving, setResolving] = useState<{ id: string; how: NoticeAction } | null>(null);
   const [apptBusy, setApptBusy] = useState<{ id: string; to: ApptReqStaffTarget } | null>(null);
   const [apptDialog, setApptDialog] = useState<{ id: string; mode: ApptDialogMode } | null>(null);
+  // Prácticas: "Mis pacientes" / "Todos" (null: se elige solo, ver practiceShown) y la meta en "Todavía no"
+  const [practiceFilter, setPracticeFilter] = useState<PracticeFilter | null>(null);
+  const [practiceBusy, setPracticeBusy] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   // Copia digital de la historia clínica (E1): vale solo con "consent" prendido.
   // null mientras se pregunta o si no se pudo saber
   const features = usePortalClinicalFeatures();
   const hcDigital = features === null ? null : features.includes("hc_digital") && features.includes("consent");
 
-  const load = useCallback(async () => {
+  const loadSeq = useRef(0);
+  // Devuelve lo que trajo (null: no se pudo cargar o la reemplazó otra carga)
+  const fetchInbox = useCallback(async (): Promise<StaffInbox | null> => {
+    // Si se pidió otra carga mientras tanto, la que vale es esa (esta puede
+    // traer lo de antes de una acción)
+    const n = ++loadSeq.current;
     setRefreshing(true);
     const r = await portalStaffApi.inbox();
+    if (loadSeq.current !== n) return null;
     setRefreshing(false);
     setLoading(false);
     setNow(Date.now());
-    if (!r.ok) { setLoadError(r.error); return; }
+    if (!r.ok) { setLoadError(r.error); return null; }
     setLoadError(null);
     // Un servidor anterior a los pedidos de turno no manda la lista
     const next = { ...r.data, turnos: r.data.turnos ?? [] };
@@ -254,9 +287,26 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
     // Sin lista elegida (ni de entrada ni con los botones), se elige con la
     // primera carga y queda fija: los números cambian al resolver, la lista no
     setView((v) => v ?? defaultView(pendingOf(next)));
+    return next;
   }, []);
+  const load = useCallback(async () => { await fetchInbox(); }, [fetchInbox]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Lo que se hace en la ficha («Ejercicios, devoluciones y medallas») cambia
+  // las filas de "Prácticas": se vuelve a cargar y, con eso, los números de
+  // la pestaña (practiceHandoff: onInboxStale)
+  useEffect(() => {
+    let t: number | undefined;
+    const off = onInboxStale(() => {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => { void load(); }, STALE_RELOAD_MS);
+    });
+    return () => {
+      off();
+      window.clearTimeout(t);
+    };
+  }, [load]);
 
   // La antigüedad de los pedidos ("hace 5 h") se recalcula sola
   useEffect(() => {
@@ -271,14 +321,39 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
     if (pending) onCountChange(pending);
   }, [pending, onCountChange]);
 
-  // La lista se elige con la primera carga (ver load) y no se recalcula con los números
-  const shown: View = view ?? "hc";
+  // La lista se elige con la primera carga (ver load) y no se recalcula con los números.
+  // "Prácticas" solo existe para los perfiles clínicos con la etapa prendida
+  const practiceAllowed = !!data?.practice?.allowed;
+  const shown: View = view === "practice" && !practiceAllowed ? "hc" : view ?? "hc";
 
   const hc = useMemo(() => sortHc(data?.hc ?? []), [data]);
   // Pendientes primero; el servidor ya las ordena por fecha del turno
   const notices = useMemo(() => [...(data?.notices ?? [])]
     .sort((a, b) => Number(a.resolution !== null) - Number(b.resolution !== null)), [data]);
   const turnos = useMemo(() => sortAppt(data?.turnos ?? []), [data]);
+  const practice = useMemo(() => sortPractice(data ? practiceItems(data) : []), [data]);
+  // Sin elegir: "Mis pacientes" si hay alguno mío (si no, por ejemplo la Dirección, "Todos")
+  const practiceShown: PracticeFilter = practiceFilter ?? (practice.some((i) => i.mine) ? "mine" : "all");
+
+  // "Todavía no" de una meta cumplida: deja de avisar en la bandeja
+  async function goalNotYet(item: StaffPracticeInboxItem) {
+    if (!item.goal || practiceBusy) return;
+    setPracticeBusy(item.goal.id);
+    const r = await portalStaffApi.practice({ action: "goal_not_yet", patient_id: item.patient_id, goal_id: item.goal.id });
+    if (r.ok) toast.success("Listo. La meta sigue activa: la podés dar por lograda cuando quieras.");
+    else toast.error(r.error);
+    // Siempre se vuelve a cargar: también si otra persona ya la resolvió
+    await load();
+    setPracticeBusy(null);
+  }
+
+  // "Dar la medalla": se da con una devolución. Se abre la ficha y, en ella,
+  // «Portal del paciente» → «Metas y medallas» con la devolución de esa meta
+  // y su medalla cargadas (lo toma PortalPracticeSection)
+  function giveMedal(item: StaffPracticeInboxItem) {
+    if (item.goal) askGoalMedal(item.patient_id, item.goal.id);
+    onOpenPatient(item.patient_id);
+  }
 
   function patchHc(row: StaffHcRequest) {
     setData((d) => d && { ...d, hc: d.hc.map((x) => (x.id === row.id ? row : x)) });
@@ -311,18 +386,11 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
     }
     setApptBusy(null);
     patchAppt(res.data);
-    // Con un bloqueo por orden judicial, a quien pidió no se le avisa (aunque
-    // ya no tenga acceso). Sin bloqueo, si ya no tiene acceso, se le puede
-    // avisar por teléfono
-    const closing = to !== "pendiente";
-    const blocked = closing && (r.requester_blocked || res.data.requester_blocked);
-    const gone = closing && !blocked && (r.still_allowed === false || res.data.still_allowed === false);
-    const unlinked = to === "agendado" && !res.data.appointment;
-    toast.success(doneText(APPT_DONE[to], blocked ? APPT_BLOCKED_TOAST : gone ? APPT_GONE_TOAST : unlinked ? APPT_UNLINKED : null));
+    apptDoneToast(r, to, res.data);
     return { ok: true };
   }
 
-  // "Ya lo agendé" y "No se puede" piden un dato antes (diálogo); el resto va directo
+  // "Dar turno" y "No se puede" piden un dato antes (diálogo); el resto va directo
   async function apptAction(r: StaffApptRequest, to: ApptReqStaffTarget) {
     if (to === "agendado" || to === "rechazado") { setApptDialog({ id: r.id, mode: to }); return; }
     const res = await updateAppt(r, to);
@@ -361,7 +429,9 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-lg font-bold text-[color:var(--primary-deep)]">Portal de familias</h2>
           <p className="text-sm text-muted-foreground">
-            Pedidos de copia del historial del paciente, avisos de turnos y pedidos de turno que mandan las familias desde el portal.
+            {practiceAllowed
+              ? "Pedidos de copia del historial del paciente, avisos de turnos, pedidos de turno y prácticas que mandan las familias desde el portal."
+              : "Pedidos de copia del historial del paciente, avisos de turnos y pedidos de turno que mandan las familias desde el portal."}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => load()} disabled={refreshing} aria-busy={refreshing}>
@@ -389,6 +459,12 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
             <Chip active={shown === "turnos"} onClick={() => setView("turnos")}>
               Pedidos de turno ({pending.turnos})
             </Chip>
+            {practiceAllowed && (
+              // Urgente con algún comentario de riesgo sin ver: lo mismo que marca la pestaña Portal (practiceUrgent)
+              <Chip active={shown === "practice"} urgent={pending.practiceUrgent} onClick={() => setView("practice")}>
+                Prácticas ({pending.practice})
+              </Chip>
+            )}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)]">
@@ -396,6 +472,9 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
               <HcList list={hc} now={now} onOpen={setOpenId} />
             ) : shown === "notices" ? (
               <NoticeList list={notices} now={now} resolving={resolving} onResolve={resolveNotice} onOpenPatient={onOpenPatient} />
+            ) : shown === "practice" ? (
+              <PracticeList list={practice} filter={practiceShown} onFilter={setPracticeFilter} busy={practiceBusy}
+                onNotYet={goalNotYet} onGiveMedal={giveMedal} onOpenPatient={onOpenPatient} onChanged={load} />
             ) : (
               <ApptList list={turnos} now={now} busy={apptBusy} onAction={apptAction}
                 onNotesSaved={patchApptNotes} onOpenPatient={onOpenPatient} />
@@ -412,6 +491,7 @@ export function PortalInboxTab({ onOpenPatient, onCountChange, initialView }: Pr
           onClose={() => setApptDialog(null)}
           onSubmit={updateAppt}
           onReload={load}
+          onFresh={fetchInbox}
         />
       )}
 
@@ -1370,7 +1450,7 @@ const APPT_EVENT_LABEL: Record<ApptReqEventKind, string> = {
 
 // Cada paso que puede dar el equipo y qué ve la familia
 const APPT_ACTION: Record<ApptReqStaffTarget, { label: string; hint: string }> = {
-  agendado: { label: "Ya lo agendé", hint: "Elegís el turno que cargaste en la Agenda: la familia ve el día y la hora." },
+  agendado: { label: "Dar turno", hint: "Lo cargás acá (o elegís uno de la Agenda): la familia ve el día y la hora." },
   contactar: { label: "La vamos a llamar", hint: "La familia ve que la vamos a llamar para coordinar." },
   rechazado: { label: "No se puede", hint: "Elegís el motivo: la familia lo ve en el portal." },
   pendiente: { label: "Volver a pendiente", hint: "Si se marcó por error." },
@@ -1396,8 +1476,22 @@ const APPT_GONE_TOAST = "Quien lo pidió ya no tiene acceso al portal: si corres
 const APPT_BLOCKED = "Tiene un bloqueo por orden judicial: no lo contactes ni le des el día y la hora. Resolvé el pedido sin avisarle.";
 const APPT_BLOCKED_CLOSED = "Tiene un bloqueo por orden judicial: no lo contactes ni le des el día y la hora.";
 const APPT_BLOCKED_TOAST = "Quien lo pidió tiene un bloqueo por orden judicial: no le avises.";
+// «Dar turno» con un bloqueo: no se carga desde acá (ver ApptDialog), solo se elige uno de la Agenda
+const APPT_BLOCKED_AGENDADO_HINT = "Lo cargás en la Agenda y lo elegís acá, sin avisarle.";
 // appointment_cancelled: agendado, pero el turno enlazado se canceló (o pasó a otro paciente)
 const APPT_LINK_CANCELLED = "El turno enlazado se canceló: la familia ve «Turno cancelado» y puede pedir otro.";
+
+// Aviso de "listo" al cambiar el estado de un pedido de turno (before: como
+// estaba; after: como quedó). Con un bloqueo por orden judicial, a quien pidió
+// no se le avisa (aunque ya no tenga acceso). Sin bloqueo, si ya no tiene
+// acceso, se le puede avisar por teléfono
+function apptDoneToast(before: StaffApptRequest, to: ApptReqStaffTarget, after: StaffApptRequest) {
+  const closing = to !== "pendiente";
+  const blocked = closing && (before.requester_blocked || after.requester_blocked);
+  const gone = closing && !blocked && (before.still_allowed === false || after.still_allowed === false);
+  const unlinked = to === "agendado" && !after.appointment;
+  toast.success(doneText(APPT_DONE[to], blocked ? APPT_BLOCKED_TOAST : gone ? APPT_GONE_TOAST : unlinked ? APPT_UNLINKED : null));
+}
 
 // Motivo del cierre sin turno. "bloqueo" (lo pone el servidor al cargar un
 // bloqueo por orden judicial) se muestra tal cual, sin lo que ve la familia
@@ -1609,7 +1703,9 @@ function ApptRow({ r, now, locked, busy, onAction, onNotesSaved, onOpenPatient }
                     : <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />}
                   {APPT_ACTION[to].label}
                 </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">{APPT_ACTION[to].hint}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {to === "agendado" && r.requester_blocked ? APPT_BLOCKED_AGENDADO_HINT : APPT_ACTION[to].hint}
+                </span>
               </button>
             );
           })}
@@ -1695,13 +1791,15 @@ function ApptNotes({ r, onSaved, onClose }: {
   );
 }
 
-// "Ya lo agendé" (elegir el turno que se cargó en la Agenda) o "No se puede" (elegir el motivo)
-function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
+// "Dar turno" (cargarlo acá o elegir uno que ya está en la Agenda) o "No se puede" (elegir el motivo)
+function ApptDialog({ request: r, mode, onClose, onSubmit, onReload, onFresh }: {
   request: StaffApptRequest;
   mode: ApptDialogMode;
   onClose: () => void;
   onSubmit: (r: StaffApptRequest, to: ApptReqStaffTarget, extra?: ApptExtra) => Promise<ApptOutcome>;
   onReload: () => Promise<void>;
+  /** Vuelve a cargar la bandeja y devuelve lo que trajo (null: no se pudo) */
+  onFresh: () => Promise<StaffInbox | null>;
 }) {
   // undefined: todavía no eligió · null: no está en la lista / lo enlaza después
   const [slot, setSlot] = useState<string | null | undefined>(undefined);
@@ -1709,8 +1807,17 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
   const [busy, setBusy] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // «Dar turno»: cargarlo acá (lo de siempre) o elegir uno que ya está en la
+  // Agenda. Con un bloqueo por orden judicial no se carga desde acá: solo se
+  // cierra el pedido (como hasta ahora)
+  const [how, setHow] = useState<"nuevo" | "agenda">(r.requester_blocked ? "agenda" : "nuevo");
+  // «Cargar el turno acá» está guardando o dejó un turno sin enlazar: el diálogo no se cierra
+  const [locked, setLocked] = useState(false);
   // Mientras estaba abierto, otra persona pudo cambiarlo (o la familia cancelarlo)
   const allowed = APPT_REQ_TRANSITIONS[r.status].includes(mode);
+  const canCreate = mode === "agendado" && !r.requester_blocked;
+  // Aunque el pedido haya cambiado, si quedó un turno sin enlazar se sigue mostrando
+  const creating = mode === "agendado" && how === "nuevo" && ((allowed && canCreate) || locked);
   // Si al actualizar la lista el turno elegido ya no está, hay que volver a elegir
   const chosen = typeof slot === "string" && !r.upcoming.some((s) => s.id === slot) ? undefined : slot;
   const ready = mode === "agendado" ? chosen !== undefined : !!reason;
@@ -1740,12 +1847,13 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
   const primary = "bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]";
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
-      <DialogContent className="max-h-[92vh] max-w-xl overflow-y-auto">
+    <Dialog open onOpenChange={(o) => { if (!o && !busy && !locked) onClose(); }}>
+      {/* Mientras no se puede cerrar, sin la X de la esquina (la última: la pone DialogContent) */}
+      <DialogContent className={`max-h-[92vh] max-w-xl overflow-y-auto${busy || locked ? " [&>button:last-child]:hidden" : ""}`}>
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">{r.patient_name}</DialogTitle>
           <DialogDescription>
-            {mode === "agendado" ? "Ya lo agendé" : "No se puede dar el turno"} · <Pill tone={APPT_TONE[r.status]}>{APPT_REQ_STATUS_LABEL[r.status]}</Pill>
+            {mode === "agendado" ? "Dar turno" : "No se puede dar el turno"} · <Pill tone={APPT_TONE[r.status]}>{APPT_REQ_STATUS_LABEL[r.status]}</Pill>
           </DialogDescription>
         </DialogHeader>
 
@@ -1764,6 +1872,53 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
           </div>
         )}
 
+        {canCreate && allowed && (
+          <fieldset disabled={locked || busy} className="grid gap-2 sm:grid-cols-2">
+            <legend className="sr-only">Cómo das el turno</legend>
+            <label className={radio}>
+              <input type="radio" name="appt-how" className="mt-0.5" checked={how === "nuevo"} onChange={() => { setHow("nuevo"); setError(null); }} />
+              <span>
+                <span className="font-semibold">Cargar el turno acá</span>
+                <span className="block text-xs text-muted-foreground">Sin ir a la Agenda, con horarios libres sugeridos.</span>
+              </span>
+            </label>
+            <label className={radio}>
+              <input type="radio" name="appt-how" className="mt-0.5" checked={how === "agenda"} onChange={() => { setHow("agenda"); setError(null); }} />
+              <span>
+                <span className="font-semibold">Ya está en la Agenda</span>
+                <span className="block text-xs text-muted-foreground">Elegís uno de sus próximos turnos.</span>
+              </span>
+            </label>
+          </fieldset>
+        )}
+
+        {creating ? (
+          <>
+            {/* Por si ya se lo dieron desde la Agenda (por ejemplo, por teléfono) */}
+            {allowed && !locked && r.upcoming.length > 0 && (
+              <div role="note" className="rounded-xl bg-[color:var(--status-pending-bg)] p-3 text-sm">
+                <p className="flex gap-2 font-semibold">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                  Ya tiene turnos en la Agenda:
+                </p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-9">
+                  {r.upcoming.slice(0, 3).map((s) => <li key={s.id}>{slotLabel(s)}</li>)}
+                </ul>
+                <p className="mt-1 text-xs text-muted-foreground">Si le diste uno de esos, elegí «Ya está en la Agenda».</p>
+              </div>
+            )}
+            <PortalApptSchedule
+              request={r}
+              allowed={allowed && canCreate}
+              onLink={(appointmentId) => onSubmit(r, "agendado", { appointment_id: appointmentId })}
+              onCheck={async () => (await onFresh())?.turnos.find((x) => x.id === r.id) ?? null}
+              onLinked={(fresh) => { apptDoneToast(r, "agendado", fresh); onClose(); }}
+              onDone={() => { onClose(); void onReload(); }}
+              onCancel={onClose}
+              onLockChange={setLocked}
+            />
+          </>
+        ) : (
         <form onSubmit={submit} className="space-y-4">
           {!allowed ? (
             <p role="alert" className={`text-sm ${TEXT_BAD}`}>
@@ -1773,7 +1928,9 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
             <>
               <p className="flex gap-2 text-sm">
                 <CalendarPlus className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                Cargalo primero en la Agenda; la familia ve el día y la hora acá.
+                {canCreate
+                  ? "Elegí el turno que ya está en la Agenda: la familia ve el día y la hora en el portal."
+                  : "Cargalo primero en la Agenda y elegilo acá."}
               </p>
               <fieldset className="space-y-2">
                 <legend className="mb-1 text-sm font-bold">¿Qué turno le diste?</legend>
@@ -1795,7 +1952,7 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
                     <span className="block text-xs text-muted-foreground">
                       {APPT_UNLINKED}
                       {/* Con un bloqueo judicial el pedido no se puede reabrir */}
-                      {!r.requester_blocked && " Para enlazarlo más adelante: «Volver a pendiente» y de nuevo «Ya lo agendé»."}
+                      {!r.requester_blocked && " Para enlazarlo más adelante: «Volver a pendiente» y de nuevo «Dar turno»."}
                     </span>
                   </span>
                 </label>
@@ -1829,8 +1986,234 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload }: {
             )}
           </div>
         </form>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Prácticas (etapa practice) ──────────────────────────────────────────────
+// Solo perfiles clínicos. Los comentarios de la familia no se muestran en la
+// fila: se leen al abrir sus prácticas (la misma vista que en la ficha).
+
+// Arriba los que tienen comentarios con palabras de riesgo; después los que
+// pasaron 7 días sin revisar (ámbar), las metas cumplidas y el resto, lo más
+// viejo primero
+function sortPractice(list: StaffPracticeInboxItem[]): StaffPracticeInboxItem[] {
+  const rank = (i: StaffPracticeInboxItem) =>
+    i.pending.risk > 0 ? 0 : i.kind === "practicas" && i.pending.stale && !i.on_break ? 1 : i.kind === "meta_cumplida" ? 2 : 3;
+  const since = (i: StaffPracticeInboxItem) => (i.kind === "meta_cumplida" ? i.goal?.met_on : i.pending.since) ?? "9999";
+  return [...list].sort((a, b) => rank(a) - rank(b) || since(a).localeCompare(since(b))
+    || a.patient_name.localeCompare(b.patient_name, "es"));
+}
+
+// "5 prácticas nuevas" "1 comentario" "Me costó: 1"
+function practiceTags(p: StaffPracticePending): string[] {
+  const out: string[] = [];
+  if (p.logs) out.push(p.logs === 1 ? "1 práctica nueva" : `${p.logs} prácticas nuevas`);
+  if (p.comments) out.push(p.comments === 1 ? "1 comentario" : `${p.comments} comentarios`);
+  if (p.costo) out.push(`Me costó: ${p.costo}`);
+  return out;
+}
+
+// AAAA-MM-DD (día del centro) o ISO → "03/10"
+const shortDay = (s: string) => (/^\d{4}-\d{2}-\d{2}$/.test(s) ? ddmm(s) : dayLabel(s));
+
+const practiceKey = (i: StaffPracticeInboxItem) => `${i.kind}-${i.patient_id}-${i.goal?.id ?? ""}`;
+
+function PracticeList({ list, filter, onFilter, busy, onNotYet, onGiveMedal, onOpenPatient, onChanged }: {
+  list: StaffPracticeInboxItem[];
+  filter: PracticeFilter;
+  onFilter: (f: PracticeFilter) => void;
+  busy: string | null; // meta con "Todavía no" en curso
+  onNotYet: (i: StaffPracticeInboxItem) => void;
+  onGiveMedal: (i: StaffPracticeInboxItem) => void;
+  onOpenPatient: (patientId: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  // "Mis pacientes": los míos y, siempre, los comentarios de riesgo de cualquier
+  // paciente (son las filas que cuenta el número de la pestaña)
+  const mineRows = list.filter(inMyPracticeList);
+  const rows = filter === "mine" ? mineRows : list;
+  const mine = mineRows.length;
+  return (
+    <div>
+      <div role="group" aria-label="Qué pacientes mostrar" className="flex flex-wrap gap-1.5 border-b border-border/60 px-4 py-3 md:px-5">
+        <Chip active={filter === "mine"} onClick={() => onFilter("mine")}>Mis pacientes ({mine})</Chip>
+        <Chip active={filter === "all"} onClick={() => onFilter("all")}>Todos ({list.length})</Chip>
+      </div>
+      {rows.length === 0 ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">
+          {filter === "mine" ? "No hay prácticas para revisar de tus pacientes." : "No hay prácticas para revisar."}
+        </div>
+      ) : (
+        <ul className="divide-y divide-border/60">
+          {rows.map((i) => {
+            const key = practiceKey(i);
+            return i.kind === "meta_cumplida" ? (
+              <GoalMetRow key={key} item={i} busy={busy} onNotYet={onNotYet} onGiveMedal={onGiveMedal} onOpenPatient={onOpenPatient} />
+            ) : (
+              <PracticeRow key={key} item={i} open={openKey === key} onToggle={() => setOpenKey((k) => (k === key ? null : key))}
+                onOpenPatient={onOpenPatient} onChanged={onChanged} />
+            );
+          })}
+        </ul>
+      )}
+      <p className="border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground md:px-5">
+        {STAFF_PRACTICE_TEXT.internal_use}
+      </p>
+    </div>
+  );
+}
+
+function PracticeRow({ item: i, open, onToggle, onOpenPatient, onChanged }: {
+  item: StaffPracticeInboxItem;
+  open: boolean;
+  onToggle: () => void;
+  onOpenPatient: (patientId: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const panelId = useId();
+  const { full } = nameParts(i.patient_name);
+  const risk = i.pending.risk;
+  // El servidor ya no lo marca en pausa de vacaciones; por las dudas, se vuelve a mirar
+  const stale = i.pending.stale && !i.on_break;
+  const tags = practiceTags(i.pending);
+  return (
+    <li className={`grid gap-2 p-4 md:px-5 ${risk > 0
+      ? "border-l-4 border-l-[oklch(0.6_0.19_25)] bg-[color:var(--status-occupied-bg)]/40"
+      : stale ? "border-l-4 border-l-[oklch(0.75_0.14_75)] bg-[color:var(--status-pending-bg)]/40" : ""}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        {risk > 0 && <ShieldAlert className={`h-4 w-4 shrink-0 ${TEXT_BAD}`} aria-hidden />}
+        <button type="button" onClick={() => onOpenPatient(i.patient_id)} title="Abrir ficha"
+          className="font-bold underline-offset-2 hover:text-[color:var(--primary-deep)] hover:underline">
+          {full}
+        </button>
+        {risk > 0 && <Pill tone="bad">Revisar hoy</Pill>}
+        {i.on_break && <Pill tone="muted">Pausa de vacaciones</Pill>}
+        {!i.mine && <Pill tone="muted">No es tu paciente</Pill>}
+        {i.pending.since && (
+          <span className={`ml-auto inline-flex items-center gap-1 text-xs ${stale ? `font-semibold ${TEXT_WARN}` : "text-muted-foreground"}`}>
+            {stale && <Clock className="h-3.5 w-3.5" aria-hidden />}
+            desde el {shortDay(i.pending.since)}{stale && " · más de 7 días sin revisar"}
+          </span>
+        )}
+      </div>
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {tags.map((t) => <span key={t} className="rounded-full bg-muted px-2.5 py-0.5 font-semibold text-foreground/80">{t}</span>)}
+        </div>
+      )}
+      {risk > 0 && (
+        <p className={`flex items-center gap-1.5 text-xs font-semibold ${TEXT_BAD}`}>
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {risk === 1 ? "1 comentario con palabras de riesgo" : `${risk} comentarios con palabras de riesgo`}: leelo hoy.
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-auto text-xs text-muted-foreground">
+          {i.last_reviewed_at ? `Última revisión: ${dayLabel(i.last_reviewed_at)}` : "Todavía no se revisaron"}
+        </span>
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" aria-expanded={open} aria-controls={open ? panelId : undefined}
+          onClick={onToggle}>
+          <ChevronDown className={`mr-1 transition-transform ${open ? "rotate-180" : ""}`} /> {open ? "Cerrar" : "Ver prácticas"}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => onOpenPatient(i.patient_id)}>
+          <UserRound className="mr-1" /> Abrir ficha
+        </Button>
+      </div>
+      {open && <PracticePanel id={panelId} patientId={i.patient_id} onChanged={onChanged} />}
+    </li>
+  );
+}
+
+// La misma vista de "Prácticas y devoluciones" de la ficha, con sus datos
+function PracticePanel({ id, patientId, onChanged }: { id: string; patientId: string; onChanged: () => Promise<void> }) {
+  const [data, setData] = useState<StaffPracticeDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const n = ++seq.current;
+    setError(null);
+    const r = await portalStaffApi.practice({ action: "get", patient_id: patientId });
+    if (seq.current !== n) return;
+    if (!r.ok) { setError(r.error); return; }
+    setData(r.data);
+  }, [patientId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Algo de este paciente cambió en su ficha: lo de acá quedó viejo
+  useEffect(() => onInboxStale((changed) => {
+    if (changed === patientId) void load();
+  }), [load, patientId]);
+
+  async function send(body: PracticeAction) {
+    setBusy(true);
+    const r = await portalStaffApi.practice(body);
+    setBusy(false);
+    if (!r.ok) return r;
+    // Lo que devuelve la acción es más nuevo que una carga que esté en camino
+    seq.current++;
+    setData(r.data);
+    // La fila cambia o sale de la bandeja (con "Visto" o con una devolución)
+    void onChanged();
+    return { ok: true as const, data: r.data };
+  }
+
+  return (
+    <div id={id} className="pt-1">
+      {data ? (
+        <PortalPracticeFollowup data={data} busy={busy} send={send} reload={load} />
+      ) : error ? (
+        <div role="alert" className={`flex flex-wrap items-center gap-2 text-sm ${TEXT_BAD}`}>
+          <span>{error}</span>
+          <Button size="sm" variant="outline" onClick={() => void load()}>Probar de nuevo</Button>
+        </div>
+      ) : (
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Cargando…
+        </p>
+      )}
+    </div>
+  );
+}
+
+function GoalMetRow({ item: i, busy, onNotYet, onGiveMedal, onOpenPatient }: {
+  item: StaffPracticeInboxItem;
+  busy: string | null;
+  onNotYet: (i: StaffPracticeInboxItem) => void;
+  onGiveMedal: (i: StaffPracticeInboxItem) => void;
+  onOpenPatient: (patientId: string) => void;
+}) {
+  const { full } = nameParts(i.patient_name);
+  const g = i.goal;
+  return (
+    <li className="grid gap-2 border-l-4 border-l-[oklch(0.62_0.14_150)] p-4 md:px-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Target className="h-4 w-4 shrink-0 text-[oklch(0.42_0.12_150)]" aria-hidden />
+        <button type="button" onClick={() => onOpenPatient(i.patient_id)} title="Abrir ficha"
+          className="font-bold underline-offset-2 hover:text-[color:var(--primary-deep)] hover:underline">
+          {full}
+        </button>
+        <Pill tone="ok">Meta cumplida</Pill>
+        {!i.mine && <Pill tone="muted">No es tu paciente</Pill>}
+        {g && <span className="ml-auto text-xs text-muted-foreground">la cumplió el {shortDay(g.met_on)}</span>}
+      </div>
+      {g && <p className="text-sm">{goalMetLine(g.title)}</p>}
+      <div role="group" aria-label={`Meta cumplida de ${full}`} className="flex flex-wrap gap-2">
+        <Button size="sm" className={PRIMARY_BTN} disabled={!!busy} onClick={() => onGiveMedal(i)}>
+          <Award className="mr-1.5" /> Dar la medalla
+        </Button>
+        <Button size="sm" variant="outline" disabled={!!busy || !g} aria-busy={!!g && busy === g.id} onClick={() => onNotYet(i)}>
+          {g && busy === g.id && <Loader2 className="mr-1.5 animate-spin" />}
+          Todavía no
+        </Button>
+      </div>
+    </li>
   );
 }
 

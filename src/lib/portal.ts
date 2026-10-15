@@ -21,6 +21,10 @@ import {
 import type { ChildClinicalDTO, FamilyClinicalDTO } from "@/lib/portalClinicalRules";
 import type { InfoDTO } from "@/lib/portalInfoRules";
 import type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";
+import type {
+  CelebrationDTO, FeedbackDTO, MedalsDTO, PracticeActionResult, PracticeDTO, PracticeExerciseDTO, PracticeLogInput,
+  PracticeNoteInput,
+} from "@/lib/practiceRules";
 
 export {
   type ChildClinicalDTO, type ClinicalFeature, type FamilyClinicalDTO, type PublicOutcome,
@@ -62,6 +66,9 @@ export type MeDTO = {
   // los tiene: no hay que invitar a pedirlos)
   can_request_appts: boolean;
   clinical?: FamilyClinicalDTO; // solo con la etapa "consent" prendida
+  // Etapa "practice": la medalla nueva que esta cuenta todavía no vio (la de
+  // más prioridad, para el aviso destacado del Inicio). null o ausente: ninguna
+  celebration?: CelebrationDTO | null;
 };
 
 // Página de un chico: sus turnos y la copia de su historia clínica
@@ -254,6 +261,9 @@ const OFFLINE = { ok: false as const, status: 503, error: "No pudimos conectar. 
 // Llama a un endpoint del portal con la sesión de la familia. Si el token
 // venció, lo renueva una vez; si la sesión ya no sirve, la cierra.
 async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; auth?: boolean } = {}): Promise<ApiResult<T>> {
+  // Un cambio (responder un turno, pedir una copia…) deja vieja cualquier /me
+  // en curso: el próximo me() pregunta de nuevo
+  if ((init.method ?? "GET") !== "GET") meInFlight = null;
   const client = await sessionClient();
   const send = async (token: string | null) => fetch(`/api/portal/${path}`, {
     method: init.method ?? "GET",
@@ -295,6 +305,8 @@ async function keepSession<T extends { session?: SessionTokens }>(r: ApiResult<T
   return r;
 }
 
+let meInFlight: Promise<ApiResult<MeDTO>> | null = null;
+
 export const portalApi = {
   async hasSession(): Promise<boolean> {
     if (!PORTAL_ENABLED) return false;
@@ -331,10 +343,15 @@ export const portalApi = {
     if (MOCK) return (await mock()).activationComplete(input);
     return keepSession(await call<{ first_name: string; children: string[]; self?: boolean; session: SessionTokens }>("activation-complete", { method: "POST", body: input, auth: false }));
   },
-  async me(): Promise<ApiResult<MeDTO>> {
-    if (!PORTAL_ENABLED) return UNAVAILABLE;
-    if (MOCK) return (await mock()).me();
-    return call("me");
+  // Si el marco del portal y la página piden /me a la vez, comparten la misma
+  // consulta (no se guarda nada: el próximo pedido vuelve a preguntar)
+  me(): Promise<ApiResult<MeDTO>> {
+    if (!PORTAL_ENABLED) return Promise.resolve(UNAVAILABLE);
+    if (meInFlight) return meInFlight;
+    const p: Promise<ApiResult<MeDTO>> = (MOCK ? mock().then((m) => m.me()) : call<MeDTO>("me"))
+      .finally(() => { if (meInFlight === p) meInFlight = null; });
+    meInFlight = p;
+    return p;
   },
   async childAppointments(patientId: string): Promise<ApiResult<ChildPageDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
@@ -401,7 +418,75 @@ export const portalApi = {
     if (MOCK) return (await mock()).info(patientId);
     return call(`info?id=${encodeURIComponent(patientId)}`);
   },
+  // ── Ejercicios (etapa practice): GET /api/portal/practice?view=…&id=… y
+  // POST /api/portal/practice { action }. Sin contraseña de nuevo. 403 con
+  // code CONSENT, VERIFY o NOT_AVAILABLE; un paciente o ejercicio ajeno da
+  // el mismo 404 que uno que no existe.
+  // "Ejercicios de Martín": plan, ejercicios, semana, metas, última devolución y medallas
+  async practice(patientId: string): Promise<ApiResult<PracticeDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practice(patientId);
+    return call(`practice?view=plan&id=${encodeURIComponent(patientId)}`);
+  },
+  // Pantalla de práctica de un ejercicio (del plan publicado)
+  async exercise(exerciseId: string): Promise<ApiResult<PracticeExerciseDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceExercise(exerciseId);
+    return call(`practice?view=exercise&id=${encodeURIComponent(exerciseId)}`);
+  },
+  // "Ya lo hice": queda anotado en ese momento (uno por ejercicio y por día;
+  // si otro adulto ya lo anotó, devuelve ese registro). practiced_on: ayer o
+  // anteayer (sin fecha: hoy). 400 code DATE; 429 code LIMIT (40 por día)
+  async practiceLog(input: PracticeLogInput): Promise<ApiResult<PracticeActionResult>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceLog(input);
+    return call("practice", { method: "POST", body: { action: "log", ...input } });
+  },
+  // "¿Cómo te fue?" y el comentario optativo (una nota por cuenta y por práctica; 409 si ya la dejó)
+  async practiceNote(input: PracticeNoteInput): Promise<ApiResult<PracticeActionResult>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceNote(input);
+    return call("practice", { method: "POST", body: { action: "note", ...input } });
+  },
+  // Deshacer: solo lo que anotó esta cuenta, el mismo día
+  async practiceUndo(logId: string): Promise<ApiResult<PracticeActionResult>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceUndo(logId);
+    return call("practice", { method: "POST", body: { action: "undo", log_id: logId } });
+  },
+  // Devoluciones del profesional. Solo lee (is_new: esta cuenta todavía no la
+  // vio): la página las marca con feedbackSeen(ids) después de mostrarlas
+  async feedback(patientId: string): Promise<ApiResult<FeedbackDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceFeedback(patientId);
+    return call(`practice?view=feedback&id=${encodeURIComponent(patientId)}`);
+  },
+  // "Medallas de Martín" / "Mis logros"
+  async medals(patientId: string): Promise<ApiResult<MedalsDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceMedals(patientId);
+    return call(`practice?view=medals&id=${encodeURIComponent(patientId)}`);
+  },
+  // La celebración ya se vio (por cuenta: si hay dos adultos, cada uno la ve una vez)
+  async medalsSeen(ids: string[]): Promise<ApiResult<{ ok: true }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceMedalsSeen(ids);
+    return call("practice", { method: "POST", body: { action: "medals_seen", ids } });
+  },
+  // Marca devoluciones como leídas por esta cuenta. La página las pide con
+  // feedback() (que ya no marca nada) y las marca después de mostrarlas, así
+  // "Nueva" se ve aunque la página se cargue dos veces
+  async feedbackSeen(ids: string[]): Promise<ApiResult<{ ok: true }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).practiceFeedbackSeen(ids);
+    return call("practice", { method: "POST", body: { action: "feedback_seen", ids } });
+  },
 };
 
 export type { InfoDTO, InfoReportDTO, InfoSummaryDTO } from "@/lib/portalInfoRules";
 export type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";
+export type {
+  CelebrationDTO, FeedbackDTO, FeedbackItemDTO, GoalDTO, MedalDTO, MedalNextDTO, MedalsDTO, MyNoteDTO,
+  PracticeActionResult, PracticeChildDTO, PracticeDTO, PracticeDayDTO, PracticeExerciseDTO, PracticeExerciseItemDTO,
+  PracticeHomeDTO, PracticeLogInput, PracticeNoteInput, PracticePlanDTO, PracticeResult, ScreenMode, WeekDTO,
+} from "@/lib/practiceRules";

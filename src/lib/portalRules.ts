@@ -4,6 +4,7 @@
 // servidor, que corre en UTC, calcula igual que el navegador.
 
 import type { StaffApptRequest } from "./apptRequestRules";
+import type { StaffPracticeInboxItem } from "./practiceRules";
 
 export const CENTER_TZ = "America/Argentina/Tucuman";
 
@@ -422,8 +423,23 @@ export type StaffNotice = {
 };
 
 // turnos: pedidos de turno (src/lib/apptRequestRules.ts)
-export type StaffInbox = { hc: StaffHcRequest[]; notices: StaffNotice[]; turnos: StaffApptRequest[] };
-export type StaffInboxCount = { hc_pending: number; notices_pending: number; turnos_pending: number };
+// practice: chip "Prácticas" (etapa practice, src/lib/practiceRules.ts). Solo
+// perfiles clínicos: para Administración llega { allowed: false, items: [] }.
+// Sin la etapa prendida no viene.
+export type StaffInbox = {
+  hc: StaffHcRequest[]; notices: StaffNotice[]; turnos: StaffApptRequest[];
+  practice?: { allowed: boolean; items: StaffPracticeInboxItem[] };
+};
+// practice_pending: filas de "Prácticas" de MIS pacientes (prácticas sin ver y
+// metas cumplidas). practice_risk: pacientes que NO son míos con comentarios
+// de riesgo sin ver. Los dos suman al número de la pestaña. practice_urgent:
+// pacientes con comentarios de riesgo sin ver, míos o no (marca la pestaña
+// como urgente; no suma). Solo perfiles clínicos y con la etapa prendida (si
+// no, no vienen).
+export type StaffInboxCount = {
+  hc_pending: number; notices_pending: number; turnos_pending: number;
+  practice_pending?: number; practice_risk?: number; practice_urgent?: number;
+};
 
 // ── Vigencia de los vínculos ────────────────────────────────────────────────
 // Una sola regla para el portal (cada cuenta) y para el panel (cada paciente):

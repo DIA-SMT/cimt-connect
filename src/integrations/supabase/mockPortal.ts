@@ -40,13 +40,14 @@
  *   - Invitación 24680 13579 para Carla Paz · DNI 27444555 (mamá de Fernanda, 14)
  *   - Código de contraseña nueva 97531 86420 para Laura
  *
- * Información de salud (etapas A, C y E1, prendidas en la demo: FEATURES = ["consent", "info", "hc_digital"]):
+ * Información de salud (etapas A, B, C, D y E1, prendidas en la demo:
+ * FEATURES = ["consent", "info", "practice", "ai", "hc_digital"]):
  *   - Laura todavía no la activó (se prueba con su contraseña). Sus vínculos
  *     con Martín y Valentina están verificados en persona, con la
  *     documentación de madre.
- *   - Martín: el profesional prendió información y ejercicios. Valentina: solo
- *     información (ejercicios apagado). Fernanda (14): información prendida,
- *     sin la conformidad de la adolescente.
+ *   - Martín y Valentina: el profesional prendió información y ejercicios.
+ *     Fernanda (14): información prendida, sin la conformidad de la
+ *     adolescente.
  *   - Jorge: su vínculo con Valentina falta verificarlo en persona ("pasá por
  *     el centro"); con Martín es adulto autorizado (solo turnos).
  *   - "Mi información" (etapa C): Martín ya tiene publicado su resumen ("Qué
@@ -57,6 +58,39 @@
  *   un paciente invitado desde el panel. Los informes de la ficha se leen del
  *   mock del panel: en la pestaña del portal no están los que se cargaron en
  *   otra pestaña (se toman como vigentes).
+ *
+ * Ejercicios, devoluciones, metas y medallas (etapa B, "practice") y ayuda de
+ * IA para adaptar ejercicios del catálogo (etapa D, "ai"; en el mock es una
+ * plantilla fija: el texto del catálogo, con «Borrador de ejemplo (modo demo,
+ * sin IA)», después de una espera corta):
+ *   - Martín (9 años, F98.5 en la demo) tiene publicado «Jugar con la voz en
+ *     casa» de Lic. Ana Torres · MP 4521, desde el viernes de hace dos
+ *     semanas: «Arranque suave» (catálogo), «Turnos en la mesa» (catálogo) y
+ *     «Trabas a propósito con palabras de fútbol» (adaptado con IA, revisado y
+ *     con «Ya lo practicamos en sesión»), 3 días por semana. Laura anotó
+ *     prácticas el sábado de hace dos semanas, el lunes, miércoles y viernes
+ *     pasados y anteayer y ayer, si caen en esta semana; el miércoles contó
+ *     «Me costó» con un comentario en «Trabas a propósito». Tiene «Primer
+ *     paso» (Laura ya la vio) y «Semana cumplida» de la semana pasada (nueva:
+ *     es la celebración del Inicio), una devolución de la Lic. Ana Torres del
+ *     martes pasado (sin abrir) y una meta de práctica activa («Practicar 10
+ *     días en 4 semanas», medalla «Gran equipo»). Lo anotado después de esa
+ *     devolución queda en la bandeja del panel (Portal → Prácticas).
+ *     Hoy no hay nada anotado: Laura puede practicar apenas activa la
+ *     información de salud (hasta entonces, los ejercicios contestan CONSENT).
+ *     Si la semana ya tiene dos días, anotar hoy gana «Semana cumplida».
+ *   - Valentina (6, en evaluación): ejercicios prendidos y nunca tuvo un plan
+ *     publicado (sin «Ejercicios» en el Inicio ni en la barra), pero tiene
+ *     logros: dos metas sin plan («Traer un juguete…», activa, y «Elegir un
+ *     juego…», lograda) y una devolución del jueves pasado que dio esa meta
+ *     por lograda con la medalla «¡Me animé!». Laura ya vio la medalla y
+ *     todavía no abrió la devolución: «Medallas» de Valentina, en el Inicio,
+ *     dice «Nuevo». Su profesional le puede armar un plan desde el panel.
+ *   - Los chicos de la demo no tienen ficha en el panel: la Lic. Ana Torres no
+ *     es un usuario del mock, así que en la bandeja cuentan como pacientes de
+ *     cualquier perfil clínico ("Mis pacientes" y el número de la pestaña).
+ *   - Las medallas de constancia se calculan con constancyAwards (como el
+ *     servidor); las sembradas salen de simular las prácticas día por día.
  *
  * Copia digital de la historia clínica (etapa E1, prendida en la demo con
  * "hc_digital", que solo vale si "consent" también está prendida):
@@ -130,12 +164,36 @@ import {
   type StaffInboxCount, type StaffNotice,
   CONFIRM_WINDOW_DAYS, HC_CHANNELS, HC_DAILY_MAX, HC_DOC_MAX_FILES, HC_OPEN_STATUSES,
   HC_REJECT_REASONS, HC_TRANSITIONS, NOTICE_ACTIONS, PRIVACY_VERSION, REASON_CODES, REASON_TEXT_MAX,
-  addDaysKey as addDays, ageOn, canRequestHc, centerNow, computeApptDto, computeHcDto,
+  addDaysKey as addDays, ageOn, canRequestHc, centerDateOf, centerNow, computeApptDto, computeHcDto,
   hcVisible, isNoticeOnTime, isValidDni, linkValidity, normalizeCode, normalizeDni, passwordProblem,
 } from "@/lib/portalRules";
 import type {
   AccessStatus, ClinicalAction, InfoAction, RelationshipKind, StaffInviteInput, StaffInviteResult, StaffInviteSelfInput,
 } from "@/lib/portalStaff";
+import {
+  type Approach, type CelebrationDTO, type ExerciseSource, type FeedbackDTO, type FeedbackItemDTO, type FeedbackWithdrawReason,
+  type GoalDTO, type GoalKind, type GoalRule, type GoalStatus, type LintOverride, type MedalDTO, type MedalKind,
+  type MedalsDTO, type MyNoteDTO, type PlanAudience, type PlanCloseReason, type PlanStatus, type PracticeAction,
+  type ConstancyCode, CONSTANCY_CODES,
+  type PracticeActionResult, type PracticeChildDTO, type PracticeDTO, type PracticeDay, type PracticeDayDTO,
+  type PracticeExerciseDTO, type PracticeHomeDTO, type PracticeLogInput, type PracticeNoteInput, type PracticeResult,
+  type PublishCheck, type StaffExerciseDTO, type StaffFeedbackDTO, type StaffGoalDTO, type StaffMedalDTO,
+  type StaffNoteDTO, type StaffPlanDTO, type StaffPracticeDTO, type StaffPracticeGrid, type StaffPracticeInboxItem,
+  type StaffPracticePending,
+  FEEDBACK_WITHDRAW_REASONS, GRID_DAYS, PLAN_WITHDRAW_REASONS, PRACTICE_DAILY_MAX, PRACTICE_ERROR,
+  PRACTICE_LIMITS, PRACTICE_TEXT, RECENT_MEDALS, REVIEW_STALE_DAYS, SCREEN_MODE_BY_AUDIENCE,
+  FLUENCY_TITLE_MESSAGE, STAFF_PRACTICE_TEXT,
+  approachAgeOk, approachOptions, approachesForDiagnosis, audienceForAge, blockForTitles, constancyAwards, constancyNext,
+  dayIndex, daysBetween, exerciseTextAlerts, goalProgress, goalRuleText, isAdolescent, isDateKey as validDateKey, onBreak,
+  planSummary, planTextAlerts, practiceDateProblem, practiceDates, practiceSummaryText, publishProblem, readersLine,
+  uncoveredAlerts, validateFeedback, validateGoal, validateNote, validatePlanDraft, weekKey, weekProgress,
+} from "@/lib/practiceRules";
+import { CATALOG_VERSION, catalogEntry, catalogFor } from "@/lib/exerciseCatalog";
+import {
+  type AiAdaptParams, type AiDraftRequest, type AiDraftResult, type DraftFlag, type ExerciseDraft,
+  AI_DRAFT_DAILY_CAP_DEFAULT, AI_ERROR, PROMPT_VERSION, buildAdaptParams, describeSent, draftToExerciseInput, editRatio,
+  exerciseFullText, mockDraft, parseExerciseDraft,
+} from "@/lib/aiDraftRules";
 import { mockSupabase } from "./mockClient";
 
 // ── Modelo ──────────────────────────────────────────────────────────────────
@@ -149,10 +207,14 @@ type Account = {
 // ficha del panel al invitar (para la vigencia del vínculo, ver patientCard).
 // phones: teléfonos de contacto de los chicos de la demo (los invitados desde
 // el panel los toman de su ficha)
+// diagnosis_code: solo los chicos de la demo (no tienen ficha en el panel): lo
+// usa la etapa de ejercicios para los enfoques que se ofrecen (nunca sale
+// hacia la familia ni hacia la IA)
 type Child = {
   id: string; first_name: string; last_name: string; source: "demo" | "agenda";
   birth_date: string | null; discharge_date: string | null; dni: string | null;
   phones?: string[];
+  diagnosis_code?: string | null;
 };
 // "titular": el propio paciente adulto, que usa el portal por su cuenta.
 // verified_*: el equipo vio el DNI en persona; parental_checked_on, la
@@ -178,10 +240,75 @@ type GuardianBlock = {
 };
 // Quién abrió qué (portal_access_log): solo se agregan filas. "descargar":
 // la familia bajó un PDF de la copia digital; "equipo_abrir_documento": alguien
-// del equipo lo abrió para revisarlo (va con staff_email)
+// del equipo lo abrió para revisarlo (va con staff_email). "ver_devolucion" y
+// "ver_medalla" (etapa B): la cuenta abrió una devolución o ya vio una medalla
+// (así cada adulto ve la celebración una vez)
 type AccessLog = {
   id: string; patient_id: string; account_id: string | null; staff_email: string | null;
-  action: "ver_informacion" | "ver_publicacion" | "descargar" | "equipo_abrir_documento"; target_id: string | null; at: string;
+  action: "ver_informacion" | "ver_publicacion" | "descargar" | "equipo_abrir_documento" | "ver_devolucion" | "ver_medalla";
+  target_id: string | null; at: string;
+};
+// Ejercicios (tablas del script 26). Lo publicado no se edita: se arma una
+// versión nueva. Los registros, notas, devoluciones y medallas no se borran:
+// se deshacen, se retiran o se anulan
+type PlanRow = {
+  id: string; patient_id: string; version: number; supersedes_id: string | null; status: PlanStatus;
+  title: string; goal_text: string | null; audience: PlanAudience; days_per_week: number; review_on: string | null;
+  on_break_until: string | null; auto_medals: boolean; professional_id: string | null; author_label: string | null;
+  adolescent_ack: boolean; lint_overrides: LintOverride[];
+  created_by_email: string; created_at: string; updated_by_email: string | null; updated_at: string;
+  published_at: string | null; published_by_email: string | null;
+  closed_at: string | null; closed_by_email: string | null; close_reason: PlanCloseReason | null;
+  // "Visto": last_reviewed_label es el nombre con que firmaba quien lo marcó
+  // (se guarda al marcarlo). Puede ir en un plan ya cerrado (el último publicado)
+  last_reviewed_at: string | null; last_reviewed_by_email: string | null;
+  last_reviewed_label: string | null;
+};
+type ExerciseRow = {
+  id: string; plan_id: string; patient_id: string; exercise_key: string; source: ExerciseSource;
+  catalog_id: string | null; catalog_version: string | null; position: number; approach: Approach;
+  practiced_in_session: boolean; title: string; para_que: string; pasos: string[]; minutes: number;
+  materiales: string | null; for_adult: string | null; si_cuesta: string; with_adult: boolean;
+  ai_draft_id: string | null; ai_drafted: boolean; reviewed_at: string | null; reviewed_by_email: string | null;
+  edit_ratio: number | null; lint_overrides: LintOverride[]; removed_at: string | null; removed_by_email: string | null;
+  created_at: string; updated_at: string;
+};
+// "Ya lo hice": uno vigente por ejercicio (exercise_key) y por día
+type PracticeLogRow = {
+  id: string; patient_id: string; plan_id: string; exercise_id: string; exercise_key: string;
+  account_id: string | null; practiced_on: string; created_at: string; voided_at: string | null;
+};
+// "¿Cómo te fue?" de cada adulto (una nota por cuenta y por práctica)
+type PracticeNoteRow = {
+  id: string; log_id: string; patient_id: string; account_id: string | null; result: PracticeResult | null;
+  comment: string | null; risk_flag: boolean; created_at: string;
+};
+type FeedbackRow = {
+  id: string; patient_id: string; plan_id: string | null; professional_id: string | null; author_label: string;
+  body: string; for_adult: string | null; period_start: string | null; period_end: string | null;
+  adolescent_ack: boolean; review_note: string | null; ai_draft_id: string | null; ai_drafted: boolean;
+  sent_at: string; sent_by_email: string;
+  withdrawn_at: string | null; withdrawn_by_email: string | null; withdraw_reason: FeedbackWithdrawReason | null;
+};
+type GoalRow = {
+  id: string; patient_id: string; plan_id: string | null; kind: GoalKind; title: string; rule: GoalRule | null;
+  medal_title: string | null; agreed_with_patient: boolean; status: GoalStatus;
+  created_by_email: string; created_at: string; updated_at: string;
+  published_at: string | null; published_by_email: string | null; achieved_at: string | null; feedback_id: string | null;
+  changed_at: string | null; changed_by_email: string | null; met_notice_dismissed_at: string | null;
+};
+type MedalRow = {
+  id: string; patient_id: string; kind: MedalKind; code: string; title: string; period_key: string;
+  plan_id: string | null; goal_id: string | null; feedback_id: string | null; message: string | null;
+  awarded_at: string; awarded_by_email: string | null;
+  voided_at: string | null; voided_by_email: string | null; void_reason: string | null;
+};
+// Cada pedido de "Adaptar con ayuda de IA" (en el mock, plantillas fijas)
+type AiDraftRow = {
+  id: string; kind: "adaptacion"; patient_id: string; requested_by_email: string; model: string; prompt_version: string;
+  catalog_version: string | null; params: AiAdaptParams; output: ExerciseDraft | null; flags: DraftFlag[];
+  status: "generado" | "usado" | "descartado" | "error"; error_code: string | null; latency_ms: number | null;
+  used_at: string | null; created_at: string;
 };
 // "Mi información" (tabla portal_publications del script 23). Lo publicado no
 // se edita: se retira (con motivo) y se publica una versión nueva
@@ -259,6 +386,10 @@ type Db = {
   login_failures: Record<string, { count: number; first_at: string }>;
   settings: Settings[]; consents: Consent[]; blocks: GuardianBlock[];
   publications: Publication[]; access_log: AccessLog[];
+  // Etapas B y D (script 26)
+  practice_plans: PlanRow[]; practice_exercises: ExerciseRow[]; practice_logs: PracticeLogRow[];
+  practice_notes: PracticeNoteRow[]; practice_feedback: FeedbackRow[]; practice_goals: GoalRow[];
+  practice_medals: MedalRow[]; ai_drafts: AiDraftRow[];
 };
 
 const DB_KEY = "cimt-portal-mock-db";
@@ -266,11 +397,11 @@ const SESSION_KEY = "cimt-portal-mock-session";
 // "Volvé a poner tu contraseña": va con la sesión de la pestaña (en la base,
 // portal_step_up por session_id)
 const STEP_UP_KEY = "cimt-portal-mock-step-up";
-const DB_VERSION = 9;
+const DB_VERSION = 12;
 
 // Etapas de la información de salud prendidas (en el servidor:
-// PORTAL_CLINICAL_FEATURES). La demo muestra las etapas A, C y E1.
-const FEATURES: ClinicalFeature[] = ["consent", "info", "hc_digital"];
+// PORTAL_CLINICAL_FEATURES). La demo muestra las etapas A, B, C, D y E1.
+const FEATURES: ClinicalFeature[] = ["consent", "info", "practice", "ai", "hc_digital"];
 
 // Copia digital de la historia clínica (E1): solo vale con "consent" también
 // prendida (hace falta que la cuenta haya activado la información de salud)
@@ -434,9 +565,10 @@ function seed(): Db {
     ],
     // Teléfonos inventados: Laura 381 555-2041, Jorge 381 555-7316, Carla 381 555-4410
     children: [
-      { id: "c-martin", first_name: "Martín", last_name: "Gómez", source: "demo", birth_date: born(9), discharge_date: null, dni: null, phones: ["381 555-2041"] },
-      { id: "c-valentina", first_name: "Valentina", last_name: "Ruiz", source: "demo", birth_date: born(6), discharge_date: null, dni: null, phones: ["381 555-2041", "381 555-7316"] },
-      { id: "c-fernanda", first_name: "Fernanda", last_name: "Paz", source: "demo", birth_date: born(14), discharge_date: null, dni: null, phones: ["381 555-4410"] },
+      // diagnosis_code: Martín y Fernanda, tartamudez (F98.5); Valentina, en evaluación
+      { id: "c-martin", first_name: "Martín", last_name: "Gómez", source: "demo", birth_date: born(9), discharge_date: null, dni: null, phones: ["381 555-2041"], diagnosis_code: "F98.5" },
+      { id: "c-valentina", first_name: "Valentina", last_name: "Ruiz", source: "demo", birth_date: born(6), discharge_date: null, dni: null, phones: ["381 555-2041", "381 555-7316"], diagnosis_code: null },
+      { id: "c-fernanda", first_name: "Fernanda", last_name: "Paz", source: "demo", birth_date: born(14), discharge_date: null, dni: null, phones: ["381 555-4410"], diagnosis_code: "F98.5" },
     ],
     links: [
       legal("lnk-laura-martin", "acc-laura", "c-martin", true), legal("lnk-laura-vale", "acc-laura", "c-valentina", true),
@@ -516,7 +648,8 @@ function seed(): Db {
     // Información de salud: nadie la activó todavía (Laura la puede probar)
     settings: [
       settings("c-martin", true, true),
-      settings("c-valentina", true, false),
+      // Ejercicios prendidos, todavía sin plan (la familia ve el estado vacío)
+      settings("c-valentina", true, true),
       // Fernanda tiene 14: falta su conformidad (la familia ve "no disponible")
       settings("c-fernanda", true, false),
     ],
@@ -533,8 +666,245 @@ function seed(): Db {
       review_note: null, published_at: iso(72 * H), published_by_email: STAFF,
       withdrawn_at: null, withdrawn_by_email: null, withdraw_reason: null,
     }],
-    access_log: [],
+    ...seedPractice(today, `${ANA} · MP 4521`, STAFF),
   };
+}
+
+// ── Ejercicios de la demo (etapas B y D) ────────────────────────────────────
+// Martín: un plan publicado con 3 ejercicios del catálogo (uno adaptado con
+// IA y revisado), prácticas de Laura en días recientes, una devolución, una
+// meta activa y las medallas que salen de simular cada práctica con
+// constancyAwards. Fechas relativas a la semana de hoy (hora del centro).
+
+// Modelo que figura en los borradores de IA del mock (plantillas fijas)
+const MOCK_AI_MODEL = "demo (sin IA)";
+
+// Ids fijos (los valida isUuid, como en la base)
+const DEMO_PLAN_ID = "7b2e4c1a-3f5d-4a8e-9c61-2d0f8e5b7a14";
+const DEMO_GOAL_ID = "c4d81f2b-6e3a-4b7c-8d95-1a2f3e4b5c6d";
+const DEMO_FEEDBACK_ID = "e9f1a2b3-4c5d-4e6f-8a7b-9c0d1e2f3a4b";
+const DEMO_AI_DRAFT_ID = "3a7c9e1b-5d2f-4c8a-b6e4-0f1d2c3b4a59";
+// Valentina: logros sin plan publicado (una devolución con medalla y dos metas)
+const DEMO_VALE = {
+  feedback: "5c1d7e3a-9b2f-4e6d-8a4c-1f0b3d5e7a92",
+  medal: "6d2e8f4b-0c3a-4f7e-9b5d-2a1c4e6f8b03",
+  goal_done: "7e3f9a5c-1d4b-4a8f-8c6e-3b2d5f7a9c14",
+  goal_active: "8f4a0b6d-2e5c-4b9a-9d7f-4c3e6a8b0d25",
+} as const;
+const DEMO_EXERCISES = {
+  arranque: { id: "1f6b8d2a-4c3e-4a5b-9d7f-2e1c0b9a8f71", key: "5e2a9c4b-1d3f-4b6a-8c7e-0f9d2b4a6c13", catalog: "hf-arranque-suave" },
+  turnos: { id: "2a7c9e3b-5d4f-4b6c-8e0a-3f2d1c0b9a82", key: "6f3b0d5c-2e4a-4c7b-9d8f-1a0e3c5b7d24", catalog: "ef-turnos-mesa" },
+  trabas: { id: "3b8d0f4c-6e5a-4c7d-9f1b-4a3e2d1c0b93", key: "7a4c1e6d-3f5b-4d8c-8e9a-2b1f4d6c8e35", catalog: "tf-trabas-proposito" },
+} as const;
+
+// Un momento del día del centro (Tucumán es UTC−3 todo el año)
+function centerIso(dateKey: string, time: string): string {
+  return new Date(`${dateKey}T${time}:00-03:00`).toISOString();
+}
+
+type PracticeSeed = Pick<Db, "practice_plans" | "practice_exercises" | "practice_logs" | "practice_notes"
+  | "practice_feedback" | "practice_goals" | "practice_medals" | "ai_drafts" | "access_log">;
+
+function seedPractice(today: string, authorLabel: string, staffEmail: string): PracticeSeed {
+  const monday = weekKey(today);
+  const lastMonday = addDays(monday, -7);
+  const createdOn = addDays(lastMonday, -4); // jueves de hace dos semanas: armó el borrador
+  const publishedOn = addDays(lastMonday, -3); // viernes: lo publicó
+  const created = centerIso(createdOn, "18:00");
+  const published = centerIso(publishedOn, "12:30");
+  const feedbackAt = centerIso(addDays(lastMonday, 1), "20:30"); // martes pasado
+  const out: PracticeSeed = {
+    practice_plans: [], practice_exercises: [], practice_logs: [], practice_notes: [], practice_feedback: [],
+    practice_goals: [], practice_medals: [], ai_drafts: [], access_log: [],
+  };
+
+  // El borrador de IA de «Trabas a propósito» (intereses: fútbol). Del
+  // paciente solo viaja la franja de edad (ver aiDraftRules.ts)
+  const built = buildAdaptParams({
+    patient_id: "c-martin", catalog_ids: [DEMO_EXERCISES.trabas.catalog], approach: "tartamudear_facil",
+    practiced_in_session: true, quien_acompana: "adulto_con_chico", contexto: ["casa", "juego"], minutos: 5,
+    dificultad: "igual", adaptaciones: [], intereses: ["futbol"],
+  }, { age: 9, diagnosis_code: "F98.5" });
+  const draft = built.ok ? mockDraft(built.params, built.entries) : null;
+  const parsed = draft && built.ok
+    ? parseExerciseDraft(draft, built.params.catalogo.ids, built.params.minutos, built.params.enfoque)
+    : null;
+  if (built.ok && parsed?.ok) {
+    out.ai_drafts.push({
+      id: DEMO_AI_DRAFT_ID, kind: "adaptacion", patient_id: "c-martin", requested_by_email: staffEmail, model: MOCK_AI_MODEL,
+      prompt_version: PROMPT_VERSION, catalog_version: CATALOG_VERSION, params: built.params, output: parsed.draft,
+      flags: parsed.flags, status: "usado", error_code: null, latency_ms: 1800,
+      used_at: centerIso(createdOn, "18:05"), created_at: centerIso(createdOn, "17:50"),
+    });
+  }
+
+  out.practice_plans.push({
+    id: DEMO_PLAN_ID, patient_id: "c-martin", version: 1, supersedes_id: null, status: "publicado",
+    title: "Jugar con la voz en casa",
+    goal_text: "Practicar en casa, como un juego, lo que hacemos en las sesiones: arrancar suave, perderle el miedo a las trabas y respetar los turnos para hablar.",
+    audience: "preadolescencia", days_per_week: 3, review_on: addDays(publishedOn, 30), on_break_until: null,
+    auto_medals: true, professional_id: null, author_label: authorLabel, adolescent_ack: false, lint_overrides: [],
+    created_by_email: staffEmail, created_at: created, updated_by_email: staffEmail, updated_at: feedbackAt,
+    published_at: published, published_by_email: staffEmail, closed_at: null, closed_by_email: null, close_reason: null,
+    // Al mandar la devolución quedó "Visto"
+    last_reviewed_at: feedbackAt, last_reviewed_by_email: staffEmail, last_reviewed_label: authorLabel,
+  });
+
+  const fromCatalog = (
+    ex: (typeof DEMO_EXERCISES)[keyof typeof DEMO_EXERCISES], position: number, approach: Approach,
+  ): ExerciseRow | null => {
+    const e = catalogEntry(ex.catalog);
+    if (!e) return null;
+    return {
+      id: ex.id, plan_id: DEMO_PLAN_ID, patient_id: "c-martin", exercise_key: ex.key, source: "catalogo",
+      catalog_id: e.id, catalog_version: CATALOG_VERSION, position, approach, practiced_in_session: false,
+      title: e.title, para_que: e.para_que, pasos: [...e.pasos], minutes: e.minutes, materiales: e.materiales,
+      for_adult: e.for_adult, si_cuesta: e.si_cuesta, with_adult: e.with_adult,
+      ai_draft_id: null, ai_drafted: false, reviewed_at: null, reviewed_by_email: null, edit_ratio: null,
+      lint_overrides: [], removed_at: null, removed_by_email: null, created_at: created, updated_at: created,
+    };
+  };
+  const arranque = fromCatalog(DEMO_EXERCISES.arranque, 0, "habla_facil");
+  const turnos = fromCatalog(DEMO_EXERCISES.turnos, 1, "entorno_familia");
+  let trabas = fromCatalog(DEMO_EXERCISES.trabas, 2, "tartamudear_facil");
+  if (trabas) {
+    trabas.practiced_in_session = true;
+    const item = parsed?.ok ? parsed.draft.ejercicios[0] : undefined;
+    if (item) {
+      // Lo que propuso la IA, con lo que cambió la profesional antes de publicarlo
+      const proposed = draftToExerciseInput(item, { approach: "tartamudear_facil", practiced_in_session: true, draft_id: DEMO_AI_DRAFT_ID });
+      const pasos = [...proposed.pasos];
+      pasos[0] = "Elijan juntos 5 palabras de fútbol: pelota, gol, arco, cancha, botín.";
+      if (pasos[1]) pasos[1] = "Decí cada palabra repitiendo el primer sonido a propósito, suave y relajado: «pe-pe-pelota».";
+      trabas = {
+        ...trabas, source: "ia", ai_draft_id: DEMO_AI_DRAFT_ID, ai_drafted: true,
+        title: "Trabas a propósito con palabras de fútbol", para_que: proposed.para_que, pasos,
+        minutes: proposed.minutes, materiales: proposed.materiales, for_adult: proposed.for_adult,
+        si_cuesta: proposed.si_cuesta, with_adult: proposed.with_adult,
+        reviewed_at: centerIso(createdOn, "18:20"), reviewed_by_email: staffEmail,
+      };
+      trabas.edit_ratio = editRatio(exerciseFullText(proposed), exerciseFullText(trabas));
+    }
+  }
+  for (const e of [arranque, turnos, trabas]) if (e) out.practice_exercises.push(e);
+
+  // Las prácticas que anotó Laura (fecha → ejercicios) y lo que contó
+  const { arranque: A, turnos: T, trabas: TF } = DEMO_EXERCISES;
+  const days: [string, { id: string; key: string }[]][] = [
+    [addDays(lastMonday, -2), [A]],
+    [lastMonday, [A, T]],
+    [addDays(lastMonday, 2), [A, TF]],
+    [addDays(lastMonday, 4), [T]],
+  ];
+  // Esta semana, si ya empezó: anteayer y ayer (sin llegar a la meta: con
+  // dos días, anotar hoy gana «Semana cumplida»)
+  const di = dayIndex(today);
+  if (di >= 2) days.push([addDays(today, -2), [T]]);
+  if (di >= 1) days.push([addDays(today, -1), [A]]);
+  const notes: Record<string, { result: PracticeResult; comment: string | null }> = {
+    [`${addDays(lastMonday, -2)}|${DEMO_EXERCISES.arranque.key}`]: { result: "bien", comment: null },
+    [`${lastMonday}|${DEMO_EXERCISES.turnos.key}`]: {
+      result: "bien", comment: "Martín eligió la cuchara de madera y no la quería soltar. ¡Nos reímos mucho!",
+    },
+    [`${addDays(lastMonday, 2)}|${DEMO_EXERCISES.trabas.key}`]: {
+      result: "costo", comment: "Al principio se reía con las trabas a propósito, pero después le dio vergüenza y no quiso seguir.",
+    },
+    [`${addDays(lastMonday, 4)}|${DEMO_EXERCISES.turnos.key}`]: { result: "mas_o_menos", comment: null },
+  };
+  const awarded: { code: string; period_key: string }[] = [];
+  const logged: PracticeDay[] = [];
+  for (const [date, list] of days) {
+    list.forEach((ex, i) => {
+      const at = centerIso(date, `19:${String(10 + i * 5).padStart(2, "0")}`);
+      const id = uuid();
+      out.practice_logs.push({
+        id, patient_id: "c-martin", plan_id: DEMO_PLAN_ID, exercise_id: ex.id, exercise_key: ex.key,
+        account_id: "acc-laura", practiced_on: date, created_at: at, voided_at: null,
+      });
+      logged.push({ date, exercise_key: ex.key });
+      const note = notes[`${date}|${ex.key}`];
+      if (note) {
+        out.practice_notes.push({
+          id: uuid(), log_id: id, patient_id: "c-martin", account_id: "acc-laura", result: note.result,
+          comment: note.comment, risk_flag: false, created_at: centerIso(date, `19:${String(12 + i * 5).padStart(2, "0")}`),
+        });
+      }
+    });
+    // Como el servidor: después de anotar, las medallas de constancia que corresponden
+    for (const a of constancyAwards({ logs: logged, days_per_week: 3, awarded, today: date })) {
+      awarded.push(a);
+      out.practice_medals.push({
+        id: uuid(), patient_id: "c-martin", kind: "constancia", code: a.code, title: a.title, period_key: a.period_key,
+        plan_id: DEMO_PLAN_ID, goal_id: null, feedback_id: null, message: null, awarded_at: centerIso(date, "19:30"),
+        awarded_by_email: null, voided_at: null, voided_by_email: null, void_reason: null,
+      });
+    }
+  }
+  // Laura ya vio «Primer paso» (la «Semana cumplida» es nueva para ella)
+  for (const m of out.practice_medals.filter((x) => x.code === "primer_paso")) {
+    out.access_log.push({
+      id: uid("log"), patient_id: "c-martin", account_id: "acc-laura", staff_email: null, action: "ver_medalla",
+      target_id: m.id, at: new Date(Date.parse(m.awarded_at) + 10 * 60 * 1000).toISOString(),
+    });
+  }
+
+  // La devolución del martes pasado (Laura todavía no la abrió)
+  out.practice_feedback.push({
+    id: DEMO_FEEDBACK_ID, patient_id: "c-martin", plan_id: DEMO_PLAN_ID, professional_id: null, author_label: authorLabel,
+    body: "¡Qué buen comienzo! Ya anotaron las primeras prácticas y me contaron que en los turnos de la mesa la cuchara de madera fue un éxito. Sigan así, como un juego: lo importante es pasarla bien juntos.",
+    for_adult: "Si un día no pueden, no pasa nada: lo importante es retomar.",
+    period_start: publishedOn, period_end: addDays(lastMonday, 1), adolescent_ack: false, review_note: null,
+    ai_draft_id: null, ai_drafted: false, sent_at: feedbackAt, sent_by_email: staffEmail,
+    withdrawn_at: null, withdrawn_by_email: null, withdraw_reason: null,
+  });
+
+  // La meta de práctica, publicada con el plan
+  const rule: GoalRule = { dias: 10, semanas: 4 };
+  out.practice_goals.push({
+    id: DEMO_GOAL_ID, patient_id: "c-martin", plan_id: DEMO_PLAN_ID, kind: "practica", title: goalRuleText(rule), rule,
+    medal_title: "Gran equipo", agreed_with_patient: true, status: "activa", created_by_email: staffEmail,
+    created_at: centerIso(createdOn, "18:30"), updated_at: published, published_at: published,
+    published_by_email: staffEmail, achieved_at: null, feedback_id: null, changed_at: null, changed_by_email: null,
+    met_notice_dismissed_at: null,
+  });
+
+  // Valentina (en evaluación): nunca tuvo un plan publicado, pero tiene
+  // logros. Dos metas sin plan publicadas hace dos semanas; el jueves pasado
+  // la devolución dio por lograda una, con la medalla «¡Me animé!». Laura ya
+  // vio la medalla (la celebración del Inicio salió una vez) y todavía no
+  // abrió la devolución. Sin plan no hay «Ejercicios»: todo está en «Medallas»
+  const valeGoalsAt = centerIso(addDays(lastMonday, -7), "17:00");
+  const valeFeedbackAt = centerIso(addDays(lastMonday, 3), "17:45");
+  const valeGoal = (id: string, title: string, medal: string, done: boolean): GoalRow => ({
+    id, patient_id: "c-valentina", plan_id: null, kind: "terapeutica", title, rule: null, medal_title: medal,
+    agreed_with_patient: false, status: done ? "lograda" : "activa", created_by_email: staffEmail,
+    created_at: valeGoalsAt, updated_at: done ? valeFeedbackAt : valeGoalsAt, published_at: valeGoalsAt,
+    published_by_email: staffEmail, achieved_at: done ? valeFeedbackAt : null, feedback_id: done ? DEMO_VALE.feedback : null,
+    changed_at: null, changed_by_email: null, met_notice_dismissed_at: null,
+  });
+  out.practice_goals.push(
+    valeGoal(DEMO_VALE.goal_done, "Elegir un juego y contarnos cómo se juega", "¡Me animé!", true),
+    valeGoal(DEMO_VALE.goal_active, "Traer un juguete y contarnos a qué juega", "Gran contadora", false),
+  );
+  out.practice_feedback.push({
+    id: DEMO_VALE.feedback, patient_id: "c-valentina", plan_id: null, professional_id: null, author_label: authorLabel,
+    body: "¡Qué lindo fue jugar con vos, Valentina! Elegiste el juego y nos contaste cómo se jugaba. Para la próxima, traé tu juguete preferido y nos contás a qué juegan.",
+    for_adult: "Si en casa les pregunta algo, respondan con calma y sin apuro: lo importante es disfrutar de conversar.",
+    period_start: null, period_end: centerDateOf(valeFeedbackAt), adolescent_ack: false, review_note: null,
+    ai_draft_id: null, ai_drafted: false, sent_at: valeFeedbackAt, sent_by_email: staffEmail,
+    withdrawn_at: null, withdrawn_by_email: null, withdraw_reason: null,
+  });
+  out.practice_medals.push({
+    id: DEMO_VALE.medal, patient_id: "c-valentina", kind: "profesional", code: "profesional", title: "¡Me animé!",
+    period_key: "", plan_id: null, goal_id: DEMO_VALE.goal_done, feedback_id: DEMO_VALE.feedback,
+    message: "¡Qué valiente!", awarded_at: valeFeedbackAt, awarded_by_email: staffEmail,
+    voided_at: null, voided_by_email: null, void_reason: null,
+  });
+  out.access_log.push({
+    id: uid("log"), patient_id: "c-valentina", account_id: "acc-laura", staff_email: null, action: "ver_medalla",
+    target_id: DEMO_VALE.medal, at: new Date(Date.parse(valeFeedbackAt) + 2 * 60 * 60 * 1000).toISOString(),
+  });
+  return out;
 }
 
 // ── Persistencia ────────────────────────────────────────────────────────────
@@ -831,7 +1201,8 @@ function childNames(db: Db, ids: string[]): string[] {
   return ids.map((id) => db.children.find((c) => c.id === id)).filter((c): c is Child => !!c).map((c) => `${c.first_name} ${lastInitial(c)}`);
 }
 
-// Turnos de los chicos invitados desde el panel: se leen de la agenda del mock
+// Turnos de la agenda del mock (los de los chicos invitados desde el panel y
+// los que se dieron desde la bandeja, ver apptsFor)
 type Row = Record<string, unknown>;
 const ATTENDANCE = ["presente", "ausente", "justificado"] as const;
 async function agendaAppts(childIds: string[]): Promise<Appt[]> {
@@ -858,11 +1229,15 @@ async function agendaAppts(childIds: string[]): Promise<Appt[]> {
   return out;
 }
 
+// Los turnos de la demo viven acá; los de los chicos invitados desde el panel,
+// en la agenda del mock. Un chico de la demo también puede tener turnos en la
+// agenda del mock: los que le da el equipo desde la bandeja («Dar turno» →
+// «Cargar el turno acá» los guarda con el cliente del mock, como en producción)
 async function apptsFor(db: Db, childIds: string[]): Promise<Appt[]> {
-  const agendaIds = childIds.filter((id) => db.children.find((c) => c.id === id)?.source === "agenda");
+  const known = childIds.filter((id) => db.children.some((c) => c.id === id));
   return [
     ...db.appts.filter((a) => childIds.includes(a.child_id)),
-    ...(await agendaAppts(agendaIds)),
+    ...(await agendaAppts(known)),
   ];
 }
 
@@ -1198,6 +1573,22 @@ export async function me(): Promise<ApiResult<MeDTO>> {
     const fresh = await infoNewCounts(db, acc.id, infoOk);
     for (const id of infoOk) perChild.get(id)!.info_new = fresh.get(id) ?? 0;
   }
+  // Ejercicios (etapa "practice"), solo de quienes la cuenta puede ver: lo de
+  // los cuadraditos "Ejercicios" y "Mis logros" (null si no hay nada para
+  // ver) y la medalla nueva de más prioridad para el aviso destacado del Inicio
+  let celebration: CelebrationDTO | null | undefined;
+  if (perChild && FEATURES.includes("practice")) {
+    let best: { m: MedalRow; who: PracticeChildDTO } | null = null;
+    for (const [id, v] of perChild) {
+      if (v.practice !== "ok") continue;
+      const who = await practiceWho(db, acc, id);
+      if (!who) continue;
+      v.practice_home = practiceHome(db, acc.id, who, today);
+      const top = unseenMedals(db, acc.id, id).sort(medalPriority)[0];
+      if (top && (!best || medalPriority(top, best.m) < 0)) best = { m: top, who };
+    }
+    celebration = best ? celebrationOf(db, best.m, best.who) : null;
+  }
   const children: ChildDTO[] = [];
   for (const id of ids) {
     const c = db.children.find((x) => x.id === id)!;
@@ -1215,6 +1606,7 @@ export async function me(): Promise<ApiResult<MeDTO>> {
     // El mock siempre tiene los pedidos de turno (en el servidor, si ya se corrió el script 24)
     can_request_appts: true,
     ...(clinical ? { clinical } : {}),
+    ...(celebration !== undefined ? { celebration } : {}),
   });
 }
 
@@ -1892,6 +2284,597 @@ export async function info(patientId: string): Promise<ApiResult<InfoDTO>> {
   });
 }
 
+// ── Ejercicios, devoluciones y medallas (familia) ───────────────────────────
+// Etapa B ("practice"). En producción: GET /api/portal/practice?view=…&id=…
+// y POST /api/portal/practice { action } (server/api/portal/practice.ts y
+// server/lib/practice.ts). Sin contraseña de nuevo: son parte de la
+// práctica diaria. 403 con code CONSENT, VERIFY o NOT_AVAILABLE (nunca el
+// motivo real); un paciente, un ejercicio o una práctica ajenos dan el mismo
+// 404 que uno que no existe. Lo que ve la familia nunca lleva emails del
+// equipo, motivos de retiro, avisos del texto, marcas de IA ni notas de otras
+// cuentas. Los comentarios de la familia no se escriben en ningún registro.
+
+const PRACTICE_NOT_FOUND = "No encontramos esos ejercicios en tu cuenta.";
+const EXERCISE_NOT_FOUND = "No encontramos ese ejercicio en tu cuenta.";
+const LOG_NOT_FOUND = "No encontramos esa práctica en tu cuenta.";
+const LOG_UNDONE = "Esa práctica se deshizo: anotala de nuevo para contar cómo les fue.";
+const REVIEWER_FALLBACK = "Tu profesional"; // "Tu profesional vio las prácticas el …"
+const DAY_LABELS = ["hoy", "ayer", "anteayer"] as const;
+
+// ── Lecturas comunes (familia y equipo) ──
+
+const byPosition = (x: ExerciseRow, y: ExerciseRow) => x.position - y.position || x.created_at.localeCompare(y.created_at);
+const newestFirst = <T>(at: (x: T) => string) => (x: T, y: T) => at(y).localeCompare(at(x));
+
+// El plan publicado (uno por paciente, como el índice único de la base)
+function livePlan(db: Db, patientId: string): PlanRow | null {
+  return db.practice_plans.find((p) => p.patient_id === patientId && p.status === "publicado") ?? null;
+}
+
+function draftPlanOf(db: Db, patientId: string): PlanRow | null {
+  return db.practice_plans.find((p) => p.patient_id === patientId && p.status === "borrador") ?? null;
+}
+
+// Los ejercicios de una versión del plan, en orden (con los quitados)
+function planRows(db: Db, planId: string): ExerciseRow[] {
+  return db.practice_exercises.filter((e) => e.plan_id === planId).sort(byPosition);
+}
+
+function activeRows(db: Db, planId: string): ExerciseRow[] {
+  return planRows(db, planId).filter((e) => !e.removed_at);
+}
+
+// Las prácticas vigentes (no deshechas) de un paciente, de cualquier plan
+function liveLogs(db: Db, patientId: string): PracticeLogRow[] {
+  return db.practice_logs.filter((l) => l.patient_id === patientId && !l.voided_at);
+}
+
+const asDays = (logs: PracticeLogRow[]): PracticeDay[] => logs.map((l) => ({ date: l.practiced_on, exercise_key: l.exercise_key }));
+
+// La práctica vigente de un ejercicio en un día
+function logOn(db: Db, patientId: string, key: string, date: string): PracticeLogRow | null {
+  return db.practice_logs.find((l) => l.patient_id === patientId && l.exercise_key === key && l.practiced_on === date && !l.voided_at) ?? null;
+}
+
+// Primer día (del centro) en que se publicó ese ejercicio, en cualquier versión
+function firstPublishedOn(db: Db, patientId: string, key: string): string | null {
+  const dates = db.practice_exercises
+    .filter((e) => e.patient_id === patientId && e.exercise_key === key)
+    .map((e) => db.practice_plans.find((p) => p.id === e.plan_id)?.published_at)
+    .filter((x): x is string => !!x)
+    .map(centerDateOf)
+    .sort();
+  return dates[0] ?? null;
+}
+
+// Un ejercicio (de cualquier versión) en el plan publicado de hoy: por su
+// identidad, así un enlace viejo sigue andando y "Hecho hoy" se mantiene.
+// null: ya no está en el plan
+function currentOf(db: Db, patientId: string, key: string): { plan: PlanRow; ex: ExerciseRow } | null {
+  const plan = livePlan(db, patientId);
+  const ex = plan ? activeRows(db, plan.id).find((e) => e.exercise_key === key) : undefined;
+  return plan && ex ? { plan, ex } : null;
+}
+
+// Lo que esta cuenta ya abrió o ya vio (devoluciones y medallas)
+function seenTargets(db: Db, accountId: string, action: "ver_devolucion" | "ver_medalla"): Set<string> {
+  return new Set(db.access_log.flatMap((l) => (l.account_id === accountId && l.action === action && l.target_id ? [l.target_id] : [])));
+}
+
+function liveFeedback(db: Db, patientId: string): FeedbackRow[] {
+  return db.practice_feedback.filter((f) => f.patient_id === patientId && !f.withdrawn_at).sort(newestFirst((f) => f.sent_at));
+}
+
+function liveMedals(db: Db, patientId: string): MedalRow[] {
+  return db.practice_medals.filter((m) => m.patient_id === patientId && !m.voided_at).sort(newestFirst((m) => m.awarded_at));
+}
+
+// Las que se repiten van juntas ("Ganada 4 veces"): las de constancia, una
+// tarjeta por código; las del profesional, cada una la suya
+const medalGroupKey = (m: MedalRow) => (m.kind === "constancia" ? `c|${m.code}` : `p|${m.id}`);
+
+// Medallas que esta cuenta todavía no vio
+function unseenMedals(db: Db, accountId: string, patientId: string): MedalRow[] {
+  const seen = seenTargets(db, accountId, "ver_medalla");
+  return liveMedals(db, patientId).filter((m) => !seen.has(m.id));
+}
+
+// Con qué nombre la dio el profesional (el de su devolución)
+function medalBy(db: Db, m: MedalRow): string | null {
+  if (m.kind !== "profesional") return null;
+  return db.practice_feedback.find((f) => f.id === m.feedback_id)?.author_label ?? null;
+}
+
+// La persona como la ve esta cuenta (con su franja por la edad de hoy)
+async function practiceWho(db: Db, acc: Account, patientId: string): Promise<PracticeChildDTO | null> {
+  const child = db.children.find((c) => c.id === patientId);
+  if (!child) return null;
+  const card = await patientCard(db, patientId);
+  const age = card?.birth_date ? ageOn(card.birth_date, centerNow().date) : null;
+  return { id: patientId, first_name: displayName(db, acc.id, child), self: isSelfLink(db, acc.id, patientId), audience: audienceForAge(age) };
+}
+
+// Celebración: las del profesional se nombran de forma genérica (su título
+// puede ser sensible: se ve en la página de medallas)
+function celebrationOf(db: Db, m: MedalRow, who: PracticeChildDTO): CelebrationDTO {
+  return {
+    medal_id: m.id, patient_id: m.patient_id, first_name: who.first_name, self: who.self, audience: who.audience,
+    kind: m.kind, title: m.kind === "profesional" ? null : m.title, by: medalBy(db, m),
+  };
+}
+
+// Para celebrar: la más nueva; a la par, la del profesional y después las de
+// constancia más grandes (como el servidor)
+function medalPriority(x: MedalRow, y: MedalRow): number {
+  const rank = (m: MedalRow) => (m.kind === "profesional" ? 100 : CONSTANCY_CODES.indexOf(m.code as ConstancyCode));
+  return y.awarded_at.localeCompare(x.awarded_at) || rank(y) - rank(x);
+}
+
+function feedbackItem(db: Db, f: FeedbackRow, seen: Set<string>): FeedbackItemDTO {
+  const medal = db.practice_medals.find((m) => m.feedback_id === f.id && m.kind === "profesional" && !m.voided_at);
+  return {
+    id: f.id, author_label: f.author_label, sent_at: f.sent_at, body: f.body, for_adult: f.for_adult,
+    medal_title: medal?.title ?? null,
+    goals_achieved: db.practice_goals.filter((g) => g.feedback_id === f.id && g.status === "lograda").map((g) => g.title),
+    is_new: !seen.has(f.id),
+  };
+}
+
+// Metas que ve la familia: las activas y las logradas (nunca borradores ni
+// cambiadas). Una lograda lleva la medalla que de verdad se dio por ella
+// (vigente), no la acordada; sin ninguna, null (como el servidor)
+function familyGoals(db: Db, patientId: string): GoalDTO[] {
+  const rows = db.practice_goals.filter((g) => g.patient_id === patientId && (g.status === "activa" || g.status === "lograda"));
+  const active = rows.filter((g) => g.status === "activa").sort((x, y) => (x.published_at ?? "").localeCompare(y.published_at ?? ""));
+  const done = rows.filter((g) => g.status === "lograda").sort(newestFirst((g) => g.achieved_at ?? ""));
+  const medals = liveMedals(db, patientId);
+  return [...active, ...done].map((g) => {
+    const lograda = g.status === "lograda";
+    const given = lograda ? medals.find((m) => m.kind === "profesional" && m.goal_id === g.id) : undefined;
+    return {
+      id: g.id, kind: g.kind, title: g.title, status: lograda ? "lograda" : "activa",
+      achieved_at: lograda ? g.achieved_at : null, medal_title: lograda ? given?.title ?? null : g.medal_title,
+    };
+  });
+}
+
+// Si la persona tiene algo de la etapa "practice" para ver: plan publicado,
+// devolución vigente, medalla vigente o meta activa o lograda
+function hasPracticeThings(db: Db, patientId: string): boolean {
+  return !!livePlan(db, patientId) || liveFeedback(db, patientId).length > 0 || liveMedals(db, patientId).length > 0
+    || db.practice_goals.some((g) => g.patient_id === patientId && (g.status === "activa" || g.status === "lograda"));
+}
+
+function medalItem(db: Db, m: MedalRow, times: number, isNew: boolean): MedalDTO {
+  return {
+    id: m.id, kind: m.kind, code: m.code, title: m.title, awarded_at: m.awarded_at, times, by: medalBy(db, m),
+    message: m.kind === "profesional" ? m.message : null,
+    goal_title: m.goal_id ? db.practice_goals.find((g) => g.id === m.goal_id)?.title ?? null : null,
+    is_new: isNew,
+  };
+}
+
+const myNote = (db: Db, logId: string, accountId: string): MyNoteDTO | null => {
+  const n = db.practice_notes.find((x) => x.log_id === logId && x.account_id === accountId);
+  return n ? { result: n.result, comment: n.comment } : null;
+};
+
+// Deshacer: solo lo que anotó esta cuenta, el mismo día en que lo anotó
+const canUndo = (l: PracticeLogRow, accountId: string, today: string) =>
+  !l.voided_at && l.account_id === accountId && centerDateOf(l.created_at) === today;
+
+function weekOf(db: Db, plan: PlanRow, today: string) {
+  return weekProgress(asDays(liveLogs(db, plan.patient_id)), plan.days_per_week, today);
+}
+
+const breakUntil = (plan: PlanRow | null, today: string) => (plan && onBreak(plan.on_break_until, today) ? plan.on_break_until : null);
+
+// Para el Inicio ("Ejercicios", solo con has_plan, y "Mis logros") y el botón
+// Ejercicios (como practiceHome del servidor). null: no hay nada para ver (ni
+// plan publicado, ni devoluciones, medallas o metas vigentes). audience: la
+// de la persona (por su edad); mode: el del plan (sin plan, por la edad)
+function practiceHome(db: Db, accountId: string, who: PracticeChildDTO, today: string): PracticeHomeDTO | null {
+  const patientId = who.id;
+  if (!hasPracticeThings(db, patientId)) return null;
+  const plan = livePlan(db, patientId);
+  const week = plan ? weekOf(db, plan, today) : null;
+  const seen = seenTargets(db, accountId, "ver_devolucion");
+  return {
+    mode: SCREEN_MODE_BY_AUDIENCE[plan ? plan.audience : who.audience], audience: who.audience,
+    has_plan: !!plan,
+    week: week ? { count: week.count, target: week.target } : null,
+    on_break_until: breakUntil(plan, today),
+    feedback_new: liveFeedback(db, patientId).filter((f) => !seen.has(f.id)).length,
+    medals_new: unseenMedals(db, accountId, patientId).length,
+  };
+}
+
+// ── Puerta de la familia ──
+
+type PracticeFamily = { acc: Account; who: PracticeChildDTO };
+
+// Como clinicalGate("practice") en el servidor: el vínculo vale hoy, no es
+// un adulto autorizado y la regla "practice" da ok
+async function practiceGate(db: Db, acc: Account, patientId: string): Promise<PracticeFamily | ApiResult<never>> {
+  const link = linkOf(db, acc.id, patientId);
+  const perChild = await childrenClinical(db, acc);
+  const who = await practiceWho(db, acc, patientId);
+  if (!link || !who || link.relationship_kind === "autorizado" || !perChild.has(patientId)) return fail(404, PRACTICE_NOT_FOUND);
+  const outcome = perChild.get(patientId)?.practice ?? "not_available";
+  if (outcome === "consent") return fail(403, "Para ver los ejercicios, primero activá la información de salud.", { code: "CONSENT" });
+  if (outcome === "verify") {
+    return fail(403, "Para ver los ejercicios, la primera vez tenés que pasar por el centro con tu DNI.", { code: "VERIFY" });
+  }
+  if (outcome !== "ok") return fail(403, PRACTICE_TEXT.not_available, { code: "NOT_AVAILABLE" });
+  return { acc, who };
+}
+
+// La sesión y la puerta, a partir del paciente
+async function practiceEntry(patientId: unknown): Promise<PracticeFamily | ApiResult<never>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  const db = load();
+  const acc = requireAccount(db);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  if (!validId(patientId)) return fail(404, PRACTICE_NOT_FOUND);
+  return practiceGate(db, acc, patientId);
+}
+
+// ── Lo que ve la familia ──
+
+function practicePage(db: Db, f: PracticeFamily, today: string): PracticeDTO {
+  const patientId = f.who.id;
+  const plan = livePlan(db, patientId);
+  const rows = plan ? activeRows(db, plan.id) : [];
+  const seenFeedback = seenTargets(db, f.acc.id, "ver_devolucion");
+  const seenMedals = seenTargets(db, f.acc.id, "ver_medalla");
+  const feedback = liveFeedback(db, patientId);
+  // "Lic. … vio las prácticas el …": el nombre con que firmaba quien marcó
+  // "Visto" (guardado al marcarlo). Nunca el de otra persona (ni el autor del
+  // plan): si no está, un texto neutro
+  const reviewer = plan?.last_reviewed_at ? plan.last_reviewed_label?.trim() || REVIEWER_FALLBACK : null;
+  return {
+    child: f.who,
+    mode: plan ? SCREEN_MODE_BY_AUDIENCE[plan.audience] : SCREEN_MODE_BY_AUDIENCE[f.who.audience],
+    plan: plan ? {
+      id: plan.id, title: plan.title, goal_text: plan.goal_text, author_label: plan.author_label ?? "",
+      published_at: plan.published_at ?? plan.updated_at, days_per_week: plan.days_per_week,
+      total_minutes: rows.reduce((s, e) => s + e.minutes, 0),
+    } : null,
+    exercises: rows.map((e) => {
+      const log = logOn(db, patientId, e.exercise_key, today);
+      return {
+        id: e.id, title: e.title, minutes: e.minutes, with_adult: e.with_adult, done_today: !!log, log_id: log?.id ?? null,
+        can_undo: !!log && canUndo(log, f.acc.id, today), my_note: log ? myNote(db, log.id, f.acc.id) : null,
+      };
+    }),
+    week: plan ? weekOf(db, plan, today) : null,
+    goals: familyGoals(db, patientId),
+    last_feedback: feedback[0] ? feedbackItem(db, feedback[0], seenFeedback) : null,
+    feedback_new: feedback.filter((x) => !seenFeedback.has(x.id)).length,
+    recent_medals: liveMedals(db, patientId).slice(0, RECENT_MEDALS).map((m) => medalItem(db, m, 1, !seenMedals.has(m.id))),
+    reviewed: plan?.last_reviewed_at && reviewer ? { by: reviewer, on: centerDateOf(plan.last_reviewed_at) } : null,
+    on_break_until: breakUntil(plan, today),
+    adult_guide: [...new Set(rows.map((e) => e.for_adult).filter((x): x is string => !!x))],
+    celebration: unseenMedals(db, f.acc.id, patientId).sort(medalPriority).map((m) => celebrationOf(db, m, f.who)),
+  };
+}
+
+function exercisePage(db: Db, f: PracticeFamily, plan: PlanRow, ex: ExerciseRow, today: string): PracticeExerciseDTO {
+  const days: PracticeDayDTO[] = practiceDates(today, firstPublishedOn(db, ex.patient_id, ex.exercise_key)).map((date) => {
+    const log = logOn(db, ex.patient_id, ex.exercise_key, date);
+    return {
+      date,
+      label: DAY_LABELS[Math.min(2, Math.max(0, daysBetween(date, today)))],
+      log: log ? {
+        id: log.id, mine: log.account_id === f.acc.id, can_undo: canUndo(log, f.acc.id, today),
+        my_note: myNote(db, log.id, f.acc.id),
+      } : null,
+    };
+  });
+  return {
+    child: f.who,
+    mode: SCREEN_MODE_BY_AUDIENCE[plan.audience],
+    plan_id: plan.id,
+    author_label: plan.author_label ?? "",
+    exercise: {
+      id: ex.id, title: ex.title, para_que: ex.para_que, pasos: [...ex.pasos], minutes: ex.minutes,
+      materiales: ex.materiales, for_adult: ex.for_adult, si_cuesta: ex.si_cuesta, with_adult: ex.with_adult,
+    },
+    today,
+    days,
+    week: weekOf(db, plan, today),
+    on_break_until: breakUntil(plan, today),
+  };
+}
+
+// Medallas de constancia nuevas después de anotar (como el servidor): las
+// guarda y las devuelve. Quien llama guarda la base.
+function awardConstancy(db: Db, plan: PlanRow, today: string, now: string): MedalRow[] {
+  const patientId = plan.patient_id;
+  const awards = constancyAwards({
+    logs: asDays(liveLogs(db, patientId)),
+    days_per_week: plan.days_per_week,
+    // Todas, también las anuladas: una anulada no se vuelve a dar sola
+    awarded: db.practice_medals.filter((m) => m.patient_id === patientId && m.kind === "constancia")
+      .map((m) => ({ code: m.code, period_key: m.period_key })),
+    today,
+    auto_medals: plan.auto_medals,
+    on_break_until: plan.on_break_until,
+  });
+  const rows = awards.map((a): MedalRow => ({
+    id: uuid(), patient_id: patientId, kind: "constancia", code: a.code, title: a.title, period_key: a.period_key,
+    plan_id: plan.id, goal_id: null, feedback_id: null, message: null, awarded_at: now, awarded_by_email: null,
+    voided_at: null, voided_by_email: null, void_reason: null,
+  }));
+  db.practice_medals.push(...rows);
+  return rows;
+}
+
+/** "Ejercicios de Martín" (GET practice?view=plan). No marca nada como visto. */
+export async function practice(patientId: string): Promise<ApiResult<PracticeDTO>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(350);
+  const gate = await practiceEntry(patientId);
+  if (!("acc" in gate)) return gate;
+  return ok(practicePage(load(), gate, centerNow().date));
+}
+
+/** Pantalla de práctica de un ejercicio del plan publicado (GET practice?view=exercise). */
+export async function practiceExercise(exerciseId: string): Promise<ApiResult<PracticeExerciseDTO>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(300);
+  const db = load();
+  const acc = requireAccount(db);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  const row = validId(exerciseId) ? db.practice_exercises.find((e) => e.id === exerciseId) : undefined;
+  if (!row) return fail(404, EXERCISE_NOT_FOUND);
+  const gate = await practiceGate(db, acc, row.patient_id);
+  // Un ejercicio de otra persona da lo mismo que uno que no existe
+  if (!("acc" in gate)) return gate.ok === false && gate.status === 404 ? fail(404, EXERCISE_NOT_FOUND) : gate;
+  const w = load();
+  const cur = currentOf(w, row.patient_id, row.exercise_key);
+  if (!cur) return fail(404, PRACTICE_ERROR.gone);
+  return ok(exercisePage(w, gate, cur.plan, cur.ex, centerNow().date));
+}
+
+/**
+ * "Ya lo hice": queda anotado en ese momento. Uno por ejercicio y por día: si
+ * otro adulto (o esta cuenta) ya lo anotó, devuelve ese registro sin sumar
+ * otro. practiced_on: hoy, ayer o anteayer, nunca antes de que se publicara
+ * el ejercicio (400 code DATE). 40 registros por cuenta por día (429 code
+ * LIMIT; cuentan los deshechos). new_medals: las medallas que ganó esta práctica.
+ */
+export async function practiceLog(input: PracticeLogInput): Promise<ApiResult<PracticeActionResult>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(400);
+  const first = load();
+  const acc = requireAccount(first);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  // Como el servidor, se revisa cada valor (no se confía en el tipo)
+  const b = (input ?? {}) as unknown as Record<string, unknown>;
+  const row = validId(b.exercise_id) ? first.practice_exercises.find((e) => e.id === b.exercise_id) : undefined;
+  if (!row) return fail(404, EXERCISE_NOT_FOUND);
+  const gate = await practiceGate(first, acc, row.patient_id);
+  if (!("acc" in gate)) return gate.ok === false && gate.status === 404 ? fail(404, EXERCISE_NOT_FOUND) : gate;
+
+  // De acá en adelante, sin esperas y con la base recién leída
+  const db = load();
+  const today = centerNow().date;
+  const cur = currentOf(db, row.patient_id, row.exercise_key);
+  if (!cur) return fail(404, PRACTICE_ERROR.gone);
+  const rawDate = b.practiced_on;
+  const date = rawDate === undefined || rawDate === null || rawDate === "" ? today : String(rawDate);
+  const problem = practiceDateProblem(date, today, firstPublishedOn(db, row.patient_id, row.exercise_key));
+  if (problem) return fail(400, problem, { code: "DATE" });
+  let log = logOn(db, row.patient_id, row.exercise_key, date);
+  let awards: MedalRow[] = [];
+  if (!log) {
+    const todays = db.practice_logs.filter((l) => l.account_id === acc.id && centerDateOf(l.created_at) === today).length;
+    if (todays >= PRACTICE_DAILY_MAX) return fail(429, PRACTICE_ERROR.limit, { code: "LIMIT" });
+    const now = new Date().toISOString();
+    log = {
+      id: uuid(), patient_id: row.patient_id, plan_id: cur.plan.id, exercise_id: cur.ex.id, exercise_key: cur.ex.exercise_key,
+      account_id: acc.id, practiced_on: date, created_at: now, voided_at: null,
+    };
+    db.practice_logs.push(log);
+    awards = awardConstancy(db, cur.plan, today, now);
+    save(db);
+  }
+  return ok({
+    exercise: exercisePage(db, gate, cur.plan, cur.ex, today),
+    log_id: log.id,
+    new_medals: awards.sort(medalPriority).map((m) => celebrationOf(db, m, gate.who)),
+  });
+}
+
+/**
+ * "¿Cómo te fue?" y el comentario optativo: una nota por cuenta y por
+ * práctica (409 si ya la dejó). Se puede sobre una práctica que anotó otro
+ * adulto. La marca de riesgo la calcula validateNote (sin IA).
+ */
+export async function practiceNote(input: PracticeNoteInput): Promise<ApiResult<PracticeActionResult>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(350);
+  const first = load();
+  const acc = requireAccount(first);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  const b = (input ?? {}) as unknown as Record<string, unknown>;
+  const v = validateNote({ result: b.result, comment: b.comment });
+  if (!v.ok) return fail(400, v.error, { code: v.code });
+  const found = validId(b.log_id) ? first.practice_logs.find((l) => l.id === b.log_id) : undefined;
+  if (!found) return fail(404, LOG_NOT_FOUND);
+  const gate = await practiceGate(first, acc, found.patient_id);
+  if (!("acc" in gate)) return gate.ok === false && gate.status === 404 ? fail(404, LOG_NOT_FOUND) : gate;
+
+  const db = load();
+  const today = centerNow().date;
+  const log = db.practice_logs.find((l) => l.id === found.id);
+  if (!log) return fail(404, LOG_NOT_FOUND);
+  if (log.voided_at) return fail(409, LOG_UNDONE);
+  const cur = currentOf(db, log.patient_id, log.exercise_key);
+  if (!cur) return fail(404, PRACTICE_ERROR.gone);
+  if (db.practice_notes.some((n) => n.log_id === log.id && n.account_id === acc.id)) {
+    return fail(409, PRACTICE_ERROR.note_twice, { code: "CONFLICT" });
+  }
+  db.practice_notes.push({
+    id: uuid(), log_id: log.id, patient_id: log.patient_id, account_id: acc.id, result: v.value.result,
+    comment: v.value.comment, risk_flag: v.value.risk, created_at: new Date().toISOString(),
+  });
+  save(db);
+  return ok({ exercise: exercisePage(db, gate, cur.plan, cur.ex, today), log_id: log.id, new_medals: [] });
+}
+
+/** Deshacer: solo lo que anotó esta cuenta, el mismo día. Las medallas ganadas no se pierden. */
+export async function practiceUndo(logId: string): Promise<ApiResult<PracticeActionResult>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(350);
+  const first = load();
+  const acc = requireAccount(first);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  const found = validId(logId) ? first.practice_logs.find((l) => l.id === logId) : undefined;
+  if (!found) return fail(404, LOG_NOT_FOUND);
+  const gate = await practiceGate(first, acc, found.patient_id);
+  if (!("acc" in gate)) return gate.ok === false && gate.status === 404 ? fail(404, LOG_NOT_FOUND) : gate;
+
+  const db = load();
+  const today = centerNow().date;
+  const log = db.practice_logs.find((l) => l.id === found.id);
+  if (!log) return fail(404, LOG_NOT_FOUND);
+  if (log.account_id !== acc.id || centerDateOf(log.created_at) !== today) return fail(403, PRACTICE_ERROR.undo_only_mine);
+  const cur = currentOf(db, log.patient_id, log.exercise_key);
+  if (!cur) return fail(404, PRACTICE_ERROR.gone);
+  // Deshacer dos veces no hace nada más
+  if (!log.voided_at) {
+    log.voided_at = new Date().toISOString();
+    save(db);
+  }
+  return ok({ exercise: exercisePage(db, gate, cur.plan, cur.ex, today), log_id: null, new_medals: [] });
+}
+
+/**
+ * Devoluciones del profesional, de la más nueva a la más vieja. No marca nada
+ * como visto (is_new: esta cuenta todavía no la vio): la página las marca
+ * después con practiceFeedbackSeen. Así leerla dos veces (React en modo
+ * estricto, "Reintentar") no borra la marca "Nueva".
+ */
+export async function practiceFeedback(patientId: string): Promise<ApiResult<FeedbackDTO>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(300);
+  const gate = await practiceEntry(patientId);
+  if (!("acc" in gate)) return gate;
+  const w = load();
+  const seen = seenTargets(w, gate.acc.id, "ver_devolucion");
+  return ok({
+    child: gate.who, has_plan: !!livePlan(w, gate.who.id), items: liveFeedback(w, gate.who.id).map((f) => feedbackItem(w, f, seen)),
+  });
+}
+
+// Las personas para las que esta cuenta ve la práctica hoy ("practice" da ok
+// y no es un adulto autorizado): solo sobre ellas se marca algo como visto
+// (si no, una cuenta podría marcar una devolución o una medalla ajena)
+async function practiceAllowed(db: Db, acc: Account): Promise<Set<string>> {
+  const perChild = await childrenClinical(db, acc);
+  return new Set([...perChild].filter(([id, v]) => v.practice === "ok"
+    && linkOf(db, acc.id, id)?.relationship_kind !== "autorizado").map(([id]) => id));
+}
+
+// ids de un pedido "…_seen": hasta 50 ids válidos
+const seenIds = (ids: unknown): ids is string[] => Array.isArray(ids) && ids.length <= 50 && ids.every(validId);
+
+/** Las devoluciones ya se leyeron (por cuenta). Solo cuentan las vigentes de personas que esta cuenta ve. */
+export async function practiceFeedbackSeen(ids: string[]): Promise<ApiResult<{ ok: true }>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(200);
+  const first = load();
+  const acc = requireAccount(first);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  if (!seenIds(ids)) return fail(400, "Pedido inválido");
+  const allowed = await practiceAllowed(first, acc);
+  // Se registra sobre la base recién leída (otra pestaña pudo cambiarla)
+  const w = load();
+  const seen = seenTargets(w, acc.id, "ver_devolucion");
+  const now = new Date().toISOString();
+  for (const id of new Set(ids)) {
+    const f = w.practice_feedback.find((x) => x.id === id && !x.withdrawn_at);
+    if (!f || !allowed.has(f.patient_id) || seen.has(f.id)) continue;
+    logAccess(w, f.patient_id, acc.id, "ver_devolucion", f.id, now);
+    seen.add(f.id);
+  }
+  save(w);
+  return ok({ ok: true as const });
+}
+
+/**
+ * "Medallas de Martín" / "Mis logros": las ganadas (las que se repiten van
+ * juntas: "Ganada 4 veces"), "Para seguir sumando" y las metas activas y
+ * logradas. Se puede ver sin plan publicado. is_new: esta cuenta todavía no
+ * la vio (se marca con practiceMedalsSeen, no al abrir la página).
+ */
+export async function practiceMedals(patientId: string): Promise<ApiResult<MedalsDTO>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(300);
+  const gate = await practiceEntry(patientId);
+  if (!("acc" in gate)) return gate;
+  const w = load();
+  const today = centerNow().date;
+  const pid = gate.who.id;
+  const plan = livePlan(w, pid);
+  const seen = seenTargets(w, gate.acc.id, "ver_medalla");
+  const medals = liveMedals(w, pid);
+  // Una tarjeta por medalla; las de constancia, una por código (la más nueva
+  // y cuántas veces se ganó). Nueva si esta cuenta no vio alguna del grupo
+  // (practiceMedalsSeen con el id de la tarjeta marca el grupo entero)
+  const groups = new Map<string, MedalRow[]>();
+  for (const m of medals) groups.set(medalGroupKey(m), [...(groups.get(medalGroupKey(m)) ?? []), m]);
+  const earned = [...groups.values()].map((g) => medalItem(w, g[0], g.length, g.some((m) => !seen.has(m.id))));
+  const autoMedals = plan?.auto_medals ?? false;
+  const next = plan && autoMedals
+    ? constancyNext({
+      logs: asDays(liveLogs(w, pid)), days_per_week: plan.days_per_week,
+      // Todas, también las anuladas (como el servidor)
+      awarded: w.practice_medals.filter((m) => m.patient_id === pid && m.kind === "constancia")
+        .map((m) => ({ code: m.code, period_key: m.period_key })),
+      today, auto_medals: true, on_break_until: plan.on_break_until,
+    })
+    : [];
+  return ok({
+    child: gate.who, author_label: plan?.author_label ?? null, auto_medals: autoMedals, earned, next,
+    goals: familyGoals(w, pid),
+    // La pausa de vacaciones vigente (como en la página de ejercicios): la
+    // página la muestra en lugar de "Para seguir sumando"
+    on_break_until: breakUntil(plan, today),
+  });
+}
+
+/**
+ * La celebración o las medallas ya se vieron (por cuenta). Cada id marca su
+ * grupo entero (las copias más viejas de una que se repite: si no, volverían
+ * a celebrarse). Solo cuentan las medallas de personas que esta cuenta ve.
+ */
+export async function practiceMedalsSeen(ids: string[]): Promise<ApiResult<{ ok: true }>> {
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  await wait(200);
+  const first = load();
+  const acc = requireAccount(first);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  if (!seenIds(ids)) return fail(400, "Pedido inválido");
+  const allowed = await practiceAllowed(first, acc);
+  const w = load();
+  const seen = seenTargets(w, acc.id, "ver_medalla");
+  const now = new Date().toISOString();
+  for (const id of new Set(ids)) {
+    const m = w.practice_medals.find((x) => x.id === id && !x.voided_at);
+    if (!m || !allowed.has(m.patient_id)) continue;
+    for (const x of liveMedals(w, m.patient_id)) {
+      if (medalGroupKey(x) !== medalGroupKey(m) || seen.has(x.id)) continue;
+      logAccess(w, x.patient_id, acc.id, "ver_medalla", x.id, now);
+      seen.add(x.id);
+    }
+  }
+  save(w);
+  return ok({ ok: true as const });
+}
+
 // ── Endpoints del equipo (panel) ────────────────────────────────────────────
 // En producción: POST /api/portal-staff/access con el token del equipo. El
 // servidor vuelve a validar contra la base todo lo que el panel ya chequeó.
@@ -2203,11 +3186,11 @@ async function staffHcList(db: Db): Promise<StaffHcRequest[]> {
   return toStaffHc(db, [...open, ...closed]);
 }
 
-// Todos los turnos que conoce el portal: los de la demo y los de los chicos
-// invitados desde el panel (agenda del mock)
+// Todos los turnos que conoce el portal: los de la demo y los de la agenda del
+// mock (de los chicos invitados desde el panel y los que se dieron desde la
+// bandeja, ver apptsFor)
 async function allAppts(db: Db): Promise<Map<string, Appt>> {
-  const agendaIds = db.children.filter((c) => c.source === "agenda").map((c) => c.id);
-  return new Map([...db.appts, ...(await agendaAppts(agendaIds))].map((a) => [a.id, a]));
+  return new Map([...db.appts, ...(await agendaAppts(db.children.map((c) => c.id)))].map((a) => [a.id, a]));
 }
 
 // Cómo quedó el aviso: lo que cargó el equipo o lo que se deduce del turno
@@ -2414,22 +3397,48 @@ async function staffApptList(db: Db): Promise<StaffApptRequest[]> {
   return toStaffAppt(db, [...open, ...closed]);
 }
 
+// practice (etapa B): chip "Prácticas", solo para perfiles clínicos (para
+// Administración, { allowed: false, items: [] }); sin la etapa, no viene
 export async function staffInbox(): Promise<ApiResult<StaffInbox>> {
   await wait(350);
   const db = load();
   const hc = await staffHcList(db);
   const notices = await staffNotices(db);
   const turnos = await staffApptList(db);
-  return ok({ hc, notices, turnos });
+  if (!FEATURES.includes("practice")) return ok({ hc, notices, turnos });
+  const staff = await currentStaff("");
+  const clinical = staff.ok && staff.clinical;
+  return ok({
+    hc, notices, turnos,
+    practice: { allowed: clinical, items: clinical ? await practiceInboxItems(load(), staff) : [] },
+  });
 }
 
+// practice_pending: filas de "Prácticas" de MIS pacientes; practice_risk:
+// pacientes que NO son míos con comentarios de riesgo sin ver (así el número
+// de la pestaña suma los dos sin contar dos veces a nadie); practice_urgent:
+// pacientes con comentarios de riesgo sin ver, míos o no (con alguno, la
+// pestaña se marca como urgente). Uno por paciente, como el servidor. Solo
+// perfiles clínicos y con la etapa prendida
 export async function staffInboxCount(): Promise<StaffInboxCount> {
   await wait(150);
   const db = load();
-  return {
+  const counts: StaffInboxCount = {
     hc_pending: db.hc_requests.filter((r) => r.status === "pendiente").length,
     notices_pending: (await staffNotices(db)).filter((n) => n.resolution === null).length,
     turnos_pending: db.appt_requests.filter((r) => r.status === "pendiente").length,
+  };
+  if (!FEATURES.includes("practice")) return counts;
+  const staff = await currentStaff("");
+  if (!staff.ok || !staff.clinical) return counts;
+  const items = await practiceInboxItems(load(), staff);
+  const risky = items.filter((i) => i.kind === "practicas" && i.pending.risk > 0);
+  const patients = (rows: StaffPracticeInboxItem[]) => new Set(rows.map((i) => i.patient_id)).size;
+  return {
+    ...counts,
+    practice_pending: items.filter((i) => i.mine).length,
+    practice_risk: patients(risky.filter((i) => !i.mine)),
+    practice_urgent: patients(risky),
   };
 }
 
@@ -2731,6 +3740,11 @@ export async function staffApptUpdate(input: {
   const db = load();
   const row = db.appt_requests.find((r) => r.id === input.id);
   if (!row) return fail(404, APPT_REQ_NOT_FOUND);
+  // Ya quedó agendado con este mismo turno (se guardó pero no llegó la
+  // respuesta y el panel lo vuelve a enlazar): no es un cambio, como en el servidor
+  if (to === "agendado" && row.status === "agendado" && !!input.appointment_id && row.appointment_id === input.appointment_id) {
+    return ok((await toStaffAppt(db, [row]))[0]);
+  }
   if (!APPT_REQ_TRANSITIONS[row.status].includes(to)) return fail(409, "Este pedido cambió mientras tanto. Actualizá la bandeja.");
   // Si quien lo pidió tiene un bloqueo por orden judicial, el pedido solo se
   // puede cerrar (agendar o «No se puede», sin avisarle): no se reabre ni se
@@ -3509,4 +4523,962 @@ export async function staffInfoAction(body: InfoAction, issuedBy: string): Promi
     default:
       return fail(400, "Acción inválida");
   }
+}
+
+// ── Ejercicios, devoluciones, metas y medallas en la ficha (equipo) ─────────
+// Etapa B: profesionales y Dirección arman y publican el plan, ven las
+// prácticas y los comentarios, mandan devoluciones, publican metas y dan o
+// anulan medallas. Administración ve estados y días de práctica, sin textos
+// (ni comentarios, ni devoluciones, ni borradores). Mismos validadores,
+// reglas y mensajes que server/lib/practice.ts (POST
+// /api/portal-staff/practice). Como las funciones del script 26, publicar un
+// plan y mandar una devolución (con metas logradas y medalla) son un solo paso.
+
+const PATIENT_NOT_FOUND = "No encontramos ese paciente.";
+const NOT_IN_CATALOG = "Ese ejercicio no está en el catálogo.";
+const AI_DRAFT_GONE = "El borrador de la IA no es de este paciente o ya no se puede usar. Volvé a adaptarlo o usá el original del catálogo.";
+const PRACTICE_PAUSED = "El portal de este paciente está en pausa: no se puede publicar.";
+const NOTHING_TO_REVIEW = "Todavía no hay prácticas para marcar como vistas. Actualizá la sección.";
+const GOAL_HAS_MEDAL = "Esa meta ya tiene su medalla.";
+const GOAL_NOT_DRAFT = "Esa meta ya no está en borrador. Actualizá la sección.";
+const GOAL_PLAN_CLOSED = "El plan de esa meta ya se cerró. Editala para sumarla al plan de ahora y publicala.";
+const GOAL_WITH_DRAFT = "Esa meta sale junto con el plan en borrador. Para publicarla antes, editala y destildá «Publicarla junto con el plan en borrador».";
+const ONLY_OWNER = "Solo quien lo publicó o la Dirección lo pueden retirar.";
+const ALREADY_WITHDRAWN = "Ya estaba retirada. Actualizá la sección.";
+const ALREADY_VOIDED = "Esa medalla ya estaba anulada. Actualizá la sección.";
+const BREAK_DATE = "La fecha de vuelta tiene que ser posterior a hoy.";
+const FEEDBACK_WITHDRAWN_VOID = "devolución retirada"; // motivo de la medalla que se anula con su devolución
+const GONE_ACCOUNT = "La cuenta ya no existe";
+const INBOX_DAYS = 180; // bandeja: prácticas y comentarios de los últimos 180 días
+
+const PRACTICE_ACTIONS: readonly unknown[] = [
+  "get", "catalog", "plan_save_draft", "plan_publish", "plan_break", "plan_finish", "plan_withdraw", "mark_seen",
+  "feedback_send", "feedback_withdraw", "goal_save", "goal_publish", "goal_change", "goal_not_yet", "medal_void",
+] satisfies PracticeAction["action"][];
+
+// Lo que la etapa toma de la ficha: la del panel o, para los chicos de la
+// demo (sin ficha en el panel), la copia del portal con su diagnóstico de demo
+type PracticePatient = {
+  id: string; first_name: string; age: number | null; diagnosis_code: string | null;
+  professional_id: string | null; demo: boolean;
+};
+
+async function practicePatient(db: Db, id: string): Promise<PracticePatient | null> {
+  const card = await patientCard(db, id);
+  if (!card) return null;
+  const child = db.children.find((c) => c.id === id);
+  const demo = child?.source === "demo";
+  const p = demo ? undefined : await panelPatient(id);
+  return {
+    id, first_name: card.first_name, age: card.birth_date ? ageOn(card.birth_date, centerNow().date) : null,
+    diagnosis_code: demo ? child?.diagnosis_code ?? null : text(p?.diagnosis_code),
+    professional_id: demo ? null : text(p?.professional_id), demo,
+  };
+}
+
+// ¿Es paciente de quien mira? (el profesional de la ficha). Los chicos de la
+// demo cuentan para cualquier perfil clínico: su profesional (Lic. Ana
+// Torres) no es un usuario del mock
+function isMine(staff: Staff, p: PracticePatient): boolean {
+  if (!staff.clinical) return false;
+  if (p.demo) return true;
+  return !!staff.professional_id && p.professional_id === staff.professional_id;
+}
+
+function publishCheckOf(db: Db, plan: PlanRow): PublishCheck {
+  return {
+    title: plan.title, goal_text: plan.goal_text, lint_overrides: plan.lint_overrides,
+    exercises: planRows(db, plan.id).map((e) => ({
+      title: e.title, para_que: e.para_que, pasos: e.pasos, materiales: e.materiales, for_adult: e.for_adult,
+      si_cuesta: e.si_cuesta, approach: e.approach, practiced_in_session: e.practiced_in_session,
+      ai_drafted: e.ai_drafted, reviewed: !!e.reviewed_at, removed: !!e.removed_at, lint_overrides: e.lint_overrides,
+    })),
+  };
+}
+
+function staffExercise(db: Db, e: ExerciseRow): StaffExerciseDTO {
+  return {
+    id: e.id, exercise_key: e.exercise_key, position: e.position, source: e.source, catalog_id: e.catalog_id,
+    catalog_version: e.catalog_version, approach: e.approach, practiced_in_session: e.practiced_in_session,
+    title: e.title, para_que: e.para_que, pasos: [...e.pasos], minutes: e.minutes, materiales: e.materiales,
+    for_adult: e.for_adult, si_cuesta: e.si_cuesta, with_adult: e.with_adult, ai_drafted: e.ai_drafted,
+    ai_draft_id: e.ai_draft_id, reviewed_at: e.reviewed_at, reviewed_by_email: e.reviewed_by_email,
+    edit_ratio: e.edit_ratio, alerts: exerciseTextAlerts(e, e.approach), lint_overrides: e.lint_overrides,
+    removed_at: e.removed_at, first_published_on: firstPublishedOn(db, e.patient_id, e.exercise_key),
+  };
+}
+
+// publish_problem (solo borradores): lo que dice publishProblem ("Lo
+// conversé con …" se pide al publicar)
+function staffPlan(db: Db, plan: PlanRow, admin: boolean, p: PracticePatient): StaffPlanDTO {
+  const rows = planRows(db, plan.id);
+  const active = rows.filter((e) => !e.removed_at);
+  const sum = planSummary(active.map((e) => ({ minutes: e.minutes })), plan.days_per_week, p.age);
+  const problem = plan.status === "borrador"
+    ? publishProblem(publishCheckOf(db, plan), { age: p.age, diagnosis_code: p.diagnosis_code, adolescent_ack: true })?.error ?? null
+    : null;
+  return {
+    id: plan.id, version: plan.version, status: plan.status,
+    title: admin ? null : plan.title, goal_text: admin ? null : plan.goal_text,
+    audience: plan.audience, mode: SCREEN_MODE_BY_AUDIENCE[plan.audience], days_per_week: plan.days_per_week,
+    review_on: plan.review_on, on_break_until: plan.on_break_until, auto_medals: plan.auto_medals,
+    professional_id: plan.professional_id, author_label: plan.author_label, adolescent_ack: plan.adolescent_ack,
+    supersedes_id: plan.supersedes_id, created_by_email: plan.created_by_email, created_at: plan.created_at,
+    updated_at: plan.updated_at, updated_by_email: plan.updated_by_email,
+    published_at: plan.published_at, published_by_email: plan.published_by_email,
+    closed_at: plan.closed_at, closed_by_email: plan.closed_by_email, close_reason: plan.close_reason,
+    last_reviewed_at: plan.last_reviewed_at, last_reviewed_by_email: plan.last_reviewed_by_email,
+    lint_overrides: admin ? [] : plan.lint_overrides,
+    exercises: admin ? [] : rows.map((e) => staffExercise(db, e)),
+    exercise_count: active.length, total_minutes: sum.total_minutes, summary_line: sum.line,
+    minutes_warning: sum.warning, publish_problem: problem,
+  };
+}
+
+// "María López (madre)"
+const withRelation = (name: string, relationship: string | null) =>
+  (relationship?.trim() ? `${name} (${relationship.trim().toLowerCase()})` : name);
+
+function whoOf(db: Db, accountId: string | null, relations: Map<string, string | null>): string | null {
+  const a = accountId ? db.accounts.find((x) => x.id === accountId) : undefined;
+  return a ? withRelation(`${a.first_name} ${a.last_name}`.trim(), relations.get(a.id) ?? null) : null;
+}
+
+// El título de la versión más nueva de un ejercicio
+function latestTitle(db: Db, patientId: string, key: string): string | null {
+  const version = (planId: string) => db.practice_plans.find((x) => x.id === planId)?.version ?? 0;
+  return db.practice_exercises
+    .filter((e) => e.patient_id === patientId && e.exercise_key === key)
+    .sort((x, y) => version(y.plan_id) - version(x.plan_id))[0]?.title ?? null;
+}
+
+// El último "Visto" o devolución, de cualquier versión del plan
+function lastReviewedOf(db: Db, patientId: string): string | null {
+  return db.practice_plans.filter((x) => x.patient_id === patientId && x.last_reviewed_at)
+    .map((x) => x.last_reviewed_at ?? "").sort().pop() ?? null;
+}
+
+// Grilla de los últimos 14 días: los ejercicios del plan publicado (en su
+// orden) y después los que tuvieron prácticas en esos días aunque ya no estén
+function staffGrid(
+  db: Db, patientId: string, plan: PlanRow | null, admin: boolean, relations: Map<string, string | null>, today: string,
+): StaffPracticeGrid {
+  const dates = Array.from({ length: GRID_DAYS }, (_, i) => addDays(today, i - (GRID_DAYS - 1)));
+  const logs = liveLogs(db, patientId).filter((l) => l.practiced_on >= dates[0] && l.practiced_on <= today);
+  const current = plan ? activeRows(db, plan.id).map((e) => e.exercise_key) : [];
+  const others = [...new Set([...logs].sort((x, y) => y.practiced_on.localeCompare(x.practiced_on))
+    .map((l) => l.exercise_key).filter((k) => !current.includes(k)))];
+  return {
+    dates,
+    rows: [...current, ...others].map((key) => ({
+      exercise_key: key,
+      title: admin ? null : latestTitle(db, patientId, key),
+      current: current.includes(key),
+      cells: dates.map((date) => {
+        const l = logs.find((x) => x.exercise_key === key && x.practiced_on === date);
+        if (!l) return null;
+        return {
+          log_id: l.id,
+          logged_by: whoOf(db, l.account_id, relations),
+          results: admin
+            ? []
+            : db.practice_notes.filter((n) => n.log_id === l.id)
+              .sort((x, y) => x.created_at.localeCompare(y.created_at))
+              .map((n) => ({ who: whoOf(db, n.account_id, relations) ?? GONE_ACCOUNT, result: n.result, comment: !!n.comment, risk: n.risk_flag })),
+        };
+      }),
+    })),
+  };
+}
+
+// Comentarios y "¿Cómo te fue?" de la familia: los de riesgo sin ver arriba
+// de todo ("Revisar hoy"); después, del más nuevo al más viejo (los de riesgo
+// ya vistos, en su fecha, como el servidor)
+function staffNotes(db: Db, patientId: string, reviewedAt: string | null, relations: Map<string, string | null>): StaffNoteDTO[] {
+  return db.practice_notes
+    .filter((n) => n.patient_id === patientId)
+    .map((n) => {
+      const log = db.practice_logs.find((l) => l.id === n.log_id);
+      const title = log
+        ? db.practice_exercises.find((e) => e.id === log.exercise_id)?.title ?? latestTitle(db, patientId, log.exercise_key)
+        : null;
+      return {
+        id: n.id, log_id: n.log_id, practiced_on: log?.practiced_on ?? centerDateOf(n.created_at),
+        exercise_title: title ?? "", who: whoOf(db, n.account_id, relations) ?? GONE_ACCOUNT,
+        result: n.result, comment: n.comment, risk: n.risk_flag, created_at: n.created_at,
+        is_new: !reviewedAt || n.created_at > reviewedAt, log_undone: !!log?.voided_at,
+      };
+    })
+    .sort((x, y) => Number(y.risk && y.is_new) - Number(x.risk && x.is_new) || y.created_at.localeCompare(x.created_at));
+}
+
+// Lo nuevo desde el último "Visto" o devolución (lo que pone la fila en la
+// bandeja). Las notas cuentan si tienen comentario, "Me costó" o palabras de
+// riesgo; since: la práctica pendiente más vieja (o el día del comentario)
+function practicePending(
+  db: Db, patientId: string, today: string, withNotes: boolean, from: string | null = null,
+): StaffPracticePending {
+  const reviewed = lastReviewedOf(db, patientId);
+  const live = livePlan(db, patientId);
+  const after = (iso: string) => (!reviewed || iso > reviewed) && (!from || iso >= from);
+  const logs = liveLogs(db, patientId).filter((l) => after(l.created_at));
+  const notes = withNotes
+    ? db.practice_notes.filter((n) => n.patient_id === patientId && after(n.created_at)
+      && (!!n.comment || n.result === "costo" || n.risk_flag))
+    : [];
+  const since = [...logs.map((l) => l.practiced_on), ...notes.map((n) => centerDateOf(n.created_at))].sort()[0] ?? null;
+  return {
+    logs: logs.length,
+    comments: notes.filter((n) => !!n.comment).length,
+    costo: notes.filter((n) => n.result === "costo").length,
+    risk: notes.filter((n) => n.risk_flag).length,
+    since,
+    stale: !!since && daysBetween(since, today) >= REVIEW_STALE_DAYS && !(live && onBreak(live.on_break_until, today)),
+  };
+}
+
+function staffGoals(db: Db, patientId: string, admin: boolean, today: string): StaffGoalDTO[] {
+  const days = asDays(liveLogs(db, patientId));
+  return db.practice_goals
+    .filter((g) => g.patient_id === patientId)
+    .sort(newestFirst((g) => g.created_at))
+    .map((g) => ({
+      id: g.id, plan_id: g.plan_id, kind: g.kind, title: admin ? null : g.title, rule: g.rule,
+      medal_title: admin ? null : g.medal_title, agreed_with_patient: g.agreed_with_patient, status: g.status,
+      created_at: g.created_at, created_by_email: g.created_by_email, published_at: g.published_at,
+      achieved_at: g.achieved_at, feedback_id: g.feedback_id, changed_at: g.changed_at, changed_by_email: g.changed_by_email,
+      progress: g.kind === "practica" && g.status === "activa" && g.rule && g.published_at
+        ? goalProgress({ kind: g.kind, rule: g.rule, start: centerDateOf(g.published_at) }, days, today)
+        : null,
+      met_dismissed: !!g.met_notice_dismissed_at,
+    }));
+}
+
+// Metas de práctica cumplidas que todavía no se dieron por logradas (ni se
+// marcaron "Todavía no")
+function goalsMet(goals: StaffGoalDTO[]): { goal_id: string; title: string | null; met_on: string }[] {
+  return goals.flatMap((g) => (g.status === "activa" && g.progress?.met && g.progress.met_on && !g.met_dismissed
+    ? [{ goal_id: g.id, title: g.title, met_on: g.progress.met_on }]
+    : []));
+}
+
+// Quién de la familia abrió o vio algo (la primera vez de cada cuenta)
+function familyReads(db: Db, action: AccessLog["action"], targetId: string): { name: string; at: string }[] {
+  const out: { name: string; at: string }[] = [];
+  const rows = db.access_log.filter((l) => l.action === action && l.target_id === targetId).sort((x, y) => x.at.localeCompare(y.at));
+  for (const r of rows) {
+    const a = db.accounts.find((x) => x.id === r.account_id);
+    const name = a ? `${a.first_name} ${a.last_name}`.trim() : "Una cuenta que ya no existe";
+    if (!out.some((x) => x.name === name)) out.push({ name, at: r.at });
+  }
+  return out;
+}
+
+// Una cadena de versiones, de la más nueva a la más vieja: el plan y los que
+// fue reemplazando (supersedes_id)
+function lineageOf(db: Db, plan: PlanRow | null): PlanRow[] {
+  const out: PlanRow[] = [];
+  for (let p: PlanRow | undefined = plan ?? undefined; p && !out.includes(p);) {
+    out.push(p);
+    const prevId: string | null = p.supersedes_id;
+    p = prevId ? db.practice_plans.find((x) => x.id === prevId) : undefined;
+  }
+  return out;
+}
+
+// "Desde el 03/10…": desde la primera publicación de esta cadena de versiones
+function practiceSince(db: Db, plan: PlanRow | null): string | null {
+  return lineageOf(db, plan).flatMap((p) => (p.published_at ? [centerDateOf(p.published_at)] : [])).sort()[0] ?? null;
+}
+
+// ¿Sigue abierto el plan de una meta? Una meta sin plan, sí. Con plan: si es
+// el borrador, el publicado o una versión que el publicado reemplazó (esa
+// cadena sigue en el portal). Uno finalizado, retirado o descartado, no
+function goalPlanOpen(db: Db, g: GoalRow): boolean {
+  if (!g.plan_id) return true;
+  const plan = db.practice_plans.find((x) => x.id === g.plan_id && x.patient_id === g.patient_id);
+  if (!plan) return false;
+  if (plan.status === "borrador" || plan.status === "publicado") return true;
+  return lineageOf(db, livePlan(db, g.patient_id)).some((x) => x.id === plan.id);
+}
+
+// Un plan que se cierra (finalizado o retirado) se lleva las metas de su
+// cadena de versiones (él y las que reemplazó: las de las versiones
+// anteriores seguían activas). Las activas y las en borrador quedan
+// "cambiada"; las logradas siguen (las dio una devolución). Como
+// practice_withdraw_plan y practice_finish_plan del script 26
+function retireChainGoals(db: Db, plan: PlanRow, email: string, now: string): void {
+  const chain = new Set(lineageOf(db, plan).map((x) => x.id));
+  for (const g of db.practice_goals) {
+    if (g.patient_id !== plan.patient_id || !g.plan_id || !chain.has(g.plan_id)) continue;
+    if (g.status !== "activa" && g.status !== "borrador") continue;
+    Object.assign(g, { status: "cambiada", changed_at: now, changed_by_email: email, updated_at: now });
+  }
+}
+
+// Lo que ve el equipo (la vista se arma con la base recién leída)
+async function staffPractice(staff: Staff, patientId: string, withCatalog = false): Promise<ApiResult<StaffPracticeDTO>> {
+  const first = load();
+  const p = await practicePatient(first, patientId);
+  if (!p) return fail(404, PATIENT_NOT_FOUND);
+  const access = await staffClinical(first, patientId, staff.clinical);
+  if (!access.ok) return access;
+  const author = authorOf(staff, await panelProfessionals());
+  const db = load();
+  const today = centerNow().date;
+  const admin = !staff.clinical;
+  // La relación de cada cuenta con el paciente, de su fila en la ficha
+  const relations = new Map(access.data.accesses.map((a) => [a.account_id, a.relationship]));
+  const readers = access.data.accesses.filter((a) => a.practice_block === null).map((a) => withRelation(a.name, a.relationship));
+  const self = p.age !== null && p.age >= ADULT_FROM;
+  const plan = livePlan(db, patientId);
+  const draft = draftPlanOf(db, patientId);
+  const since = practiceSince(db, plan);
+  const counted = liveLogs(db, patientId).filter((l) => !since || l.practiced_on >= since);
+  const dates = [...new Set(counted.map((l) => l.practiced_on))].sort();
+  const summary = { since, logs: counted.length, days: dates.length, last: dates[dates.length - 1] ?? null };
+  const goals = staffGoals(db, patientId, admin, today);
+  const profMedal = (feedbackId: string) => db.practice_medals.find((m) => m.feedback_id === feedbackId && m.kind === "profesional");
+
+  return ok({
+    // En el mock la ayuda de IA no necesita clave (son plantillas fijas)
+    features: { ai: FEATURES.includes("ai") },
+    can_edit: staff.clinical,
+    author: { label: author.label, problem: admin ? STAFF_PRACTICE_TEXT.admin_readonly : author.problem },
+    patient: {
+      id: p.id, first_name: p.first_name, self, age: p.age, audience: audienceForAge(p.age), adolescent: isAdolescent(p.age),
+    },
+    approaches: admin ? [] : approachOptions(p.diagnosis_code, p.age),
+    practice_enabled: access.data.settings.practice_enabled,
+    readers,
+    readers_line: readersLine(readers, { first_name: p.first_name, self }),
+    published: plan ? staffPlan(db, plan, admin, p) : null,
+    draft: draft && !admin ? staffPlan(db, draft, admin, p) : null,
+    history: db.practice_plans
+      .filter((x) => x.patient_id === patientId && x.status !== "publicado" && x.status !== "borrador")
+      .sort((x, y) => y.version - x.version)
+      .map((x) => ({
+        id: x.id, version: x.version, status: x.status, author_label: x.author_label, published_at: x.published_at,
+        published_by_email: x.published_by_email, closed_at: x.closed_at, close_reason: x.close_reason,
+      })),
+    summary: { ...summary, text: practiceSummaryText(summary, today) },
+    grid: staffGrid(db, patientId, plan, admin, relations, today),
+    notes: admin ? [] : staffNotes(db, patientId, lastReviewedOf(db, patientId), relations),
+    // Administración ve cuántas prácticas, no los comentarios ni cómo les fue
+    pending: practicePending(db, patientId, today, !admin),
+    goals,
+    goals_met: goalsMet(goals),
+    medals: db.practice_medals
+      .filter((m) => m.patient_id === patientId)
+      .sort(newestFirst((m) => m.awarded_at))
+      .map((m): StaffMedalDTO => ({
+        id: m.id, kind: m.kind, code: m.code, title: admin && m.kind === "profesional" ? null : m.title,
+        period_key: m.period_key, plan_id: m.plan_id, goal_id: m.goal_id, feedback_id: m.feedback_id,
+        message: admin ? null : m.message, awarded_at: m.awarded_at, awarded_by_email: m.awarded_by_email,
+        // El motivo es texto libre (puede nombrar algo clínico): Administración
+        // ve que está anulada, no por qué
+        voided_at: m.voided_at, voided_by_email: m.voided_by_email, void_reason: admin ? null : m.void_reason,
+        seen_by: familyReads(db, "ver_medalla", m.id),
+      })),
+    feedback: db.practice_feedback
+      .filter((f) => f.patient_id === patientId)
+      .sort(newestFirst((f) => f.sent_at))
+      .map((f): StaffFeedbackDTO => {
+        const medal = profMedal(f.id);
+        return {
+          id: f.id, plan_id: f.plan_id, author_label: f.author_label,
+          body: admin ? null : f.body, for_adult: admin ? null : f.for_adult,
+          period_start: f.period_start, period_end: f.period_end, adolescent_ack: f.adolescent_ack,
+          review_note: admin ? null : f.review_note, sent_at: f.sent_at, sent_by_email: f.sent_by_email,
+          withdrawn_at: f.withdrawn_at, withdrawn_by_email: f.withdrawn_by_email, withdraw_reason: f.withdraw_reason,
+          reads: familyReads(db, "ver_devolucion", f.id),
+          medal: medal ? { id: medal.id, title: admin ? null : medal.title } : null,
+          goals: db.practice_goals.filter((g) => g.feedback_id === f.id).map((g) => ({ id: g.id, title: admin ? null : g.title })),
+          can_withdraw: staff.clinical && !f.withdrawn_at && (staff.role === "direccion" || f.sent_by_email === staff.email),
+        };
+      }),
+    catalog_version: CATALOG_VERSION,
+    catalog: withCatalog && !admin ? catalogFor(approachesForDiagnosis(p.diagnosis_code), p.age) : null,
+  });
+}
+
+// Un instante posterior a prev (updated_at se usa para no pisar a otra persona)
+function stamp(prev?: string | null): string {
+  const now = new Date().toISOString();
+  return prev && now <= prev ? new Date(Date.parse(prev) + 1).toISOString() : now;
+}
+
+// "Lo dejo así": se conservan los motivos que siguen cubriendo algún aviso y,
+// si quedan avisos sin cubrir y vino un motivo, se suma uno nuevo (como el servidor)
+function mergeOverrides(prev: LintOverride[] | undefined, alerts: string[], note: string | null, email: string, at: string): LintOverride[] {
+  if (!alerts.length) return [];
+  const kept = (prev ?? []).filter((o) => o.terms.some((t) => alerts.includes(t)));
+  const open = uncoveredAlerts(alerts, kept);
+  if (open.length && note) kept.push({ terms: open, reason: note, by_email: email, at });
+  return kept;
+}
+
+// Cuánto se editó el texto que propuso la IA (se guarda al publicar)
+function aiEditRatio(db: Db, e: ExerciseRow): number | null {
+  const d = e.ai_draft_id ? db.ai_drafts.find((x) => x.id === e.ai_draft_id) : undefined;
+  const item = d?.output?.ejercicios.find((x) => x.catalogo_id === e.catalog_id);
+  if (!d || !item) return e.edit_ratio;
+  const proposed = draftToExerciseInput(item, { approach: e.approach, practiced_in_session: e.practiced_in_session, draft_id: d.id });
+  return editRatio(exerciseFullText(proposed), exerciseFullText(e));
+}
+
+// Procedencia de la IA (como el trigger del script 26): un borrador de este
+// paciente, de adaptación y que todavía se puede usar
+const aiDraftUsable = (db: Db, patientId: string, id: string) => {
+  const d = db.ai_drafts.find((x) => x.id === id);
+  return !!d && d.patient_id === patientId && d.kind === "adaptacion" && (d.status === "generado" || d.status === "usado");
+};
+
+const conflict = () => fail<true>(409, PRACTICE_ERROR.conflict, { code: "CONFLICT" });
+const invalid = () => fail<true>(400, "Pedido inválido", { code: "INVALID" });
+
+// Cada acción, sobre la base recién leída y sin esperas. Valida todo antes
+// de tocar nada: si devuelve un error, la base queda como estaba
+function applyPracticeAction(
+  db: Db, staff: Staff, author: Author, p: PracticePatient, b: Record<string, unknown>, today: string,
+): ApiResult<true> {
+  const email = staff.email;
+  const plans = db.practice_plans.filter((x) => x.patient_id === p.id);
+  const live = plans.find((x) => x.status === "publicado") ?? null;
+  // Dónde queda el "Visto": en el plan publicado o, si ya no hay (se
+  // finalizó o se retiró), en el último que se publicó. Así lo que la
+  // familia anotó antes de cerrarlo se puede dar por visto
+  const reviewPlan = live ?? plans.filter((x) => !!x.published_at).sort((x, y) => y.version - x.version)[0] ?? null;
+  const requireAuthor = () => (author.problem || !author.label
+    ? fail<true>(403, author.problem ?? PRACTICE_ERROR.not_linked, { code: "AUTHOR" })
+    : null);
+  // Un plan de este paciente por su id (400 si no es un id; 409 si no es de él)
+  const planOf = (id: unknown): PlanRow | ApiResult<true> => {
+    if (!validId(id)) return invalid();
+    return plans.find((x) => x.id === id) ?? conflict();
+  };
+  const goalOf = (id: unknown): GoalRow | ApiResult<true> => {
+    if (!validId(id)) return invalid();
+    return db.practice_goals.find((g) => g.id === id && g.patient_id === p.id) ?? fail<true>(404, "No encontramos esa meta.");
+  };
+  const isRow = <T extends object>(x: T | ApiResult<true>): x is T => !("ok" in x);
+
+  switch (b.action) {
+    // "Guardar borrador": crea el borrador (versión siguiente del publicado,
+    // si hay) o lo actualiza si nadie lo cambió mientras tanto. Nunca bloquea
+    // por el texto del profesional: los avisos quedan en "alerts" y
+    // "publish_problem" hasta que se corrijan o tengan "Lo dejo así"
+    case "plan_save_draft": {
+      const v = validatePlanDraft(b.plan);
+      if (!v.ok) return fail(400, v.error, { code: v.code });
+      const input = v.value;
+      const expected = b.expected_updated_at ?? null;
+      if (expected !== null && typeof expected !== "string") return invalid();
+      // Enfoques que nunca se podrían publicar para este paciente (la casilla
+      // de sesión se pide al publicar)
+      const offered = new Set(approachesForDiagnosis(p.diagnosis_code));
+      for (const e of input.exercises) {
+        if (e.source !== "manual" && !catalogEntry(e.catalog_id ?? "")) return fail(400, NOT_IN_CATALOG, { code: "INVALID" });
+        if (e.removed) continue;
+        if (!offered.has(e.approach) || !approachAgeOk(e.approach, p.age)) return fail(400, PRACTICE_ERROR.approach, { code: "APPROACH" });
+      }
+      const draft = plans.find((x) => x.status === "borrador") ?? null;
+      if (input.id ? !draft || draft.id !== input.id || draft.updated_at !== expected : !!draft) return conflict();
+      const draftRows = input.id && draft ? planRows(db, draft.id) : [];
+      const exs = db.practice_exercises.filter((e) => e.patient_id === p.id);
+      const keys = new Set(exs.map((e) => e.exercise_key));
+      const version = (planId: string) => plans.find((x) => x.id === planId)?.version ?? 0;
+      const latestOfKey = (key: string) => exs.filter((e) => e.exercise_key === key).sort((x, y) => version(y.plan_id) - version(x.plan_id))[0];
+      const prepared: { e: (typeof input.exercises)[number]; row: ExerciseRow | undefined }[] = [];
+      for (const e of input.exercises) {
+        let row = input.id && e.id ? draftRows.find((r) => r.id === e.id) : undefined;
+        // Una fila que ya no es de este borrador: alguien lo cambió
+        if (input.id && e.id && !row) return conflict();
+        if (e.exercise_key) {
+          if (!keys.has(e.exercise_key)) return invalid();
+          if (row && row.exercise_key !== e.exercise_key) return invalid();
+          row ??= draftRows.find((r) => r.exercise_key === e.exercise_key);
+        }
+        if (row && prepared.some((x) => x.row === row)) return invalid();
+        // El borrador de IA: solo si es nuevo para la fila (como el trigger)
+        if (e.ai_draft_id && e.ai_draft_id !== row?.ai_draft_id && !aiDraftUsable(db, p.id, e.ai_draft_id)) {
+          return fail(400, AI_DRAFT_GONE, { code: "INVALID" });
+        }
+        prepared.push({ e, row });
+      }
+
+      const now = stamp(draft?.updated_at);
+      const planFields = {
+        title: input.title, goal_text: input.goal_text, audience: input.audience, days_per_week: input.days_per_week,
+        review_on: input.review_on, auto_medals: input.auto_medals,
+        lint_overrides: mergeOverrides((draft ?? live)?.lint_overrides, planTextAlerts(input), input.review_note, email, now),
+        updated_by_email: email, updated_at: now,
+      };
+      let target: PlanRow;
+      if (draft && input.id) {
+        target = Object.assign(draft, planFields);
+      } else {
+        target = {
+          id: uuid(), patient_id: p.id, version: Math.max(0, ...plans.map((x) => x.version)) + 1,
+          supersedes_id: live?.id ?? null, status: "borrador", ...planFields, on_break_until: null,
+          professional_id: null, author_label: null, adolescent_ack: false,
+          created_by_email: email, created_at: now,
+          published_at: null, published_by_email: null, closed_at: null, closed_by_email: null, close_reason: null,
+          last_reviewed_at: null, last_reviewed_by_email: null, last_reviewed_label: null,
+        };
+        db.practice_plans.push(target);
+      }
+      const touched = new Set<string>();
+      prepared.forEach(({ e, row }, position) => {
+        const prev = row ?? (e.exercise_key ? latestOfKey(e.exercise_key) : undefined);
+        const fields = {
+          source: e.source, catalog_id: e.catalog_id,
+          catalog_version: e.source === "manual" ? null : e.catalog_version ?? CATALOG_VERSION,
+          approach: e.approach, practiced_in_session: e.practiced_in_session, title: e.title, para_que: e.para_que,
+          pasos: [...e.pasos], minutes: e.minutes, materiales: e.materiales, for_adult: e.for_adult,
+          si_cuesta: e.si_cuesta, with_adult: e.with_adult, position,
+          lint_overrides: mergeOverrides(prev?.lint_overrides, exerciseTextAlerts(e, e.approach), e.review_note, email, now),
+          reviewed_at: e.reviewed ? row?.reviewed_at ?? now : null,
+          reviewed_by_email: e.reviewed ? row?.reviewed_by_email ?? email : null,
+          removed_at: e.removed ? row?.removed_at ?? now : null,
+          removed_by_email: e.removed ? row?.removed_by_email ?? email : null,
+          updated_at: now,
+        };
+        // Procedencia de la IA (como el trigger): el borrador queda como
+        // usado y el ejercicio, como adaptado con IA para siempre
+        const draftId = e.ai_draft_id ?? row?.ai_draft_id ?? null;
+        if (e.ai_draft_id && e.ai_draft_id !== row?.ai_draft_id) {
+          const d = db.ai_drafts.find((x) => x.id === e.ai_draft_id);
+          if (d && d.status === "generado") Object.assign(d, { status: "usado", used_at: now });
+        }
+        if (row) {
+          Object.assign(row, fields, { ai_draft_id: draftId, ai_drafted: row.ai_drafted || !!e.ai_draft_id });
+          touched.add(row.id);
+        } else {
+          db.practice_exercises.push({
+            id: uuid(), plan_id: target.id, patient_id: p.id, exercise_key: e.exercise_key ?? uuid(), ...fields,
+            ai_draft_id: e.ai_draft_id, ai_drafted: !!e.ai_draft_id, edit_ratio: null, created_at: now,
+          });
+        }
+      });
+      // Lo que estaba en el borrador y ya no vino queda quitado (no se borra)
+      for (const r of draftRows) {
+        if (touched.has(r.id) || r.removed_at) continue;
+        Object.assign(r, { removed_at: now, removed_by_email: email, updated_at: now });
+      }
+      return ok(true as const);
+    }
+
+    // Publicar el borrador: reemplaza el publicado (si había), copia el
+    // "Visto" y publica las metas en borrador del plan (practice_publish_plan)
+    case "plan_publish": {
+      if (!validId(b.plan_id) || typeof b.expected_updated_at !== "string") return invalid();
+      const expectedPublished = b.expected_published_id ?? null;
+      if (expectedPublished !== null && !validId(expectedPublished)) return invalid();
+      const noAuthor = requireAuthor();
+      if (noAuthor) return noAuthor;
+      if (settingsOf(db, p.id)?.paused_at) return fail(409, PRACTICE_PAUSED);
+      const draft = plans.find((x) => x.id === b.plan_id);
+      if (!draft || draft.status !== "borrador" || draft.updated_at !== b.expected_updated_at) return conflict();
+      if ((live?.id ?? null) !== expectedPublished) return conflict();
+      const adolescent = isAdolescent(p.age);
+      const ack = adolescent && b.adolescent_ack === true;
+      const problem = publishProblem(publishCheckOf(db, draft), {
+        age: p.age, diagnosis_code: p.diagnosis_code, adolescent_ack: !adolescent || ack,
+      });
+      if (problem) return fail(400, problem.error, { code: problem.code });
+      const now = stamp(draft.updated_at);
+      // Cuánto se editó el texto de la IA (si casi nunca se edita, puede ser
+      // que se esté aprobando sin leer)
+      for (const e of planRows(db, draft.id)) if (!e.removed_at && e.ai_drafted) e.edit_ratio = aiEditRatio(db, e);
+      // La pausa de vacaciones del plan que se reemplaza sigue en la versión nueva
+      const keepBreak = live && !draft.on_break_until && onBreak(live.on_break_until, today) ? live.on_break_until : draft.on_break_until;
+      if (live) {
+        Object.assign(live, {
+          status: "reemplazado", closed_at: now, closed_by_email: email, close_reason: "reemplazado",
+          updated_at: now, updated_by_email: email,
+        });
+      }
+      // supersedes_id: el plan que de verdad reemplaza (el publicado ahora). El
+      // borrador pudo armarse sobre una versión que después se finalizó o se
+      // retiró: esa ya no es parte de la cadena (sus metas no vuelven a valer)
+      Object.assign(draft, {
+        status: "publicado", published_at: now, published_by_email: email, professional_id: author.professional_id,
+        author_label: author.label, adolescent_ack: ack, supersedes_id: live?.id ?? null,
+        on_break_until: keepBreak,
+        last_reviewed_at: draft.last_reviewed_at ?? live?.last_reviewed_at ?? null,
+        last_reviewed_by_email: draft.last_reviewed_by_email ?? live?.last_reviewed_by_email ?? null,
+        last_reviewed_label: draft.last_reviewed_label ?? live?.last_reviewed_label ?? null,
+        updated_at: now, updated_by_email: email,
+      });
+      for (const g of db.practice_goals) {
+        if (g.plan_id === draft.id && g.status === "borrador") {
+          Object.assign(g, { status: "activa", published_at: now, published_by_email: email, updated_at: now });
+        }
+      }
+      return ok(true as const);
+    }
+
+    // Pausa de vacaciones: until es la fecha de vuelta (posterior a hoy); null la termina
+    case "plan_break": {
+      const plan = planOf(b.plan_id);
+      if (!isRow(plan)) return plan;
+      if (plan.status !== "publicado") return conflict();
+      const raw = b.until;
+      let until: string | null = null;
+      if (raw !== null && raw !== undefined) {
+        if (!validDateKey(raw) || raw <= today) return fail(400, BREAK_DATE, { code: "INVALID" });
+        until = raw;
+      }
+      Object.assign(plan, { on_break_until: until, updated_at: stamp(plan.updated_at), updated_by_email: email });
+      return ok(true as const);
+    }
+
+    // Finalizar: como al retirarlo, con él terminan las metas de su cadena de
+    // versiones (él y las que reemplazó): las activas y las en borrador quedan
+    // "cambiada" (la familia deja de verlas y ya no se podrían publicar). Las
+    // logradas siguen: las dio una devolución
+    case "plan_finish": {
+      const plan = planOf(b.plan_id);
+      if (!isRow(plan)) return plan;
+      if (plan.status !== "publicado") return conflict();
+      const now = stamp(plan.updated_at);
+      Object.assign(plan, {
+        status: "finalizado", closed_at: now, closed_by_email: email, close_reason: "finalizado",
+        updated_at: now, updated_by_email: email,
+      });
+      retireChainGoals(db, plan, email, now);
+      return ok(true as const);
+    }
+
+    // Un borrador se descarta; lo publicado lo retira quien lo publicó o la Dirección
+    case "plan_withdraw": {
+      const plan = planOf(b.plan_id);
+      if (!isRow(plan)) return plan;
+      const now = stamp(plan.updated_at);
+      if (plan.status === "borrador") {
+        Object.assign(plan, {
+          status: "retirado", closed_at: now, closed_by_email: email, close_reason: "descartado",
+          updated_at: now, updated_by_email: email,
+        });
+        return ok(true as const);
+      }
+      if (plan.status !== "publicado") return conflict();
+      const reason = PLAN_WITHDRAW_REASONS.find((x) => x === b.reason);
+      if (!reason) return fail(400, "Elegí el motivo.", { code: "INVALID" });
+      if (staff.role !== "direccion" && plan.published_by_email !== email) return fail(403, ONLY_OWNER);
+      Object.assign(plan, {
+        status: "retirado", closed_at: now, closed_by_email: email, close_reason: reason, updated_at: now, updated_by_email: email,
+      });
+      // Con él se retiran las metas de toda su cadena (las de las versiones que
+      // reemplazó seguían activas), como al finalizarlo
+      retireChainGoals(db, plan, email, now);
+      return ok(true as const);
+    }
+
+    // "Visto": la familia lee "Lic. … vio las prácticas el …" con el nombre
+    // de quien lo marcó (por eso hace falta que publique con su nombre). Con
+    // el plan finalizado o retirado, saca lo pendiente de la bandeja
+    case "mark_seen": {
+      const noAuthor = requireAuthor();
+      if (noAuthor) return noAuthor;
+      if (!reviewPlan) return fail(409, NOTHING_TO_REVIEW, { code: "CONFLICT" });
+      const now = stamp(reviewPlan.updated_at);
+      Object.assign(reviewPlan, {
+        last_reviewed_at: now, last_reviewed_by_email: email, last_reviewed_label: author.label,
+        updated_at: now, updated_by_email: email,
+      });
+      return ok(true as const);
+    }
+
+    // La devolución, las metas que se dan por logradas, la medalla y el
+    // "Visto", en un solo paso (practice_send_feedback)
+    case "feedback_send": {
+      const noAuthor = requireAuthor();
+      if (noAuthor) return noAuthor;
+      const v = validateFeedback(b.feedback, { adolescent: isAdolescent(p.age) });
+      if (!v.ok) return fail(400, v.error, { code: v.code });
+      const f = v.value;
+      if (f.plan_id && !plans.some((x) => x.id === f.plan_id)) return invalid();
+      const planId = f.plan_id ?? live?.id ?? null;
+      const goals = f.goal_ids.map((id) => db.practice_goals.find((g) => g.id === id && g.patient_id === p.id));
+      if (goals.some((g) => !g || g.status !== "activa")) return fail(409, PRACTICE_ERROR.goal_not_active, { code: "CONFLICT" });
+      const medalGoal = f.medal?.goal_id ?? null;
+      if (medalGoal) {
+        if (!db.practice_goals.some((g) => g.id === medalGoal && g.patient_id === p.id)) return invalid();
+        if (db.practice_medals.some((m) => m.kind === "profesional" && m.goal_id === medalGoal && !m.voided_at)) {
+          return fail(409, GOAL_HAS_MEDAL, { code: "CONFLICT" });
+        }
+      }
+      const reviewed = lastReviewedOf(db, p.id);
+      const now = stamp(reviewPlan?.updated_at);
+      const id = uuid();
+      db.practice_feedback.push({
+        id, patient_id: p.id, plan_id: planId, professional_id: author.professional_id, author_label: author.label ?? "",
+        body: f.body, for_adult: f.for_adult,
+        period_start: reviewed ? centerDateOf(reviewed) : live?.published_at ? centerDateOf(live.published_at) : null,
+        period_end: today, adolescent_ack: f.adolescent_ack, review_note: f.review_note, ai_draft_id: null,
+        ai_drafted: false, sent_at: now, sent_by_email: email, withdrawn_at: null, withdrawn_by_email: null,
+        withdraw_reason: null,
+      });
+      for (const g of goals) if (g) Object.assign(g, { status: "lograda", achieved_at: now, feedback_id: id, updated_at: now });
+      if (f.medal) {
+        db.practice_medals.push({
+          id: uuid(), patient_id: p.id, kind: "profesional", code: "profesional", title: f.medal.title, period_key: "",
+          plan_id: planId, goal_id: medalGoal, feedback_id: id, message: f.medal.message, awarded_at: now,
+          awarded_by_email: email, voided_at: null, voided_by_email: null, void_reason: null,
+        });
+      }
+      // También es "Visto" (en el plan publicado o, si ya no hay, en el último)
+      if (reviewPlan) {
+        Object.assign(reviewPlan, {
+          last_reviewed_at: now, last_reviewed_by_email: email, last_reviewed_label: author.label,
+          updated_at: now, updated_by_email: email,
+        });
+      }
+      return ok(true as const);
+    }
+
+    // Cada profesional retira las suyas; la Dirección, cualquiera. En el mismo
+    // paso, lo que la devolución dio deja de valer: las metas que dio por
+    // logradas vuelven a activas (o quedan "cambiada" si su plan ya se cerró)
+    // y su medalla queda anulada
+    case "feedback_withdraw": {
+      if (!validId(b.feedback_id)) return invalid();
+      const reason = FEEDBACK_WITHDRAW_REASONS.find((x) => x === b.reason);
+      if (!reason) return fail(400, "Elegí el motivo.", { code: "INVALID" });
+      const f = db.practice_feedback.find((x) => x.id === b.feedback_id && x.patient_id === p.id);
+      if (!f) return fail(404, "No encontramos esa devolución.");
+      if (f.withdrawn_at) return fail(409, ALREADY_WITHDRAWN, { code: "CONFLICT" });
+      if (staff.role !== "direccion" && f.sent_by_email !== email) return fail(403, ONLY_OWNER);
+      const now = new Date().toISOString();
+      Object.assign(f, { withdrawn_at: now, withdrawn_by_email: email, withdraw_reason: reason });
+      for (const g of db.practice_goals) {
+        if (g.feedback_id !== f.id || g.status !== "lograda") continue;
+        // Una meta de un plan finalizado o retirado no vuelve a verse
+        Object.assign(g, goalPlanOpen(db, g)
+          ? { status: "activa", achieved_at: null, feedback_id: null, updated_at: now }
+          : { status: "cambiada", achieved_at: null, feedback_id: null, changed_at: now, changed_by_email: email, updated_at: now });
+      }
+      for (const m of db.practice_medals) {
+        if (m.feedback_id !== f.id || m.kind !== "profesional" || m.voided_at) continue;
+        Object.assign(m, { voided_at: now, voided_by_email: email, void_reason: FEEDBACK_WITHDRAWN_VOID });
+      }
+      return ok(true as const);
+    }
+
+    // Crea o edita una meta en borrador (nada se ve en el portal por guardarla)
+    case "goal_save": {
+      const v = validateGoal(b.goal);
+      if (!v.ok) return fail(400, v.error, { code: v.code });
+      const g = v.value;
+      if (g.plan_id && !plans.some((x) => x.id === g.plan_id && (x.status === "borrador" || x.status === "publicado"))) {
+        return invalid();
+      }
+      const now = new Date().toISOString();
+      const fields = {
+        plan_id: g.plan_id, kind: g.kind, title: g.title, rule: g.rule, medal_title: g.medal_title,
+        agreed_with_patient: g.agreed_with_patient, updated_at: now,
+      };
+      if (g.id) {
+        const row = db.practice_goals.find((x) => x.id === g.id && x.patient_id === p.id && x.status === "borrador");
+        if (!row) return fail(409, GOAL_NOT_DRAFT, { code: "CONFLICT" });
+        Object.assign(row, fields);
+      } else {
+        db.practice_goals.push({
+          id: uuid(), patient_id: p.id, ...fields, status: "borrador", created_by_email: email, created_at: now,
+          published_at: null, published_by_email: null, achieved_at: null, feedback_id: null,
+          changed_at: null, changed_by_email: null, met_notice_dismissed_at: null,
+        });
+      }
+      return ok(true as const);
+    }
+
+    // "Publicar meta" (también se publican junto con el plan)
+    case "goal_publish": {
+      const g = goalOf(b.goal_id);
+      if (!isRow(g)) return g;
+      if (g.status !== "borrador") return fail(409, GOAL_NOT_DRAFT, { code: "CONFLICT" });
+      // Una meta de un plan ya cerrado (finalizado, retirado o descartado) no se publica
+      if (!goalPlanOpen(db, g)) return fail(409, GOAL_PLAN_CLOSED, { code: "CONFLICT" });
+      // La de un plan en borrador sale junto con él (si se descarta, no quedó a la vista)
+      if (db.practice_plans.some((x) => x.id === g.plan_id && x.status === "borrador")) {
+        return fail(409, GOAL_WITH_DRAFT, { code: "CONFLICT" });
+      }
+      const terms = [...new Set([...blockForTitles(g.title), ...blockForTitles(g.medal_title)])];
+      if (terms.length) return fail(400, FLUENCY_TITLE_MESSAGE, { code: "TITLE_BLOCK" });
+      if (isAdolescent(p.age) && b.adolescent_ack !== true) return fail(400, PRACTICE_ERROR.adolescent_ack, { code: "ADOLESCENT_ACK" });
+      const now = new Date().toISOString();
+      Object.assign(g, { status: "activa", published_at: now, published_by_email: email, updated_at: now });
+      return ok(true as const);
+    }
+
+    // Una meta activa que ya no va: queda "cambiada" (nunca "no cumplida")
+    case "goal_change": {
+      const g = goalOf(b.goal_id);
+      if (!isRow(g)) return g;
+      if (g.status !== "activa") return fail(409, PRACTICE_ERROR.goal_not_active, { code: "CONFLICT" });
+      const now = new Date().toISOString();
+      Object.assign(g, { status: "cambiada", changed_at: now, changed_by_email: email, updated_at: now });
+      return ok(true as const);
+    }
+
+    // "Todavía no" en la bandeja (meta de práctica cumplida)
+    case "goal_not_yet": {
+      const g = goalOf(b.goal_id);
+      if (!isRow(g)) return g;
+      if (g.status !== "activa" || g.kind !== "practica") return fail(409, PRACTICE_ERROR.goal_not_active, { code: "CONFLICT" });
+      const now = new Date().toISOString();
+      Object.assign(g, { met_notice_dismissed_at: now, updated_at: now });
+      return ok(true as const);
+    }
+
+    // Anular una medalla (solo para errores, con motivo). No se borra
+    case "medal_void": {
+      if (!validId(b.medal_id)) return invalid();
+      const reason = String(b.reason ?? "").replace(/\s+/g, " ").trim();
+      if (reason.length < 3) return fail(400, PRACTICE_ERROR.void_reason, { code: "INVALID" });
+      if (reason.length > PRACTICE_LIMITS.void_reason) {
+        return fail(400, `El motivo es muy largo: el máximo es ${PRACTICE_LIMITS.void_reason} caracteres.`, { code: "INVALID" });
+      }
+      const m = db.practice_medals.find((x) => x.id === b.medal_id && x.patient_id === p.id);
+      if (!m) return fail(404, "No encontramos esa medalla.");
+      if (m.voided_at) return fail(409, ALREADY_VOIDED, { code: "CONFLICT" });
+      Object.assign(m, { voided_at: new Date().toISOString(), voided_by_email: email, void_reason: reason });
+      return ok(true as const);
+    }
+
+    default:
+      return fail(400, "Acción inválida");
+  }
+}
+
+/**
+ * Todas las acciones de la vista (POST /api/portal-staff/practice); todas
+ * devuelven la vista actualizada. "get" lo puede pedir cualquier rol
+ * (Administración, sin textos); el resto, solo profesionales y Dirección
+ * (403). Errores con code: CONFLICT, REVIEW, TITLE_BLOCK, AI_NOT_REVIEWED,
+ * APPROACH, EXERCISES, ADOLESCENT_ACK, AUTHOR, INVALID (como el servidor).
+ */
+export async function staffPracticeAction(body: PracticeAction, issuedBy: string): Promise<ApiResult<StaffPracticeDTO>> {
+  await wait(350);
+  if (!FEATURES.includes("practice")) return fail(404, NOT_AVAILABLE);
+  const staff = await currentStaff(issuedBy);
+  if (!staff.ok) return staff;
+  // Como el servidor, se revisa cada valor (no se confía en el tipo)
+  const b = (body ?? {}) as unknown as Record<string, unknown>;
+  const patientId = b.patient_id;
+  if (!validId(patientId)) return fail(400, "Pedido inválido");
+  if (!PRACTICE_ACTIONS.includes(b.action)) return fail(400, "Acción inválida");
+  if (b.action === "get") return staffPractice(staff, patientId);
+  if (!staff.clinical) return fail(403, PRACTICE_ERROR.clinical_only);
+  if (b.action === "catalog") return staffPractice(staff, patientId, true);
+  const p = await practicePatient(load(), patientId);
+  if (!p) return fail(404, PATIENT_NOT_FOUND);
+  const author = authorOf(staff, await panelProfessionals());
+
+  // De acá en adelante, sin esperas y con la base recién leída: si otra
+  // pestaña cambió algo mientras tanto, se ve en las comparaciones
+  const db = load();
+  const done = applyPracticeAction(db, staff, author, p, b, centerNow().date);
+  if (!done.ok) return done;
+  save(db);
+  return staffPractice(staff, patientId);
+}
+
+// ── Bandeja: Portal → "Prácticas" (solo perfiles clínicos) ──
+
+// Una fila por paciente con prácticas o comentarios sin ver (los de riesgo
+// primero; después, lo pendiente más viejo) y, al final, una por cada meta de
+// práctica cumplida que todavía no se dio por lograda
+async function practiceInboxItems(db: Db, staff: Staff): Promise<StaffPracticeInboxItem[]> {
+  const today = centerNow().date;
+  const cutoff = new Date(Date.now() - INBOX_DAYS * DAY_MS).toISOString();
+  const ids = [...new Set([
+    ...db.practice_plans.filter((x) => x.status !== "borrador").map((x) => x.patient_id),
+    ...db.practice_goals.filter((g) => g.status === "activa" && g.kind === "practica" && !g.met_notice_dismissed_at).map((g) => g.patient_id),
+  ])];
+  if (!ids.length) return [];
+  const names = await patientInfo(db, ids);
+  const practiceRows: StaffPracticeInboxItem[] = [];
+  const goalRows: StaffPracticeInboxItem[] = [];
+  for (const id of ids) {
+    const p = await practicePatient(db, id);
+    if (!p) continue;
+    const plan = livePlan(db, id);
+    const pending = practicePending(db, id, today, true, cutoff);
+    const base = {
+      patient_id: id, patient_name: names.get(id)?.name ?? "Paciente", professional_id: p.professional_id,
+      mine: isMine(staff, p), pending, last_reviewed_at: lastReviewedOf(db, id),
+      on_break: !!plan && onBreak(plan.on_break_until, today),
+    };
+    if (pending.logs || pending.comments || pending.costo || pending.risk) practiceRows.push({ kind: "practicas", ...base, goal: null });
+    for (const g of goalsMet(staffGoals(db, id, false, today))) {
+      goalRows.push({ kind: "meta_cumplida", ...base, goal: { id: g.goal_id, title: g.title ?? "", met_on: g.met_on } });
+    }
+  }
+  practiceRows.sort((x, y) => Number(y.pending.risk > 0) - Number(x.pending.risk > 0)
+    || (x.pending.since ?? "").localeCompare(y.pending.since ?? ""));
+  goalRows.sort((x, y) => (x.goal?.met_on ?? "").localeCompare(y.goal?.met_on ?? ""));
+  return [...practiceRows, ...goalRows];
+}
+
+// ── "Adaptar con ayuda de IA" (equipo, etapa D) ─────────────────────────────
+// En producción: POST /api/portal-staff/ai-draft (server/lib/aiDrafts.ts y
+// server/lib/openrouter.ts). El mock no llama a ninguna IA: devuelve el texto
+// del catálogo como plantilla (mockDraft, con «Borrador de ejemplo (modo
+// demo, sin IA)»), después de una espera corta. Mismas validaciones, límites
+// y mensajes; queda registrado en ai_drafts (lo que se mandaría, nunca datos
+// que identifiquen al paciente).
+
+const AI_PERSON_WINDOW_MAX = 20; // por persona cada 10 minutos (script 8)
+const AI_PERSON_WINDOW_MS = 10 * 60 * 1000;
+const AI_PERSON_DAILY_MAX = 100; // por persona por día
+
+export async function staffAiDraft(req: AiDraftRequest, issuedBy: string): Promise<ApiResult<AiDraftResult>> {
+  await wait(300);
+  const staff = await currentStaff(issuedBy);
+  if (!staff.ok) return staff;
+  if (!staff.clinical) return fail(403, NOT_CLINICAL);
+  if (!FEATURES.includes("ai")) return fail(503, AI_ERROR.unavailable, { code: "AI_UNAVAILABLE" });
+  // Como el servidor, se revisa cada valor (no se confía en el tipo)
+  const b = req && typeof req === "object" && !Array.isArray(req) ? (req as unknown as Record<string, unknown>) : null;
+  if (!b || !validId(b.patient_id)) return fail(400, "Pedido inválido");
+  const p = await practicePatient(load(), b.patient_id);
+  if (!p) return fail(404, PATIENT_NOT_FOUND);
+  // La edad y el diagnóstico se leen acá y no viajan: solo la franja y el enfoque
+  const built = buildAdaptParams(b, { age: p.age, diagnosis_code: p.diagnosis_code });
+  if (!built.ok) return fail(400, built.error);
+
+  // Tope del centro por día y límite por persona (cuentan también los que
+  // salieron con error)
+  const started = Date.now();
+  const before = load().ai_drafts;
+  const mine = before.filter((d) => d.requested_by_email === staff.email);
+  const today = centerNow().date;
+  if (before.filter((d) => centerDateOf(d.created_at) === today).length >= AI_DRAFT_DAILY_CAP_DEFAULT
+    || mine.filter((d) => started - Date.parse(d.created_at) < AI_PERSON_WINDOW_MS).length >= AI_PERSON_WINDOW_MAX
+    || mine.filter((d) => started - Date.parse(d.created_at) < DAY_MS).length >= AI_PERSON_DAILY_MAX) {
+    return fail(429, AI_ERROR.limit, { code: "AI_LIMIT" });
+  }
+
+  // "Preparando una propuesta…" (con la IA real tarda de 10 a 25 segundos)
+  await wait(1500 + Math.floor(Math.random() * 700));
+  const parsed = parseExerciseDraft(
+    mockDraft(built.params, built.entries), built.params.catalogo.ids, built.params.minutos, built.params.enfoque,
+  );
+
+  // Se registra el pedido antes de devolver el borrador (con la base recién leída)
+  const db = load();
+  const id = uuid();
+  db.ai_drafts.push({
+    id, kind: "adaptacion", patient_id: p.id, requested_by_email: staff.email, model: MOCK_AI_MODEL,
+    prompt_version: PROMPT_VERSION, catalog_version: built.params.catalogo.version, params: built.params,
+    output: parsed.ok ? parsed.draft : null, flags: parsed.ok ? parsed.flags : [],
+    status: parsed.ok ? "generado" : "error", error_code: parsed.ok ? null : parsed.code,
+    latency_ms: Date.now() - started, used_at: null, created_at: new Date().toISOString(),
+  });
+  save(db);
+  if (!parsed.ok) return fail(502, AI_ERROR.failed, { code: "AI_FAILED" });
+  return ok({ draft_id: id, draft: parsed.draft, flags: parsed.flags, sent: describeSent(built.params, built.entries), demo: true });
 }
