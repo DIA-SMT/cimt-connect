@@ -230,6 +230,13 @@ export const HC_DAILY_MAX = 3;
 // Hasta cuándo la familia sigue viendo un pedido cerrado (y, si se envió por
 // el portal, hasta cuándo puede descargar la copia)
 export const HC_VISIBLE_DAYS = 60;
+// Para que los pedidos cerrados no se acumulen a la vista: una copia que no
+// pudimos preparar se avisa en el inicio (y su tarjeta va en rojo) solo los
+// primeros 7 días; de los cerrados de cada persona, solo el más nuevo se ve
+// entero, y solo los primeros 30 días. Los demás, hasta HC_VISIBLE_DAYS,
+// quedan plegados en "Ver pedidos anteriores".
+export const HC_NOTICE_DAYS = 7;
+export const HC_RECENT_CLOSED_DAYS = 30;
 
 // ── Copia digital (etapa E1, interruptor "hc_digital") ──────────────────────
 // La familia elige cómo recibirla. "portal": el equipo imprime la historia de
@@ -265,12 +272,17 @@ export type HcRequestDTO = {
   sent_at: string | null; // enviada por el portal
   available_until: string | null; // hasta cuándo se puede descargar (enviada)
   documents: HcDocumentDTO[]; // solo si está enviada y todavía disponible
+  // Cuándo se cerró (entregada, enviada, rechazada o cancelada); null si sigue
+  // abierto. Con esto se pliegan los pedidos viejos (splitHcRequests)
+  closed_at: string | null;
 };
 
 export type HcRow = {
   id: string; patient_id: string; status: HcStatus; created_at: string; updated_at: string;
   ready_at: string | null; delivered_at: string | null; reject_reason: HcRejectReason | null;
   channel?: HcChannel | null; sent_at?: string | null; // sin el script 25: "mano" y null
+  // Solo para calcular closed_at (no viajan a la familia)
+  rejected_at?: string | null; cancelled_at?: string | null;
 };
 
 // Hasta cuándo se puede descargar una copia enviada por el portal
@@ -300,6 +312,7 @@ export function computeHcDto(
     sent_at: r.status === "enviada" ? r.sent_at ?? null : null,
     available_until: until,
     documents: available ? docs : [],
+    closed_at: hcClosedAt(r),
   };
 }
 
@@ -307,6 +320,87 @@ export function computeHcDto(
 export function hcVisible(r: Pick<HcRow, "status" | "created_at" | "updated_at">, now: Date = new Date()): boolean {
   if ((HC_OPEN_STATUSES as readonly string[]).includes(r.status)) return true;
   return now.getTime() - Date.parse(r.updated_at ?? r.created_at) < HC_VISIBLE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+// ── Pedidos cerrados: que no se acumulen a la vista ─────────────────────────
+
+const HC_DAY_MS = 24 * 60 * 60 * 1000;
+
+// Cuándo se cerró un pedido: la columna que se guarda junto con el paso que lo
+// cerró (delivered_at, sent_at, rejected_at o cancelled_at). updated_at queda
+// de respaldo, por si faltara: hoy nada lo cambia después del cierre (las
+// notas internas del equipo no lo tocan), pero la columna de cada paso no
+// depende de eso. null: sigue abierto (pendiente o lista).
+export function hcClosedAt(
+  r: Pick<HcRow, "status" | "created_at" | "updated_at" | "delivered_at" | "sent_at" | "rejected_at" | "cancelled_at">,
+): string | null {
+  if ((HC_OPEN_STATUSES as readonly string[]).includes(r.status)) return null;
+  const at = r.status === "entregada" ? r.delivered_at
+    : r.status === "enviada" ? r.sent_at
+      : r.status === "rechazada" ? r.rejected_at
+        : r.cancelled_at;
+  return at || r.updated_at || r.created_at;
+}
+
+// Desde cuándo está cerrado (por si llegara un pedido sin closed_at, cuenta el pedido)
+const closedMs = (r: Pick<HcRequestDTO, "closed_at" | "created_at">) => Date.parse(r.closed_at ?? r.created_at);
+const withinDays = (ms: number, days: number, now: Date) => now.getTime() - ms <= days * HC_DAY_MS;
+
+// ¿Sigue abierto para la familia? Pendiente, lista, o enviada por el portal con
+// la copia para descargar (los documentos los manda el servidor solo mientras
+// sigue disponible: decide su reloj, no el del teléfono, igual que el aviso
+// del inicio y los botones de la tarjeta). Una enviada sin descarga (venció,
+// o la copia digital está apagada) cuenta como cerrada.
+export function hcIsOpen(r: Pick<HcRequestDTO, "status" | "documents">): boolean {
+  if (r.status === "pendiente" || r.status === "lista") return true;
+  return r.status === "enviada" && r.documents.length > 0;
+}
+
+// Rechazada hace 7 días o menos: se avisa en el inicio y la tarjeta va en
+// rojo. Después, el mismo texto en gris
+export function hcRejectedFresh(r: Pick<HcRequestDTO, "status" | "closed_at" | "created_at">, now: Date = new Date()): boolean {
+  return r.status === "rechazada" && withinDays(closedMs(r), HC_NOTICE_DAYS, now);
+}
+
+// Inicio: "No pudimos preparar la copia…", a lo sumo uno por persona. Solo si
+// el rechazado es el pedido más nuevo de esa persona (si después pidió otra,
+// ya no aplica), su página se puede abrir (si no, el pedido entero ya está en
+// "Tus pedidos") y se rechazó hace 7 días o menos. Del más nuevo al más viejo
+export function hcRejectNotices<T extends HcRequestDTO>(list: T[], now: Date = new Date()): T[] {
+  const newest = new Map<string, T>();
+  for (const r of list) {
+    const cur = newest.get(r.patient_id);
+    if (!cur || Date.parse(r.created_at) > Date.parse(cur.created_at)) newest.set(r.patient_id, r);
+  }
+  return [...newest.values()]
+    .filter((r) => r.child_page && hcRejectedFresh(r, now))
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+}
+
+// Los pedidos de una o más personas, para mostrarlos sin que se acumulen.
+// current: los que se ven enteros: los abiertos (hcIsOpen, en el orden en que
+// llegan) y después, de cada persona, el cerrado más nuevo si se cerró hace
+// 30 días o menos. older: los demás cerrados (plegados en "Ver pedidos
+// anteriores"). Los cerrados van del que se cerró último al primero.
+// keep: ids que ya se mostraron enteros con la página abierta. Siguen enteros
+// aunque ahora tocaría plegarlos (por ejemplo, una enviada que dejó de estar
+// para descargar al tocar "Descargar"): la tarjeta no salta al plegado y no
+// se pierde su mensaje. Ocupan el lugar del cerrado más nuevo de su persona.
+export function splitHcRequests<T extends HcRequestDTO>(
+  list: T[], now: Date = new Date(), keep: ReadonlySet<string> = new Set(),
+): { current: T[]; older: T[] } {
+  const open = list.filter((r) => hcIsOpen(r));
+  const closed = list.filter((r) => !hcIsOpen(r))
+    .sort((a, b) => closedMs(b) - closedMs(a) || Date.parse(b.created_at) - Date.parse(a.created_at));
+  const recent: T[] = [];
+  const older: T[] = [];
+  const seen = new Set<string>();
+  for (const r of closed) {
+    const first = !seen.has(r.patient_id);
+    seen.add(r.patient_id);
+    (keep.has(r.id) || (first && withinDays(closedMs(r), HC_RECENT_CLOSED_DAYS, now)) ? recent : older).push(r);
+  }
+  return { current: [...open, ...recent], older };
 }
 
 // Constancia de cada paso de un pedido (solo la ve el equipo)

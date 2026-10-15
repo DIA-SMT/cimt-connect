@@ -2,11 +2,13 @@
 // el servidor y el modo mock. Correr con: bun test
 import { describe, expect, test } from "bun:test";
 import {
+  HC_NOTICE_DAYS, HC_RECENT_CLOSED_DAYS,
   addDaysKey, ageOn, arPhone10, canRequestHc, centerNow, computeApptDto, computeHcDto, confirmFrom,
-  guardianEligibility, hcVisible, isNoticeOnTime, isValidDni, linkValidity, normalizeCode, normalizeDni,
-  passwordProblem, samePhone, selfEligibility,
-  type ApptInput, type HcRow, type LinkValidityInput,
+  guardianEligibility, hcClosedAt, hcIsOpen, hcRejectNotices, hcRejectedFresh, hcVisible, isNoticeOnTime, isValidDni,
+  linkValidity, normalizeCode, normalizeDni, passwordProblem, samePhone, selfEligibility, splitHcRequests,
+  type ApptInput, type HcRequestDTO, type HcRow, type LinkValidityInput,
 } from "../src/lib/portalRules";
+import { HC_REJECT_TEXT, hcStatus } from "../src/lib/portal";
 
 describe("fechas en la hora del centro", () => {
   test("centerNow pasa de UTC a Tucumán (UTC-3)", () => {
@@ -117,6 +119,207 @@ describe("pedidos de copia del historial", () => {
     expect(hcVisible(closedLate, now)).toBe(true);
     const closedLong = { ...row, status: "entregada" as const, updated_at: "2026-07-01T10:00:00Z" };
     expect(hcVisible(closedLong, now)).toBe(false);
+  });
+});
+
+describe("pedidos de copia cerrados: que no se acumulen", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = new Date("2026-10-15T15:00:00.000Z");
+  const ago = (days: number, ms = 0) => new Date(NOW.getTime() - days * DAY - ms).toISOString();
+  const row: HcRow = {
+    id: "r1", patient_id: "p1", status: "pendiente", created_at: ago(20), updated_at: ago(20),
+    ready_at: null, delivered_at: null, reject_reason: null, channel: "mano", sent_at: null,
+    rejected_at: null, cancelled_at: null,
+  };
+  const doc = { id: "d1", label: "Historia clínica", code: "ABCD-1234" };
+  // Un pedido tal como le llega a la familia
+  let n = 0;
+  const dto = (o: Partial<HcRequestDTO> = {}): HcRequestDTO => ({
+    id: `q${++n}`, patient_id: "p1", child_first_name: "Martín", is_self: false, status: "pendiente",
+    created_at: ago(40), ready_at: null, delivered_at: null, reject_reason: null, can_cancel: false, child_page: true,
+    channel: "mano", sent_at: null, available_until: null, documents: [], closed_at: null, ...o,
+  });
+  const closedAgo = (status: HcRequestDTO["status"], days: number, o: Partial<HcRequestDTO> = {}) =>
+    dto({ status, created_at: ago(days + 2), closed_at: ago(days), ...o });
+  const ids = (list: HcRequestDTO[]) => list.map((r) => r.id);
+
+  test("hcClosedAt: abierto, null; cerrado, la columna del paso que lo cerró", () => {
+    expect(hcClosedAt(row)).toBeNull();
+    expect(hcClosedAt({ ...row, status: "lista" })).toBeNull();
+    expect(hcClosedAt({ ...row, status: "entregada", delivered_at: ago(9) })).toBe(ago(9));
+    expect(hcClosedAt({ ...row, status: "enviada", sent_at: ago(8) })).toBe(ago(8));
+    expect(hcClosedAt({ ...row, status: "rechazada", rejected_at: ago(7) })).toBe(ago(7));
+    expect(hcClosedAt({ ...row, status: "cancelada", cancelled_at: ago(6) })).toBe(ago(6));
+  });
+
+  test("hcClosedAt: un cambio posterior (updated_at más nuevo) no mueve el cierre", () => {
+    expect(hcClosedAt({ ...row, status: "rechazada", rejected_at: ago(10), updated_at: ago(1) })).toBe(ago(10));
+  });
+
+  test("hcClosedAt: sin la columna (pedido viejo o sin leerla), updated_at", () => {
+    expect(hcClosedAt({ ...row, status: "rechazada", rejected_at: undefined, updated_at: ago(3) })).toBe(ago(3));
+    expect(hcClosedAt({ ...row, status: "cancelada", cancelled_at: null, updated_at: ago(4) })).toBe(ago(4));
+  });
+
+  test("computeHcDto lleva closed_at, pero no rejected_at ni cancelled_at", () => {
+    const d = computeHcDto({ ...row, status: "rechazada", reject_reason: "otro", rejected_at: ago(2), updated_at: ago(1) },
+      { display: "Martín", self: false }, [], NOW);
+    expect(d.closed_at).toBe(ago(2));
+    expect(d).not.toHaveProperty("rejected_at");
+    expect(d).not.toHaveProperty("cancelled_at");
+    expect(d).not.toHaveProperty("updated_at");
+    expect(computeHcDto(row, { display: "Martín", self: false }, [], NOW).closed_at).toBeNull();
+  });
+
+  test("hcIsOpen: pendiente, lista y enviada mientras se puede descargar", () => {
+    expect(hcIsOpen(dto({ status: "pendiente" }))).toBe(true);
+    expect(hcIsOpen(dto({ status: "lista" }))).toBe(true);
+    const sent = dto({ status: "enviada", sent_at: ago(10), closed_at: ago(10), available_until: ago(-50), documents: [doc] });
+    expect(hcIsOpen(sent)).toBe(true);
+    // Con documentos manda el servidor, aunque el reloj del teléfono ya pasó la fecha
+    expect(hcIsOpen({ ...sent, available_until: ago(0, 1) })).toBe(true);
+    // Sin descarga (venció en el servidor, o la copia digital apagada): cerrada
+    expect(hcIsOpen({ ...sent, documents: [] })).toBe(false);
+    for (const status of ["entregada", "rechazada", "cancelada"] as const) expect(hcIsOpen(dto({ status }))).toBe(false);
+  });
+
+  test("enviada al borde de vencer: con documentos sigue a la vista (como el aviso del inicio)", () => {
+    // Enviada hace casi 60 días; el teléfono adelantado ya pasó la fecha
+    const sent = dto({ status: "enviada", sent_at: ago(59), closed_at: ago(59), available_until: ago(0, 1), documents: [doc] });
+    const delivered = closedAgo("entregada", 5);
+    const out = splitHcRequests([delivered, sent], NOW);
+    expect(ids(out.current)).toEqual([sent.id, delivered.id]);
+    expect(out.older).toEqual([]);
+  });
+
+  test("hcRejectedFresh: hasta 7 días justos desde el rechazo", () => {
+    expect(HC_NOTICE_DAYS).toBe(7);
+    expect(hcRejectedFresh(closedAgo("rechazada", 0), NOW)).toBe(true);
+    expect(hcRejectedFresh(closedAgo("rechazada", 7), NOW)).toBe(true);
+    expect(hcRejectedFresh(closedAgo("rechazada", 7, { closed_at: ago(7, 1) }), NOW)).toBe(false);
+    expect(hcRejectedFresh(closedAgo("entregada", 1), NOW)).toBe(false);
+    // Sin closed_at cuenta desde el pedido
+    expect(hcRejectedFresh(dto({ status: "rechazada", created_at: ago(8), closed_at: null }), NOW)).toBe(false);
+  });
+
+  test("rechazada en gris (pasada la semana): el texto sigue diciendo que se cerró", () => {
+    const dup = closedAgo("rechazada", 10, { reject_reason: "duplicado" });
+    const st = hcStatus(dup, NOW);
+    expect(st.tone).toBe("muted");
+    expect(st.text).toBe(HC_REJECT_TEXT.duplicado);
+    expect(st.text).toContain("Cerramos este pedido");
+    // El mismo texto que en rojo
+    expect(hcStatus(dup, new Date(Date.parse(dup.closed_at!) + DAY))).toEqual({ tone: "bad", text: st.text });
+  });
+
+  test("aviso del inicio: el rechazo más nuevo de cada persona, con su página y de la última semana", () => {
+    const fresh = closedAgo("rechazada", 3, { patient_id: "a" });
+    expect(ids(hcRejectNotices([fresh], NOW))).toEqual([fresh.id]);
+    expect(hcRejectNotices([closedAgo("rechazada", 8, { patient_id: "a" })], NOW)).toEqual([]);
+    expect(hcRejectNotices([{ ...fresh, child_page: false }], NOW)).toEqual([]);
+    // Después pidió otra: el rechazo ya no se avisa
+    const again = dto({ patient_id: "a", status: "pendiente", created_at: ago(1) });
+    expect(hcRejectNotices([again, fresh], NOW)).toEqual([]);
+  });
+
+  test("aviso del inicio con varias personas: cada una por su cuenta, del más nuevo al más viejo", () => {
+    const a = closedAgo("rechazada", 5, { patient_id: "a", created_at: ago(6) });
+    const b = closedAgo("rechazada", 1, { patient_id: "b", created_at: ago(2) });
+    const stale = closedAgo("rechazada", 9, { patient_id: "c" });
+    const cOld = closedAgo("rechazada", 2, { patient_id: "d", created_at: ago(4) });
+    const cNew = dto({ patient_id: "d", status: "lista", created_at: ago(1) });
+    expect(ids(hcRejectNotices([a, stale, cOld, b, cNew], NOW))).toEqual([b.id, a.id]);
+  });
+
+  test("una persona: abiertos arriba; de los cerrados, solo el más nuevo y de los últimos 30 días", () => {
+    const open = dto({ status: "pendiente", created_at: ago(1) });
+    const newest = closedAgo("rechazada", 12);
+    const mid = closedAgo("entregada", 20);
+    const old = closedAgo("cancelada", 45);
+    const out = splitHcRequests([old, newest, open, mid], NOW);
+    expect(ids(out.current)).toEqual([open.id, newest.id]);
+    expect(ids(out.older)).toEqual([mid.id, old.id]);
+  });
+
+  test("el cerrado más nuevo se ve entero hasta 30 días justos", () => {
+    expect(HC_RECENT_CLOSED_DAYS).toBe(30);
+    const edge = closedAgo("entregada", 30);
+    expect(ids(splitHcRequests([edge], NOW).current)).toEqual([edge.id]);
+    const past = closedAgo("entregada", 30, { closed_at: ago(30, 1) });
+    const out = splitHcRequests([past], NOW);
+    expect(out.current).toEqual([]);
+    expect(ids(out.older)).toEqual([past.id]);
+  });
+
+  test("lo que se ve entero va por cuándo se cerró, no por cuándo se pidió", () => {
+    // Pedido antes, pero cerrado después
+    const late = closedAgo("rechazada", 2, { created_at: ago(25) });
+    const early = closedAgo("cancelada", 5, { created_at: ago(6) });
+    const out = splitHcRequests([early, late], NOW);
+    expect(ids(out.current)).toEqual([late.id]);
+    expect(ids(out.older)).toEqual([early.id]);
+  });
+
+  test("enviada: abierta mientras se descarga; vencida, cuenta como cerrada desde el envío", () => {
+    const sentOpen = dto({ status: "enviada", sent_at: ago(10), closed_at: ago(10), available_until: ago(-50), documents: [doc] });
+    const rejected = closedAgo("rechazada", 3);
+    let out = splitHcRequests([rejected, sentOpen], NOW);
+    expect(ids(out.current)).toEqual([sentOpen.id, rejected.id]);
+    expect(out.older).toEqual([]);
+
+    // Vencida (sin descarga): compite con los cerrados por cuándo se envió
+    const sentGone = dto({ status: "enviada", sent_at: ago(10), closed_at: ago(10), available_until: ago(-50), documents: [] });
+    out = splitHcRequests([sentGone, rejected], NOW);
+    expect(ids(out.current)).toEqual([rejected.id]);
+    expect(ids(out.older)).toEqual([sentGone.id]);
+  });
+
+  test("varias personas («Tus pedidos»): el cerrado más nuevo de cada una", () => {
+    const a1 = closedAgo("rechazada", 5, { patient_id: "a" });
+    const a2 = closedAgo("entregada", 10, { patient_id: "a" });
+    const b1 = closedAgo("entregada", 20, { patient_id: "b" });
+    const b2 = closedAgo("cancelada", 40, { patient_id: "b" });
+    const c1 = closedAgo("entregada", 35, { patient_id: "c" }); // el más nuevo de c, pero de hace más de 30 días
+    const bOpen = dto({ patient_id: "b", status: "lista", created_at: ago(1) });
+    const out = splitHcRequests([b2, a2, c1, bOpen, a1, b1], NOW);
+    expect(ids(out.current)).toEqual([bOpen.id, a1.id, b1.id]);
+    expect(ids(out.older)).toEqual([a2.id, c1.id, b2.id]);
+  });
+
+  test("keep: lo que ya se vio entero con la página abierta no salta al plegado", () => {
+    // A: enviada hace 50 días, para descargar (a la vista). B: entregada hace
+    // 20, el cerrado más nuevo. Se apaga la copia digital y A llega sin documentos
+    const a = dto({ status: "enviada", sent_at: ago(50), closed_at: ago(50), available_until: ago(-10), documents: [doc] });
+    const b = closedAgo("entregada", 20);
+    const before = splitHcRequests([a, b], NOW);
+    expect(ids(before.current)).toEqual([a.id, b.id]);
+    const gone = { ...a, documents: [] };
+    // Sin keep, A se plegaría
+    expect(ids(splitHcRequests([gone, b], NOW).older)).toEqual([gone.id]);
+    // Con keep, A y B siguen enteras
+    const keep = new Set(ids(before.current));
+    const out = splitHcRequests([gone, b], NOW, keep);
+    expect(ids(out.current)).toEqual([b.id, gone.id]);
+    expect(out.older).toEqual([]);
+  });
+
+  test("keep: ocupa el lugar del cerrado más nuevo; lo que estaba plegado sigue plegado", () => {
+    // Se veía entero al entrar (30 días justos); con la página abierta, pasó el día 30
+    const shown = closedAgo("rechazada", 31);
+    const folded = closedAgo("cancelada", 45);
+    const out = splitHcRequests([folded, shown], NOW, new Set([shown.id]));
+    expect(ids(out.current)).toEqual([shown.id]);
+    expect(ids(out.older)).toEqual([folded.id]);
+    // Un id de otro pedido (o de uno que ya no llega) no cambia nada
+    expect(splitHcRequests([folded], NOW, new Set(["otro"])).current).toEqual([]);
+  });
+
+  test("los abiertos quedan en el orden en que llegan; sin pedidos, nada", () => {
+    const x = dto({ status: "lista" });
+    const y = dto({ status: "pendiente" });
+    expect(ids(splitHcRequests([x, y], NOW).current)).toEqual([x.id, y.id]);
+    expect(ids(splitHcRequests([y, x], NOW).current)).toEqual([y.id, x.id]);
+    expect(splitHcRequests([], NOW)).toEqual({ current: [], older: [] });
   });
 });
 

@@ -3,9 +3,10 @@
 // que ve el profesional. Correr con: bun test
 import { describe, expect, test } from "bun:test";
 import {
-  AGE_BANDS, AGE_PROMPT, AI_CATALOG_MAX, AI_DEFAULT_MODEL, AI_ERROR, APPROACH_PROMPT, type AgeBand, DRAFT_JSON_SCHEMA, DRAFT_LIMITS,
-  DRAFT_PRO_MAX, type ExerciseDraft, NEVER_SENT, PROMPT_BANNED_WORDS, PROMPT_VERSION, ageBand, buildAdaptParams, buildAdaptPrompt,
-  describeSent, draftApiKey, draftCenterKey, draftDailyCap, draftModel, draftRateKey, draftToExerciseInput, editRatio, mockDraft,
+  AGE_BANDS, AGE_PROMPT, AI_CATALOG_MAX, AI_DEFAULT_MODEL, AI_ERROR, APPROACH_PROMPT, type AgeBand, DRAFT_ID_MAX, DRAFT_ID_RE,
+  DRAFT_ITEM_JSON_SCHEMA, DRAFT_LIMITS, DRAFT_PRO_MAX, type ExerciseDraft, NEVER_SENT, PROMPT_BANNED_WORDS, PROMPT_VERSION, ageBand,
+  buildAdaptParams, buildAdaptPrompt, describeSent, draftApiKey, draftCenterKey, draftDailyCap, draftFromWire, draftJsonSchema,
+  draftModel, draftRateKey, draftResponseFormat, draftToExerciseInput, draftToWire, editRatio, isDraftId, mockDraft,
   parseExerciseDraft,
 } from "../src/lib/aiDraftRules";
 import { CATALOG, CATALOG_VERSION, catalogFor } from "../src/lib/exerciseCatalog";
@@ -101,7 +102,17 @@ describe("buildAdaptPrompt", () => {
     expect(user.startsWith("<catalogo>")).toBe(true);
     expect(user).toContain(`<pedido>${JSON.stringify(params)}</pedido>`);
     expect(user).toContain("La tortuga que habla suave");
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v4");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v5");
+  });
+  test("la salida: «ejercicios» con una clave por id pedido (como el esquema por pedido), sin «catalogo_id»", () => {
+    const { params, entries } = built();
+    const { system, user } = buildAdaptPrompt(params, entries);
+    expect(system).toContain("«ejercicios» es un objeto con una clave por cada id de <pedido>.catalogo.ids, escrita tal cual y en el mismo orden.");
+    expect(system).toContain("el ejercicio de <catalogo> con ese id, adaptado");
+    expect(system).not.toContain("catalogo_id");
+    // Los ids que van a ser las claves viajan en el pedido y en el catálogo
+    expect(user).toContain(`"ids":${JSON.stringify(params.catalogo.ids)}`);
+    expect(user).toContain(`"id":"hf-tortuga-suave"`);
   });
   test("las palabras que bloquea el lint: una sola regla las prohíbe (ni siquiera para negarlas) y ninguna otra se las pasa al modelo", () => {
     // Cada palabra prohibida es de las que bloquea el lint (la lista no se desfasa)
@@ -201,7 +212,7 @@ describe("el prompt no revela el diagnóstico", () => {
     for (const a of APPROACHES) expect([a, diagnosisHits(APPROACH_PROMPT[a])]).toEqual([a, []]);
     for (const b of AGE_BANDS) expect([b, diagnosisHits(AGE_PROMPT[b])]).toEqual([b, []]);
     expect(APPROACH_PROMPT.ritmo_y_claridad).not.toContain("farfulleo");
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v4");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v5");
   });
 
   test("cada enfoque × franja, con un diagnóstico que ofrece el enfoque: nada en el system ni en el user", () => {
@@ -353,17 +364,188 @@ describe("parseExerciseDraft", () => {
   });
 });
 
-describe("esquema para response_format (strict)", () => {
-  test("cada objeto pide todas sus propiedades y no admite otras", () => {
-    const check = (s: { type?: unknown; properties?: Record<string, unknown>; required?: readonly string[]; additionalProperties?: boolean; items?: unknown }) => {
-      if (s.properties) {
-        expect([...(s.required ?? [])].sort()).toEqual(Object.keys(s.properties).sort());
-        expect(s.additionalProperties).toBe(false);
-        for (const p of Object.values(s.properties)) check(p as never);
+// ── La forma del modelo: «ejercicios» con una clave por id pedido ───────────
+
+// Dos ejercicios del mismo enfoque (entorno_familia, 7 años)
+const TWO_IDS = ["ef-tiempo-especial", "ef-turnos-mesa"];
+function builtTwo() {
+  const r = buildAdaptParams({ ...REQ, approach: "entorno_familia", catalog_ids: TWO_IDS }, PATIENT);
+  if (!r.ok) throw new Error(r.error);
+  return r;
+}
+const parseTwo = (d: unknown) => {
+  const { params } = builtTwo();
+  return parseExerciseDraft(typeof d === "string" ? d : JSON.stringify(d), params.catalogo.ids, params.minutos, params.enfoque);
+};
+
+describe("parseExerciseDraft: la forma del modelo (una clave por id pedido)", () => {
+  test("de la forma del modelo a la de adentro: una lista en el orden pedido, con la clave como catalogo_id", () => {
+    const { params, entries } = builtTwo();
+    const d = mockDraft(params, entries);
+    const wire = draftToWire(d);
+    expect(Object.keys(wire.ejercicios)).toEqual(TWO_IDS);
+    for (const item of Object.values(wire.ejercicios)) expect(item).not.toHaveProperty("catalogo_id");
+    expect(draftFromWire(wire, TWO_IDS)).toEqual(d);
+    expect(() => draftFromWire(wire, [...TWO_IDS, "ef-cuento-figuras"])).toThrow();
+    // Con las claves en otro orden, igual sale en el orden pedido
+    const reversed = { ...wire, ejercicios: Object.fromEntries(Object.entries(wire.ejercicios).reverse()) };
+    expect(Object.keys(JSON.parse(JSON.stringify(reversed)).ejercicios)).toEqual([...TWO_IDS].reverse());
+    const r = parseTwo(reversed);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.draft.ejercicios.map((e) => e.catalogo_id)).toEqual(TWO_IDS);
+    expect(r.draft).toEqual(d);
+    // Las alertas van con el índice del orden pedido
+    const slow = structuredClone(reversed);
+    slow.ejercicios["ef-turnos-mesa"].pasos[0] = "Hablá más despacio mientras arman la torre.";
+    const flagged = parseTwo(slow);
+    expect(flagged.ok && flagged.flags).toContainEqual({ exercise: 1, field: "pasos", term: "más despacio" });
+    expect(flagged.ok && flagged.draft.ejercicios[1].pasos[0]).toBe("Hablá más despacio mientras arman la torre.");
+  });
+
+  test("falta una clave, sobra una o viene otra: CATALOG (como pasó con la lista de antes)", () => {
+    const { params, entries } = builtTwo();
+    const wire = draftToWire(mockDraft(params, entries));
+    const [a, b] = TWO_IDS;
+    const other = "ef-cuento-figuras"; // del catálogo y del mismo enfoque, pero no se pidió
+    for (const ejercicios of [
+      { [a]: wire.ejercicios[a] }, // falta una
+      { ...wire.ejercicios, [other]: wire.ejercicios[a] }, // sobra una
+      { [a]: wire.ejercicios[a], [other]: wire.ejercicios[b] }, // otra en lugar de la pedida
+      { ...wire.ejercicios, 0: wire.ejercicios[a] }, // una clave que no es un id
+      {}, // ninguna
+    ]) {
+      const r = parseTwo({ ...wire, ejercicios });
+      expect([Object.keys(ejercicios).join(","), r.ok ? "ok" : r.code]).toEqual([Object.keys(ejercicios).join(","), "CATALOG"]);
+    }
+    // Con un solo id pedido, la otra clave sobra
+    const one = parse({ ...wire, ejercicios: { "hf-tortuga-suave": wire.ejercicios[a], [a]: wire.ejercicios[a] } });
+    expect(one).toMatchObject({ ok: false, code: "CATALOG" });
+  });
+
+  test("cada ejercicio, con los mismos largos y sin catalogo_id (la clave es el id)", () => {
+    const { params, entries } = builtTwo();
+    const wire = draftToWire(mockDraft(params, entries));
+    const [a] = TWO_IDS;
+    const patch = (p: Record<string, unknown>) => ({ ...wire, ejercicios: { ...wire.ejercicios, [a]: { ...wire.ejercicios[a], ...p } } });
+    expect(parseTwo(patch({ catalogo_id: a }))).toMatchObject({ ok: false, code: "SCHEMA" });
+    const long = parseTwo(patch({ titulo: "x".repeat(DRAFT_LIMITS.titulo + 1) }));
+    expect(long).toMatchObject({ ok: false, code: "SCHEMA" });
+    expect(long.ok ? "" : long.error).toContain(`ejercicios.${a}.titulo`);
+    expect(parseTwo(patch({ pasos: ["Uno solo"] }))).toMatchObject({ ok: false, code: "SCHEMA" });
+    expect(parseTwo({ ...wire, extra: true })).toMatchObject({ ok: false, code: "SCHEMA" });
+    expect(parseTwo({ ...wire, ejercicios: { ...wire.ejercicios, [a]: "texto" } })).toMatchObject({ ok: false, code: "SCHEMA" });
+    expect(parseTwo(patch({ minutos: params.minutos + DRAFT_LIMITS.minutos_over + 1 }))).toMatchObject({ ok: false, code: "MINUTES" });
+    expect(parseTwo(patch({ para_que: "Para hablar sin trabarse" }))).toMatchObject({ ok: false, code: "LINT_BLOCK" });
+    expect(parseTwo(patch({ rol_del_adulto: " " })).ok).toBe(true);
+  });
+
+  test("la forma de adentro (lo guardado, el modo demo y el banco de prueba) se sigue aceptando; también ahí, un ejercicio por cada id pedido", () => {
+    const { params, entries } = builtTwo();
+    const d = mockDraft(params, entries);
+    const r = parseTwo(d);
+    expect(r.ok && r.draft).toEqual(d);
+    // Como quedó guardado en ai_drafts.output
+    expect(parseTwo(JSON.parse(JSON.stringify(d))).ok).toBe(true);
+    // En otro orden también (completeDraft lo ordena en el servidor)
+    expect(parseTwo({ ...d, ejercicios: [...d.ejercicios].reverse() }).ok).toBe(true);
+    expect(parseTwo({ ...d, ejercicios: [d.ejercicios[0]] })).toMatchObject({ ok: false, code: "CATALOG" });
+    expect(parseTwo({ ...d, ejercicios: [d.ejercicios[0], d.ejercicios[0]] })).toMatchObject({ ok: false, code: "CATALOG" });
+    expect(parseTwo({ ...d, ejercicios: [] })).toMatchObject({ ok: false, code: "SCHEMA" });
+  });
+});
+
+// ── El esquema para response_format (strict, por pedido) ────────────────────
+
+// Lo que admite el modo strict de OpenAI (structured outputs) y que usa el esquema
+const STRICT_KEYWORDS = new Set(["type", "properties", "required", "additionalProperties", "items"]);
+const STRICT_TYPES = new Set(["string", "number", "integer", "boolean", "object", "array", "null"]);
+type SchemaNode = { type?: unknown; properties?: Record<string, SchemaNode>; required?: readonly string[]; additionalProperties?: unknown; items?: SchemaNode };
+
+// Palabras clave fuera de las admitidas, objetos que no piden todas sus
+// propiedades o que admiten otras, total de propiedades y niveles de objetos
+function strictReport(schema: SchemaNode) {
+  const out = { unsupported: [] as string[], problems: [] as string[], properties: 0, depth: 0 };
+  const walk = (s: SchemaNode, path: string, level: number) => {
+    for (const k of Object.keys(s)) if (!STRICT_KEYWORDS.has(k)) out.unsupported.push(`${path}.${k}`);
+    for (const t of [s.type].flat()) if (!STRICT_TYPES.has(String(t))) out.problems.push(`${path}: type ${String(t)}`);
+    if (s.type === "object") {
+      out.depth = Math.max(out.depth, level);
+      const keys = Object.keys(s.properties ?? {});
+      out.properties += keys.length;
+      if (JSON.stringify([...(s.required ?? [])].sort()) !== JSON.stringify([...keys].sort())) out.problems.push(`${path}: required`);
+      if (s.additionalProperties !== false) out.problems.push(`${path}: additionalProperties`);
+      for (const k of keys) walk((s.properties as Record<string, SchemaNode>)[k], `${path}.${k}`, level + 1);
+    } else if (s.properties || s.required || s.additionalProperties !== undefined) {
+      out.problems.push(`${path}: propiedades fuera de un objeto`);
+    }
+    if (s.items) walk(s.items, `${path}[]`, level + 1);
+  };
+  walk(schema, "$", 1);
+  return out;
+}
+
+describe("esquema para response_format (strict, por pedido)", () => {
+  const ONE = ["hf-tortuga-suave"];
+  const MAX = CATALOG.filter((e) => e.approach === "entorno_familia").slice(0, AI_CATALOG_MAX).map((e) => e.id);
+
+  test("«ejercicios»: exactamente los ids pedidos, en el orden pedido, todos obligatorios y sin otros", () => {
+    expect(MAX).toHaveLength(AI_CATALOG_MAX);
+    for (const ids of [ONE, MAX, [...MAX].reverse()]) {
+      const s = draftJsonSchema(ids);
+      expect(s.required).toEqual(["intro", "ejercicios", "nota_para_profesional", "alertas"]);
+      const ej = s.properties.ejercicios;
+      expect(ej.type).toBe("object");
+      expect(ej.required).toEqual(ids);
+      expect(Object.keys(ej.properties)).toEqual(ids);
+      expect(ej.additionalProperties).toBe(false);
+      for (const id of ids) {
+        expect(ej.properties[id]).toEqual(DRAFT_ITEM_JSON_SCHEMA);
+        expect(Object.keys(ej.properties[id].properties)).not.toContain("catalogo_id");
       }
-      if (s.items) check(s.items as never);
-    };
-    check(DRAFT_JSON_SCHEMA as never);
+    }
+  });
+
+  test("dentro de los límites del modo strict: solo palabras clave admitidas, todo obligatorio, menos de 100 propiedades y hasta 5 niveles", () => {
+    for (const ids of [ONE, MAX]) {
+      const r = strictReport(draftJsonSchema(ids));
+      expect([ids.length, r.unsupported, r.problems]).toEqual([ids.length, [], []]);
+      expect(r.properties).toBeLessThan(100);
+      expect(r.depth).toBeLessThanOrEqual(5);
+    }
+    // 4 de la raíz + una por id + 10 por ejercicio (8 y las 2 variantes)
+    expect(strictReport(draftJsonSchema(MAX)).properties).toBe(4 + AI_CATALOG_MAX + AI_CATALOG_MAX * 10);
+    expect(strictReport(draftJsonSchema(MAX)).depth).toBe(4);
+    // JSON puro: viaja tal cual
+    expect(JSON.parse(JSON.stringify(draftJsonSchema(MAX)))).toEqual(draftJsonSchema(MAX));
+  });
+
+  test("todos los ids del catálogo sirven como nombres de propiedad", () => {
+    for (const e of CATALOG) {
+      expect([e.id, isDraftId(e.id), DRAFT_ID_RE.test(e.id), /^[a-zA-Z0-9_-]{1,64}$/.test(e.id), e.id.length <= DRAFT_ID_MAX]).toEqual([e.id, true, true, true, true]);
+    }
+    // Y cada combinación que puede pedir el panel arma su esquema
+    for (const a of APPROACHES) {
+      const ids = CATALOG.filter((e) => e.approach === a).map((e) => e.id);
+      for (let i = 0; i < ids.length; i += AI_CATALOG_MAX) expect(() => draftJsonSchema(ids.slice(i, i + AI_CATALOG_MAX))).not.toThrow();
+    }
+  });
+
+  test("no arma un esquema con ids que no sirven", () => {
+    for (const ids of [
+      [], [...MAX, "hf-tortuga-suave"], ["hf-tortuga-suave", "hf-tortuga-suave"], ["Hf-Tortuga"], ["con espacio"], ["__proto__"], [""],
+      ["a".repeat(DRAFT_ID_MAX + 1)], ["guion-final-"], ["ef.tiempo"],
+    ]) {
+      expect(() => draftJsonSchema(ids)).toThrow();
+      expect(() => draftResponseFormat(ids)).toThrow();
+    }
+  });
+
+  test("response_format: json_schema strict, con el esquema de ese pedido", () => {
+    const f = draftResponseFormat(MAX);
+    expect(f).toEqual({ type: "json_schema", json_schema: { name: "borrador_ejercicios", strict: true, schema: draftJsonSchema(MAX) } });
+    expect(f.json_schema.name).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    expect(draftResponseFormat(ONE)).not.toEqual(f);
   });
 });
 

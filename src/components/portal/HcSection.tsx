@@ -3,7 +3,9 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { CircleCheck, Info } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { type ApptTone, type ChildPageDTO, type HcChannel, type HcRequestDTO, portalApi } from "@/lib/portal";
+import { splitHcRequests } from "@/lib/portalRules";
 import { CallUs, FormAlert } from "./ui";
+import { HcOlderRequests } from "./HcOlderRequests";
 import { HcRequestCard } from "./HcRequestCard";
 import { TONE_CLASS, card, pillOutline, pillPrimary, sectionTitle } from "./styles";
 
@@ -18,6 +20,10 @@ import { TONE_CLASS, card, pillOutline, pillPrimary, sectionTitle } from "./styl
 // contraseña. Si esta cuenta todavía no puede (blocked), esa opción se ve
 // desactivada con el motivo; "not_available" la oculta (sin dar el motivo: por
 // ejemplo, con lo clínico del paciente en pausa) y queda solo en mano.
+//
+// Para que los pedidos cerrados no se acumulen (splitHcRequests): arriba, los
+// abiertos y el cerrado más nuevo si se cerró hace 30 días o menos; los demás,
+// abajo de todo, plegados en "Ver pedidos anteriores".
 //
 // Los datos (child, hc) son los de la página de la persona
 // (portalApi.childAppointments). onChanged: un pedido nuevo o que cambió, para
@@ -67,6 +73,10 @@ export function HcSection({ child, hc, onChanged, onRefresh, onReauthenticated, 
   const doneRef = useRef<HTMLDivElement>(null);
   // Adónde va el foco después de abrir o cerrar la confirmación, o de enviar
   const focusNext = useRef<"ask" | "button" | "done" | null>(null);
+  // Pedidos ya mostrados enteros mientras la página sigue abierta: no se
+  // pliegan al recargar (la tarjeta con la que se estaba haciendo algo no se
+  // va al plegado). En la próxima visita, sí
+  const shown = useRef(new Set<string>());
 
   // Se llegó desde el aviso del inicio (#copia): la sección se monta recién
   // con los datos cargados, así que acá se la muestra y se le da el foco.
@@ -89,6 +99,8 @@ export function HcSection({ child, hc, onChanged, onRefresh, onReauthenticated, 
 
   // Solo un pedido abierto por vez
   const open = hc.requests.some((r) => r.status === "pendiente" || r.status === "lista");
+  const { current, older } = splitHcRequests(hc.requests, new Date(), shown.current);
+  useEffect(() => { for (const r of current) shown.current.add(r.id); });
   const canAsk = hc.can_request && !open;
   // ¿Se puede elegir? Con "not_available" no se muestra la opción del portal
   // y queda el pedido en mano, como siempre
@@ -244,7 +256,7 @@ export function HcSection({ child, hc, onChanged, onRefresh, onReauthenticated, 
         </div>
       )}
 
-      {hc.requests.map((r) => (
+      {current.map((r) => (
         <HcRequestCard key={r.id} req={r} onChanged={requestChanged} onReauthenticated={onReauthenticated} />
       ))}
 
@@ -297,6 +309,8 @@ export function HcSection({ child, hc, onChanged, onRefresh, onReauthenticated, 
           La copia la pueden pedir la madre, el padre o el/la tutor/a, o el propio paciente si es mayor de edad. Si la necesitás, <CallUs />.
         </p>
       )}
+
+      <HcOlderRequests requests={older} onChanged={requestChanged} onReauthenticated={onReauthenticated} />
     </section>
   );
 }

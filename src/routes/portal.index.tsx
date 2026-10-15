@@ -7,9 +7,10 @@ import {
   type ApptDTO, type ChildDTO, type FamilyClinicalDTO, type HcRequestDTO, type MeDTO, type PracticeHomeDTO, apptDateLabel,
   capitalize, portalApi,
 } from "@/lib/portal";
-import { centerNow } from "@/lib/portalRules";
+import { centerNow, hcRejectNotices, splitHcRequests } from "@/lib/portalRules";
 import { breakLine, onBreak, weekLine } from "@/lib/practiceRules";
 import { AppointmentCard, CallUs, PageTitle } from "@/components/portal/ui";
+import { HcOlderRequests } from "@/components/portal/HcOlderRequests";
 import { HcRequestCard } from "@/components/portal/HcRequestCard";
 import { Celebration } from "@/components/portal/Celebration";
 import { announcePracticeNav, medalTerms, medalsHint, newThingsSr, whoOf } from "@/components/portal/practiceFormat";
@@ -25,9 +26,10 @@ export const Route = createFileRoute("/portal/")({
 // Cada cosa en un solo lugar: los pedidos de turno se ven en "Turnos" y los
 // pedidos de copia del historial, en "Mi información". El inicio solo avisa,
 // arriba de todo, cuando hay una copia lista para retirar o para descargar o
-// una que no pudimos preparar, y muestra entero el pedido de copia de una
-// persona cuya página ya no se puede abrir (por ejemplo, con el alta cargada:
-// el derecho a la copia sigue)
+// una que no pudimos preparar (esa, solo la primera semana), y muestra los
+// pedidos de copia de una persona cuya página ya no se puede abrir (por
+// ejemplo, con el alta cargada: el derecho a la copia sigue), con los
+// cerrados viejos plegados, como en "Mi información"
 
 // Copia con algo para hacer: retirarla en el centro o descargarla del portal
 // (enviada y todavía disponible). null: nada por ahora
@@ -50,6 +52,9 @@ function InicioPage() {
   // Se lee al montar: el aviso recién se muestra con los datos cargados
   const [clinicalSnoozed, setClinicalSnoozed] = useState(true);
   const pageRef = useRef<HTMLDivElement>(null);
+  // Pedidos de "Tus pedidos" ya mostrados enteros con la página abierta: no se
+  // pliegan al recargar (splitHcRequests, keep). En la próxima visita, sí
+  const shownOrphans = useRef(new Set<string>());
 
   useEffect(() => { setClinicalSnoozed(clinicalNoticeSnoozed()); }, []);
 
@@ -111,8 +116,6 @@ function InicioPage() {
   // Un aviso por persona y por cosa para hacer (puede haber más de un pedido
   // de la misma persona: el más nuevo manda)
   const newestFirst = [...data.requests].sort((a, b) => b.created_at.localeCompare(a.created_at));
-  const latestOf = new Map<string, HcRequestDTO>();
-  for (const r of newestFirst) if (!latestOf.has(r.patient_id)) latestOf.set(r.patient_id, r);
   const ready = newestFirst.filter((r, i, all) =>
     copyAction(r) && all.findIndex((x) => x.patient_id === r.patient_id && copyAction(x) === copyAction(r)) === i);
   // Por persona, lo que hay para hacer (para la marca de su acceso). Si hubiera
@@ -125,11 +128,13 @@ function InicioPage() {
   // Personas con algún pedido de copia de esta cuenta (aunque ya no pueda pedir
   // otra, el pedido se sigue viendo en su "Mi información")
   const hcIds = new Set(data.requests.map((r) => r.patient_id));
-  // Copias que no pudimos preparar (rechazadas, mientras el pedido se sigue
-  // viendo): una línea en el mismo aviso, que lleva al pedido. Sin página a la
-  // que ir no hace falta: el pedido completo ya está en "Tus pedidos"
-  // Solo si es el pedido más nuevo de esa persona (si después pidió otra, ya no aplica)
-  const rejected = newestFirst.filter((r) => r.status === "rechazada" && r.child_page && latestOf.get(r.patient_id) === r);
+  // Copias que no pudimos preparar: una línea en el mismo aviso, que lleva al
+  // pedido, solo la primera semana desde el rechazo (hcRejectNotices). Sin
+  // página a la que ir no hace falta: el pedido completo ya está en "Tus
+  // pedidos". Solo si es el pedido más nuevo de esa persona (si después pidió
+  // otra, ya no aplica)
+  const now = new Date();
+  const rejected = hcRejectNotices(data.requests, now);
   // Lo listo va en verde y lo rechazado, en el tono de su estado
   const readyNotice = (ready.length > 0 || rejected.length > 0) && (
     <section aria-labelledby="portal-copia-lista" className="flex flex-col gap-2">
@@ -148,15 +153,22 @@ function InicioPage() {
   );
 
   // Pedidos de copia de personas cuya página ya no se puede abrir: no tienen
-  // otro lugar, así que el pedido completo se ve acá
+  // otro lugar, así que el pedido completo se ve acá. Como en "Mi
+  // información": los abiertos y, de cada persona, el cerrado más nuevo (30
+  // días); los demás, plegados (splitHcRequests)
   const orphan = data.requests.filter((r) => !r.child_page).sort((a, b) => requestRank(a) - requestRank(b));
+  const { current: orphanCurrent, older: orphanOlder } = splitHcRequests(orphan, now, shownOrphans.current);
+  // Se anota acá (después de los return de arriba no puede ir un efecto);
+  // anotar dos veces el mismo id no cambia nada
+  for (const r of orphanCurrent) shownOrphans.current.add(r.id);
+  const copyTitle = (r: HcRequestDTO) => (r.is_self ? "Copia de tu historial" : `Copia del historial de ${r.child_first_name}`);
   const requestsSection = orphan.length > 0 && (
     <section aria-labelledby="portal-pedidos" className="flex flex-col gap-3">
       <h2 id="portal-pedidos" className={sectionTitle}>Tus pedidos</h2>
-      {orphan.map((r) => (
-        <HcRequestCard key={r.id} req={r} title={r.is_self ? "Copia de tu historial" : `Copia del historial de ${r.child_first_name}`}
-          onChanged={requestChanged} />
+      {orphanCurrent.map((r) => (
+        <HcRequestCard key={r.id} req={r} title={copyTitle(r)} onChanged={requestChanged} />
       ))}
+      <HcOlderRequests requests={orphanOlder} titleOf={copyTitle} onChanged={requestChanged} />
     </section>
   );
 

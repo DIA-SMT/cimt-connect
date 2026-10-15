@@ -13,8 +13,8 @@ import {
 import { type Account, type ActiveChild, type Ctx, type H3Event, PortalError } from "../server/lib/portal";
 import { effectiveFeatures, familyClinical } from "../server/lib/portalClinical";
 import {
-  HC_DIGITAL_PAUSED_STAFF, PARENTAL_PROOF, createHcRequest, digitalBlockedText, discardDrafts, e1Columns,
-  hcDigitalOffer, hcRequestsFor, requesterDigitalBlock, resetE1Columns, staffHcList,
+  HC_DIGITAL_PAUSED_STAFF, PARENTAL_PROOF, cancelHcRequest, createHcRequest, digitalBlockedText, discardDrafts, e1Columns,
+  hcDigitalOffer, hcRequestsFor, requesterDigitalBlock, resetE1Columns, staffHcList, staffHcNotes, staffHcUpdate,
 } from "../server/lib/requests";
 import {
   HC_DIGITAL_BLOCKED_STAFF, cleanAcks, cleanDocName, docUploadProblem, hcDocLabel, hcDocPath, hcDocPathOk,
@@ -1010,5 +1010,69 @@ describe("servidor: etapas que se informan al portal y al panel", () => {
     const db = seed();
     db.offline.add("portal_hc_requests");
     expect(await effectiveFeatures(fakeCtx(db))).toEqual(["consent"]);
+  });
+});
+
+// closed_at: con esto el portal pliega los pedidos viejos y deja de avisar un
+// rechazo después de una semana. Sale de la columna del paso que cerró el
+// pedido, no de updated_at; y el servidor sigue mandando los mismos pedidos.
+describe("servidor: cuándo se cerró cada pedido (closed_at)", () => {
+  beforeEach(featuresOn);
+
+  test("rechazado por el equipo: el momento del rechazo, y las notas internas no lo mueven", async () => {
+    const db = seed();
+    const ctx = fakeCtx(db);
+    addRequest(db, { channel: "mano" });
+    const staff = await staffHcUpdate(ctx, STAFF.email, { id: R, to: "rechazada", reject_reason: "otro" });
+    const row = db.tables.portal_hc_requests[0];
+    expect(staff.rejected_at).toBe(row.rejected_at as string);
+    const updatedAt = row.updated_at;
+    await staffHcNotes(ctx, STAFF.email, { id: R, notes: "Llamamos a la mamá." });
+    expect(row.updated_at).toBe(updatedAt); // las notas no tocan updated_at
+    const [dto] = await hcRequestsFor(ctx, ACCOUNT, [CHILD]);
+    expect(dto.status).toBe("rechazada");
+    expect(dto.closed_at).toBe(row.rejected_at as string);
+    // Solo closed_at: ni las columnas de cada paso ni las notas
+    expect(dto).not.toHaveProperty("rejected_at");
+    expect(dto).not.toHaveProperty("cancelled_at");
+    expect(dto).not.toHaveProperty("staff_notes");
+  });
+
+  test("si updated_at cambiara después del cierre, closed_at sigue siendo el del paso", async () => {
+    const db = seed();
+    const rejectedAt = ago(10 * DAY);
+    addRequest(db, { channel: "mano", status: "rechazada", reject_reason: "duplicado", rejected_at: rejectedAt, updated_at: ago(DAY) });
+    const [dto] = await hcRequestsFor(fakeCtx(db), ACCOUNT, [CHILD]);
+    expect(dto.closed_at).toBe(rejectedAt);
+  });
+
+  test("cancelado por la familia, entregado y enviado: cada uno con su momento", async () => {
+    const db = seed();
+    const ctx = fakeCtx(db);
+    addRequest(db, { channel: "mano" });
+    const cancelled = await cancelHcRequest(ctx, ACCOUNT, [CHILD], R);
+    expect(cancelled.closed_at).toBe(db.tables.portal_hc_requests[0].cancelled_at as string);
+
+    const delivered = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const sent = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    addRequest(db, { id: delivered, channel: "mano", status: "entregada", delivered_at: ago(3 * DAY), updated_at: ago(3 * DAY),
+      delivered_to_name: "Ana Pérez", delivered_to_dni: "28999888" });
+    addRequest(db, { id: sent, status: "enviada", sent_at: ago(2 * DAY), sent_by_email: STAFF.email, updated_at: ago(2 * DAY) });
+    const list = await hcRequestsFor(ctx, ACCOUNT, [CHILD]);
+    expect(list).toHaveLength(3);
+    const at = (id: string) => list.find((r) => r.id === id)!.closed_at;
+    expect(at(delivered)).toBe(db.tables.portal_hc_requests[1].delivered_at as string);
+    expect(at(sent)).toBe(db.tables.portal_hc_requests[2].sent_at as string);
+  });
+
+  test("abierto: closed_at null; y los cerrados de más de 60 días siguen sin llegar", async () => {
+    const db = seed();
+    addRequest(db, { channel: "mano" });
+    addRequest(db, {
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", channel: "mano", status: "cancelada",
+      cancelled_at: ago(61 * DAY), updated_at: ago(61 * DAY), created_at: ago(62 * DAY),
+    });
+    const list = await hcRequestsFor(fakeCtx(db), ACCOUNT, [CHILD]);
+    expect(list.map((r) => [r.id, r.closed_at])).toEqual([[R, null]]);
   });
 });
