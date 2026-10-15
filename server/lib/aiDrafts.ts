@@ -20,8 +20,9 @@
 // del paciente: solo códigos.
 //
 // Variables de entorno: PORTAL_CLINICAL_FEATURES (con "ai"),
-// OPENROUTER_DRAFT_API_KEY (o OPENROUTER_API_KEY), OPENROUTER_DRAFT_MODEL (o
-// OPENROUTER_MODEL; si no, openai/gpt-4o-mini) y AI_DRAFT_DAILY_CAP (150).
+// OPENROUTER_DRAFT_API_KEY (si no, la de Migue: OPENROUTER_API_KEY o
+// VITE_OPENROUTER_API_KEY), OPENROUTER_DRAFT_MODEL (si no,
+// openai/gpt-4o-mini; no sigue al modelo de Migue) y AI_DRAFT_DAILY_CAP (150).
 // Sin el script 26 (tabla ai_drafts) la ayuda de IA no está disponible.
 
 import {
@@ -89,8 +90,8 @@ export type AdaptOptions = {
 // servidor, así que el mismo pedido vuelve a fallar igual). Qué revisar en
 // cada caso (va al log del servidor, sin nada del pedido ni de la respuesta).
 const CONFIG_HINT: Record<number, string> = {
-  400: "pedido inválido: revisá OPENROUTER_DRAFT_MODEL / OPENROUTER_MODEL (que el modelo exista y acepte json_schema)",
-  401: "clave inválida: revisá OPENROUTER_DRAFT_API_KEY / OPENROUTER_API_KEY",
+  400: "pedido inválido: revisá OPENROUTER_DRAFT_MODEL (que el modelo exista y acepte json_schema)",
+  401: "clave inválida: revisá OPENROUTER_DRAFT_API_KEY / OPENROUTER_API_KEY / VITE_OPENROUTER_API_KEY",
   402: "sin crédito en OpenRouter",
   403: "la clave no tiene permiso para este pedido",
   404: "ningún proveedor del modelo cumple las preferencias (zdr, data_collection, json_schema)",

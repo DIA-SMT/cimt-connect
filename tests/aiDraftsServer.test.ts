@@ -896,12 +896,12 @@ describe("scripts/ai-eval.ts: no gasta crédito sin confirmación", () => {
       const guard = join(dir, "sin-red.js");
       writeFileSync(guard, 'globalThis.fetch = () => { process.stderr.write("[sin-red] fetch bloqueado\\n"); process.exit(97); };\n');
       const base: Record<string, string> = {};
-      for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^OPENROUTER_/.test(k)) base[k] = v;
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !/^(VITE_)?OPENROUTER_/.test(k)) base[k] = v;
       const run = (cmd: string[], extra: Record<string, string> = {}) => {
         const r = Bun.spawnSync({
           cmd: [process.execPath, "--no-env-file", "--preload", guard, ...cmd],
           cwd: dir,
-          env: { ...base, OPENROUTER_API_KEY: "", OPENROUTER_DRAFT_API_KEY: "", ...extra },
+          env: { ...base, OPENROUTER_API_KEY: "", VITE_OPENROUTER_API_KEY: "", OPENROUTER_DRAFT_API_KEY: "", ...extra },
           stdout: "pipe",
           stderr: "pipe",
         });

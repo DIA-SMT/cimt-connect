@@ -13,8 +13,9 @@
 // NO corre en CI ni en bun test: llama al proveedor con una clave real y
 // gasta crédito (unos centavos de dólar por cada 100 con openai/gpt-4o-mini).
 // No arranca sin --confirmo-gasto, aunque haya una clave: Bun carga solo el
-// .env de la carpeta donde se lo corre, y ahí puede estar OPENROUTER_API_KEY.
-// Sin OPENROUTER_DRAFT_API_KEY ni OPENROUTER_API_KEY tampoco arranca. Si
+// .env de la carpeta donde se lo corre, y ahí puede estar la clave de Migue.
+// Sin OPENROUTER_DRAFT_API_KEY ni la de Migue (OPENROUTER_API_KEY o
+// VITE_OPENROUTER_API_KEY) tampoco arranca. Si
 // OpenRouter rechaza el pedido por la configuración (400, 401, 402, 403 o
 // 404), se corta sin seguir pidiendo.
 //
@@ -22,8 +23,8 @@
 //
 //   PowerShell:
 //     $env:Path = "$env:LOCALAPPDATA\Microsoft\WinGet\Links;$env:Path"
-//     $env:OPENROUTER_DRAFT_API_KEY = "sk-or-..."            # o OPENROUTER_API_KEY
-//     $env:OPENROUTER_DRAFT_MODEL = "openai/gpt-4o-mini"     # opcional (si no, OPENROUTER_MODEL o el de siempre)
+//     $env:OPENROUTER_DRAFT_API_KEY = "sk-or-..."            # o la de Migue (OPENROUTER_API_KEY)
+//     $env:OPENROUTER_DRAFT_MODEL = "openai/gpt-4o-mini"     # opcional (si no, el de siempre)
 //     bun scripts/ai-eval.ts C:\ruta\ai-eval-2026-10-14 --confirmo-gasto --n 300 --concurrency 4 --seed 1
 //
 //   bash:
@@ -280,7 +281,7 @@ export function evalPreflight(
     return {
       ok: false,
       exitCode: 1,
-      message: "[ai-eval] Falta OPENROUTER_DRAFT_API_KEY (u OPENROUTER_API_KEY). El banco de prueba usa una clave real y no corre sin ella.",
+      message: "[ai-eval] Falta OPENROUTER_DRAFT_API_KEY (o la de Migue: OPENROUTER_API_KEY / VITE_OPENROUTER_API_KEY). El banco de prueba usa una clave real y no corre sin ella.",
     };
   }
   return { ok: true, args: { ...args, path: args.path }, apiKey, model: draftModel(env) };
