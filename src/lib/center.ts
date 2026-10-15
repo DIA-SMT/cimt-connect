@@ -11,6 +11,8 @@ export const CENTER = {
   phoneHref: "tel:+543812584491",
   phoneNote: "Solo llamadas",
   email: "cimt@smt.gob.ar",
+  // Nombre oficial (la Dirección depende de la Municipalidad de San Miguel de Tucumán)
+  name: "Dirección Centro Integral Municipal de Tartamudez",
   minAge: 2,
 } as const;
 
@@ -78,4 +80,60 @@ export const LOCALITY_OPTIONS = [
   "Aguilares",
   "Simoca",
   "Tafí del Valle",
+] as const;
+
+// Provincias para la solicitud de turno: el CIMT recibe consultas de todo el
+// país. La base valida la misma lista (28_turno_menor_consentimiento.sql).
+export const HOME_PROVINCE = "Tucumán";
+export const PROVINCES = [
+  "Buenos Aires",
+  "Catamarca",
+  "Chaco",
+  "Chubut",
+  "Ciudad Autónoma de Buenos Aires",
+  "Córdoba",
+  "Corrientes",
+  "Entre Ríos",
+  "Formosa",
+  "Jujuy",
+  "La Pampa",
+  "La Rioja",
+  "Mendoza",
+  "Misiones",
+  "Neuquén",
+  "Río Negro",
+  "Salta",
+  "San Juan",
+  "San Luis",
+  "Santa Cruz",
+  "Santa Fe",
+  "Santiago del Estero",
+  "Tierra del Fuego",
+  "Tucumán",
+] as const;
+
+// Requisitos para ser paciente del CIMT (inicio y /turnos). Los pasó el
+// centro el 15/10/2026. Si cambia algo, actualizar también el prompt de Migue
+// en server/api/chat.ts.
+export const INTAKE_REQUIREMENTS = [
+  {
+    key: "datos",
+    title: "Datos personales completos",
+    text: "Los del paciente y, si es menor, los de su adulto responsable.",
+  },
+  {
+    key: "terapias",
+    title: "Asistir a las terapias individuales y grupales",
+    text: "De acuerdo a lo que necesite cada paciente.",
+  },
+  {
+    key: "taller",
+    title: "Taller obligatorio de padres",
+    text: "Se hace una vez al mes.",
+  },
+  {
+    key: "tutores",
+    title: "Tutores responsables que acompañen en la terapia",
+    text: "El acompañamiento de la familia es parte del tratamiento.",
+  },
 ] as const;

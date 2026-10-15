@@ -37,7 +37,7 @@ export function printWeeklyReport(s: Stats, label: string) {
   .n { text-align: right; width: 70px; } .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .muted { color: #7a8899; } footer { margin-top: 18px; font-size: 8.5pt; color: #7a8899; text-align: center; }
 </style></head><body>
-<header><strong>CIMT — Centro Integral Municipal de Tartamudez</strong>
+<header><strong>CIMT — Dirección Centro Integral Municipal de Tartamudez</strong>
 <div>Municipalidad de San Miguel de Tucumán · Catamarca 411</div></header>
 <h1>Informe semanal</h1>
 <p class="sub">${esc(label)} · generado el ${esc(formatShortDate(todayKey()))}</p>

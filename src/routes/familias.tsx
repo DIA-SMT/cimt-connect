@@ -11,7 +11,7 @@ export const Route = createFileRoute("/familias")({
   head: () => ({
     meta: [
       { title: "Para familias y escuelas — CIMT" },
-      { name: "description", content: "Consejos del Centro Integral Municipal de Tartamudez para acompañar en casa y en la escuela, cómo prevenir el bullying y orientación legal." },
+      { name: "description", content: "Consejos de la Dirección Centro Integral Municipal de Tartamudez para acompañar en casa y en la escuela, cómo prevenir el bullying y orientación legal." },
       { property: "og:title", content: "Para familias y escuelas — CIMT" },
       { property: "og:description", content: "Consejos para la familia, para docentes, cómo prevenir el bullying y orientación legal." },
     ],

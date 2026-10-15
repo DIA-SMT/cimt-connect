@@ -1,25 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState } from "react";
-import { z } from "zod";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CalendarDays, CheckCircle2, ClipboardList, Loader2, Phone, Users } from "lucide-react";
-import { CENTER, LOCALITY_OPTIONS } from "@/lib/center";
+import { Baby, CalendarDays, CheckCircle2, ClipboardList, ListChecks, Loader2, Phone, UserRound, Users } from "lucide-react";
+import { CENTER, HOME_PROVINCE, LOCALITY_OPTIONS, PROVINCES } from "@/lib/center";
+import {
+  ADULT_AGE, CONSENT_POINTS, CONSENT_TITLE, GUARDIAN_RELATIONSHIP_LABEL, parseIntake, type IntakeFor,
+} from "@/lib/intake";
+import { RequirementsList } from "@/components/Requirements";
 
 // Solicitud de ingreso (fase 2). Según el relevamiento, el paciente no elige
 // horario: el centro asigna terapia y profesional, el ingreso pasa por un taller
 // informativo para familias (mensual) y los turnos se asignan por teléfono.
+// Si es para un menor, la pide su adulto responsable: primero sus datos,
+// después los del paciente y al final el consentimiento informado.
 
 export const Route = createFileRoute("/turnos")({
   head: () => ({
     meta: [
       { title: "Solicitar turno — CIMT" },
-      { name: "description", content: "Pedí tu ingreso al Centro Integral Municipal de Tartamudez. Atención gratuita desde los 2 años." },
+      { name: "description", content: "Pedí tu ingreso a la Dirección Centro Integral Municipal de Tartamudez. Atención gratuita desde los 2 años, para personas de todo el país." },
       { property: "og:title", content: "Solicitar turno — CIMT" },
       { property: "og:description", content: "Completá la solicitud y el equipo del CIMT se comunica con vos." },
     ],
@@ -27,32 +32,19 @@ export const Route = createFileRoute("/turnos")({
   component: TurnosPage,
 });
 
-const schema = z.object({
-  first_name: z.string().trim().min(2, "Nombre requerido").max(60),
-  last_name: z.string().trim().min(2, "Apellido requerido").max(60),
-  dni: z.string().trim().regex(/^\d{6,10}$/, "DNI inválido"),
-  age: z.coerce.number().int().min(CENTER.minAge, `El centro atiende a partir de los ${CENTER.minAge} años`).max(120),
-  patient_type: z.enum(["niño", "adolescente", "adulto"]),
-  guardian_name: z.string().trim().max(80),
-  phone: z.string().trim().min(6, "Teléfono requerido").max(25),
-  email: z.string().trim().email("Email inválido").max(120).optional().or(z.literal("")),
-  locality: z.string().trim().min(2, "Indicá la localidad").max(80),
-  // Calle y número (o "s/n"): el centro lo necesita para la ficha y para ubicar a la familia
-  address: z.string().trim().min(5, "Indicá el domicilio: calle y número").max(150)
-    .refine((v) => /\d/.test(v) || /(^|[^a-z])s\s*\/\s*n([^a-z]|$)/i.test(v), "Indicá el número de la calle (o «s/n» si no tiene)"),
-  preferred_modality: z.enum(["presencial", "telemedicina"]),
-  referred_by: z.string().trim().max(120),
-  reason: z.string().trim().min(5, "Contanos brevemente el motivo").max(800),
-}).refine((d) => d.patient_type === "adulto" || d.guardian_name.length >= 3, {
-  message: "Indicá el nombre del adulto responsable", path: ["guardian_name"],
-});
+const FIELDS = [
+  "first_name", "last_name", "dni", "age", "patient_type",
+  "guardian_first_name", "guardian_last_name", "guardian_dni", "guardian_relationship",
+  "phone", "email", "province", "locality", "address", "preferred_modality", "referred_by", "reason", "consent",
+] as const;
 
 type UpcomingWorkshop = { workshop_date: string; start_time: string; place: string };
 
 function TurnosPage() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
-  const [patientType, setPatientType] = useState("");
+  const [who, setWho] = useState<IntakeFor | "">("");
+  const [province, setProvince] = useState<string>(HOME_PROVINCE);
   const [workshops, setWorkshops] = useState<UpcomingWorkshop[]>([]);
 
   useEffect(() => {
@@ -62,32 +54,15 @@ function TurnosPage() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const raw = Object.fromEntries(
-      ["first_name", "last_name", "dni", "age", "patient_type", "guardian_name", "phone", "email", "locality", "address",
-        "preferred_modality", "referred_by", "reason"].map((k) => [k, String(fd.get(k) ?? "")]),
-    );
-    const parsed = schema.safeParse(raw);
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Revisá los datos");
+    const raw: Record<string, string> = Object.fromEntries(FIELDS.map((k) => [k, String(fd.get(k) ?? "")]));
+    raw.for = who;
+    const parsed = parseIntake(raw);
+    if (!parsed.ok) {
+      toast.error(parsed.error);
       return;
     }
-    const d = parsed.data;
     setSubmitting(true);
-    const { error } = await supabase.rpc("submit_intake_request", {
-      p_first_name: d.first_name,
-      p_last_name: d.last_name,
-      p_dni: d.dni,
-      p_age: d.age,
-      p_patient_type: d.patient_type,
-      p_phone: d.phone,
-      p_email: d.email || null,
-      p_guardian_name: d.patient_type === "adulto" ? null : d.guardian_name,
-      p_locality: d.locality,
-      p_address: d.address,
-      p_preferred_modality: d.preferred_modality,
-      p_referred_by: d.referred_by || null,
-      p_reason: d.reason,
-    });
+    const { error } = await supabase.rpc("submit_intake_request", parsed.args);
     setSubmitting(false);
     if (error) {
       const code = error.message?.split(":")[0];
@@ -100,6 +75,8 @@ function TurnosPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  const minor = who === "menor";
+
   return (
     <Layout>
       <section className="container mx-auto px-4 py-12 md:px-6 md:py-16">
@@ -109,7 +86,7 @@ function TurnosPage() {
           </h1>
           <p className="mt-4 text-muted-foreground">
             La atención es gratuita, para niños, adolescentes y adultos desde los {CENTER.minAge} años.
-            Completá la solicitud y el equipo del CIMT se comunica con vos.
+            Recibimos consultas de todo el país. Completá la solicitud y el equipo del CIMT se comunica con vos.
           </p>
         </div>
 
@@ -130,7 +107,16 @@ function TurnosPage() {
           </p>
         )}
 
-        <div className="mx-auto mt-10 max-w-2xl rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] sm:p-8">
+        {/* Requisitos */}
+        <div id="requisitos" className="mx-auto mt-10 max-w-4xl scroll-mt-24">
+          <h2 className="flex items-center gap-2 font-display text-2xl font-bold text-[color:var(--primary-deep)]">
+            <ListChecks className="h-6 w-6 text-primary" aria-hidden="true" />
+            Requisitos para ser paciente del CIMT
+          </h2>
+          <RequirementsList className="mt-4" />
+        </div>
+
+        <div className="mx-auto mt-10 max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-card)] sm:p-8">
           {done ? (
             <div className="flex flex-col items-center py-8 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--status-available-bg)] text-[color:var(--status-available)]">
@@ -147,78 +133,143 @@ function TurnosPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
-              <h2 className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Datos de la persona que consulta</h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Nombre" name="first_name" required />
-                <Field label="Apellido" name="last_name" required />
-                <Field label="DNI" name="dni" required inputMode="numeric" />
-                <Field label="Edad" name="age" required type="number" min={CENTER.minAge} max={120} />
-                <div className="space-y-1.5">
-                  <Label htmlFor="patient_type">Es<span className="text-destructive"> *</span></Label>
-                  <select id="patient_type" name="patient_type" required value={patientType}
-                    onChange={(e) => setPatientType(e.target.value)} className={selectClass}>
-                    <option value="" disabled>Seleccionar...</option>
-                    <option value="niño">Niño/a</option>
-                    <option value="adolescente">Adolescente</option>
-                    <option value="adulto">Adulto</option>
-                  </select>
+              <fieldset>
+                <legend className="font-display text-xl font-bold text-[color:var(--primary-deep)]">¿Para quién es el turno?</legend>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <WhoOption checked={who === "yo"} onSelect={() => setWho("yo")} icon={UserRound}
+                    title="Para mí" text={`Tengo ${ADULT_AGE} años o más`} />
+                  <WhoOption checked={who === "menor"} onSelect={() => setWho("menor")} icon={Baby}
+                    title="Para un/a menor a mi cargo" text="Soy su madre, padre o tutor/a" />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="locality">Localidad<span className="text-destructive"> *</span></Label>
-                  <Input id="locality" name="locality" required list="locality-options" maxLength={80}
-                    placeholder="Ej: San Miguel de Tucumán" autoComplete="address-level2" />
-                  <datalist id="locality-options">
-                    {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
-                  </datalist>
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="address">Domicilio<span className="text-destructive"> *</span></Label>
-                  <Input id="address" name="address" required maxLength={150} autoComplete="street-address"
-                    placeholder="Calle y número. Ej: Av. Sarmiento 1250, Barrio Norte" />
-                  <p className="text-xs text-muted-foreground">Si la calle no tiene número, escribí «s/n» y alguna referencia.</p>
-                </div>
-              </div>
+              </fieldset>
 
-              <h2 className="pt-2 font-display text-xl font-bold text-[color:var(--primary-deep)]">Contacto</h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {patientType && patientType !== "adulto" && (
-                  <div className="sm:col-span-2">
-                    <Field label="Nombre del adulto responsable" name="guardian_name" required />
+              {who === "" ? (
+                <p className="text-sm text-muted-foreground">Elegí una opción para completar la solicitud.</p>
+              ) : (
+                // key: al cambiar de opción se vacía el formulario (los mismos campos son de otra persona)
+                <div key={who} className="space-y-5">
+                  {minor && (
+                    <>
+                      <SectionTitle n={1}>Tus datos (adulto responsable)</SectionTitle>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Nombre" name="guardian_first_name" required maxLength={40} autoComplete="given-name" />
+                        <Field label="Apellido" name="guardian_last_name" required maxLength={39} autoComplete="family-name" />
+                        <Field label="DNI" name="guardian_dni" required inputMode="numeric" maxLength={10} />
+                        <div className="space-y-1.5">
+                          <Label htmlFor="guardian_relationship">Vínculo<span className="text-destructive"> *</span></Label>
+                          <select id="guardian_relationship" name="guardian_relationship" required defaultValue="" className={selectClass}>
+                            <option value="" disabled>Seleccionar...</option>
+                            {Object.entries(GUARDIAN_RELATIONSHIP_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                          </select>
+                        </div>
+                        <Field label="Teléfono" name="phone" required inputMode="tel" autoComplete="tel" />
+                        <Field label="Email (opcional)" name="email" type="email" autoComplete="email" />
+                      </div>
+                    </>
+                  )}
+
+                  <SectionTitle n={minor ? 2 : 1}>{minor ? "Datos de la persona que se va a atender" : "Tus datos"}</SectionTitle>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Nombre" name="first_name" required maxLength={60} autoComplete={minor ? "off" : "given-name"} />
+                    <Field label="Apellido" name="last_name" required maxLength={60} autoComplete={minor ? "off" : "family-name"} />
+                    <Field label="DNI" name="dni" required inputMode="numeric" maxLength={10} />
+                    <Field label="Edad" name="age" required type="number"
+                      min={minor ? CENTER.minAge : ADULT_AGE} max={minor ? ADULT_AGE - 1 : 120} />
+                    {minor && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="patient_type">Es<span className="text-destructive"> *</span></Label>
+                        <select id="patient_type" name="patient_type" required defaultValue="" className={selectClass}>
+                          <option value="" disabled>Seleccionar...</option>
+                          <option value="niño">Niño/a</option>
+                          <option value="adolescente">Adolescente</option>
+                        </select>
+                      </div>
+                    )}
+                    {!minor && (
+                      <>
+                        <Field label="Teléfono" name="phone" required inputMode="tel" autoComplete="tel" />
+                        <Field label="Email (opcional)" name="email" type="email" autoComplete="email" />
+                      </>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="province">Provincia<span className="text-destructive"> *</span></Label>
+                      <select id="province" name="province" required value={province}
+                        onChange={(e) => setProvince(e.target.value)} className={selectClass}>
+                        {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="locality">Localidad<span className="text-destructive"> *</span></Label>
+                      <Input id="locality" name="locality" required maxLength={80} autoComplete="address-level2"
+                        list={province === HOME_PROVINCE ? "locality-options" : undefined}
+                        placeholder={province === HOME_PROVINCE ? "Ej: Yerba Buena" : "Ciudad o pueblo"} />
+                      <datalist id="locality-options">
+                        {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
+                      </datalist>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label htmlFor="address">Domicilio<span className="text-destructive"> *</span></Label>
+                      <Input id="address" name="address" required maxLength={150} autoComplete="street-address"
+                        placeholder="Calle y número. Ej: Av. Sarmiento 1250, Barrio Norte" />
+                      <p className="text-xs text-muted-foreground">Si la calle no tiene número, escribí «s/n» y alguna referencia.</p>
+                    </div>
                   </div>
-                )}
-                {(!patientType || patientType === "adulto") && <input type="hidden" name="guardian_name" value="" />}
-                <Field label="Teléfono" name="phone" required inputMode="tel" />
-                <Field label="Email (opcional)" name="email" type="email" />
-              </div>
 
-              <h2 className="pt-2 font-display text-xl font-bold text-[color:var(--primary-deep)]">Consulta</h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="preferred_modality">Modalidad preferida<span className="text-destructive"> *</span></Label>
-                  <select id="preferred_modality" name="preferred_modality" required defaultValue="presencial" className={selectClass}>
-                    <option value="presencial">Presencial (en el centro)</option>
-                    <option value="telemedicina">Telemedicina (a distancia)</option>
-                  </select>
+                  <SectionTitle n={minor ? 3 : 2}>Consulta</SectionTitle>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="preferred_modality">Modalidad preferida<span className="text-destructive"> *</span></Label>
+                      <select id="preferred_modality" name="preferred_modality" required defaultValue="presencial" className={selectClass}>
+                        <option value="presencial">Presencial (en el centro)</option>
+                        <option value="telemedicina">Telemedicina (a distancia)</option>
+                      </select>
+                      {province !== HOME_PROVINCE && (
+                        <p className="text-xs text-muted-foreground">Si vivís lejos de Tucumán, podés elegir telemedicina.</p>
+                      )}
+                    </div>
+                    <Field label="¿Quién lo deriva? (opcional)" name="referred_by" placeholder="Ej: escuela, pediatra" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reason">Motivo de la consulta<span className="text-destructive"> *</span></Label>
+                    <Textarea id="reason" name="reason" required maxLength={800} rows={4}
+                      placeholder={minor
+                        ? "Ej: Mi hijo de 6 años repite sílabas al empezar a hablar desde hace unos meses..."
+                        : "Ej: Tartamudeo desde chico y quiero empezar un tratamiento..."} />
+                  </div>
+
+                  {minor ? (
+                    <>
+                      <SectionTitle n={4}>{CONSENT_TITLE}</SectionTitle>
+                      <div className="rounded-2xl border border-border bg-muted/60 p-4 text-sm leading-relaxed text-foreground">
+                        <p className="font-semibold">Como adulto responsable de la persona que se va a atender:</p>
+                        <ol className="mt-2 list-decimal space-y-1.5 pl-5">
+                          {CONSENT_POINTS.map((p) => <li key={p}>{p}</li>)}
+                        </ol>
+                      </div>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border-2 border-primary/40 bg-[color:var(--primary-soft)]/50 p-4 text-sm font-medium text-foreground">
+                        <input type="checkbox" name="consent" required className="mt-0.5 h-5 w-5 shrink-0 accent-[color:var(--primary)]" />
+                        <span>Leí el consentimiento informado y, como adulto responsable, lo acepto.</span>
+                      </label>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Tus datos se usan solo para organizar tu atención en el CIMT, de forma confidencial.
+                    </p>
+                  )}
+
+                  <div className="flex flex-col-reverse items-center justify-between gap-3 pt-2 sm:flex-row">
+                    <p className="text-xs text-muted-foreground">
+                      <Phone className="mr-1 inline h-3.5 w-3.5" />
+                      También podés pedirlo al {CENTER.phoneDisplay} (solo llamadas).
+                    </p>
+                    <Button type="submit" disabled={submitting}
+                      className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)] sm:w-auto">
+                      {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Enviar solicitud
+                    </Button>
+                  </div>
                 </div>
-                <Field label="¿Quién lo deriva? (opcional)" name="referred_by" placeholder="Ej: escuela, pediatra" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="reason">Motivo de la consulta<span className="text-destructive"> *</span></Label>
-                <Textarea id="reason" name="reason" required maxLength={800} rows={4}
-                  placeholder="Ej: Mi hijo de 6 años repite sílabas al empezar a hablar desde hace unos meses..." />
-              </div>
-
-              <div className="flex flex-col-reverse items-center justify-between gap-3 pt-2 sm:flex-row">
-                <p className="text-xs text-muted-foreground">
-                  <Phone className="mr-1 inline h-3.5 w-3.5" />
-                  También podés pedirlo al {CENTER.phoneDisplay} (solo llamadas).
-                </p>
-                <Button type="submit" disabled={submitting}
-                  className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)] sm:w-auto">
-                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Enviar solicitud
-                </Button>
-              </div>
+              )}
             </form>
           )}
         </div>
@@ -230,9 +281,41 @@ function TurnosPage() {
 const selectClass =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
+function SectionTitle({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <h2 className="flex items-center gap-2.5 pt-2 font-display text-xl font-bold text-[color:var(--primary-deep)]">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">{n}</span>
+      {children}
+    </h2>
+  );
+}
+
+function WhoOption({ checked, onSelect, icon: Icon, title, text }: {
+  checked: boolean; onSelect: () => void; icon: typeof Users; title: string; text: string;
+}) {
+  return (
+    <label className={[
+      "flex cursor-pointer items-center gap-3 rounded-2xl border-2 p-4 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+      checked ? "border-primary bg-[color:var(--primary-soft)]" : "border-border bg-background hover:border-primary/50",
+    ].join(" ")}>
+      <input type="radio" name="who" className="sr-only" checked={checked} onChange={onSelect} required />
+      <span className={[
+        "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+        checked ? "bg-primary text-primary-foreground" : "bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]",
+      ].join(" ")}>
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <span>
+        <span className="block font-bold text-[color:var(--primary-deep)]">{title}</span>
+        <span className="block text-sm text-muted-foreground">{text}</span>
+      </span>
+    </label>
+  );
+}
+
 function Step({ n, icon: Icon, title, text }: { n: number; icon: typeof Users; title: string; text: string }) {
   return (
-    <li className="flex gap-3 rounded-2xl border border-border/60 bg-background p-5">
+    <li className="flex gap-3 rounded-2xl border border-border bg-background p-5">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
         <Icon className="h-5 w-5" />
       </div>
@@ -247,7 +330,7 @@ function Step({ n, icon: Icon, title, text }: { n: number; icon: typeof Users; t
 
 function Field({ label, name, required, type = "text", ...rest }: {
   label: string; name: string; required?: boolean; type?: string;
-  inputMode?: "numeric" | "tel"; min?: number; max?: number; placeholder?: string;
+  inputMode?: "numeric" | "tel"; min?: number; max?: number; maxLength?: number; placeholder?: string; autoComplete?: string;
 }) {
   return (
     <div className="space-y-1.5">

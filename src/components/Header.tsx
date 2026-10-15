@@ -1,24 +1,54 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, UserRound, X } from "lucide-react";
+import { CalendarCheck, HeartHandshake, House, Menu, Sparkles, Stethoscope, UserRound, X } from "lucide-react";
 import logoTortuga from "../assets/logo-tortuga.png";
+import migueAvatar from "@/assets/migue-avatar.jpg";
 import { PORTAL_ENABLED } from "@/lib/portal";
+import { CENTER } from "@/lib/center";
 
+// Menú del sitio: cada sección con su ícono y su color, para reconocerla de un
+// vistazo. Las clases van completas (Tailwind no ve clases armadas por partes).
 const NAV = [
-  { to: "/", label: "Inicio" },
-  { to: "/explora", label: "Explorá" },
-  { to: "/profesionales", label: "Profesionales" },
-  { to: "/familias", label: "Familias" },
-  { to: "/rincon", label: "Rincón social" },
-  { to: "/turnos", label: "Turnos" },
+  {
+    to: "/", label: "Inicio", icon: House,
+    bubble: "bg-sky-600 text-white shadow-sm", bubbleActive: "group-data-[status=active]:bg-sky-700 group-data-[status=active]:ring-2 group-data-[status=active]:ring-sky-300",
+    item: "hover:bg-sky-50 data-[status=active]:bg-sky-100 data-[status=active]:text-sky-950", card: "border-sky-200 bg-sky-50 text-sky-950",
+  },
+  {
+    to: "/explora", label: "Explorá", image: migueAvatar, // la cara de Migue, que guía el cuestionario
+    bubble: "bg-violet-600 text-white shadow-sm", bubbleActive: "group-data-[status=active]:bg-violet-700 group-data-[status=active]:ring-2 group-data-[status=active]:ring-violet-300",
+    item: "hover:bg-violet-50 data-[status=active]:bg-violet-100 data-[status=active]:text-violet-950", card: "border-violet-200 bg-violet-50 text-violet-950",
+  },
+  {
+    to: "/profesionales", label: "Profesionales", icon: Stethoscope,
+    bubble: "bg-teal-600 text-white shadow-sm", bubbleActive: "group-data-[status=active]:bg-teal-700 group-data-[status=active]:ring-2 group-data-[status=active]:ring-teal-300",
+    item: "hover:bg-teal-50 data-[status=active]:bg-teal-100 data-[status=active]:text-teal-950", card: "border-teal-200 bg-teal-50 text-teal-950",
+  },
+  {
+    to: "/familias", label: "Familias", icon: HeartHandshake,
+    bubble: "bg-rose-600 text-white shadow-sm", bubbleActive: "group-data-[status=active]:bg-rose-700 group-data-[status=active]:ring-2 group-data-[status=active]:ring-rose-300",
+    item: "hover:bg-rose-50 data-[status=active]:bg-rose-100 data-[status=active]:text-rose-950", card: "border-rose-200 bg-rose-50 text-rose-950",
+  },
+  {
+    to: "/rincon", label: "Rincón social", icon: Sparkles,
+    bubble: "bg-amber-600 text-white shadow-sm", bubbleActive: "group-data-[status=active]:bg-amber-700 group-data-[status=active]:ring-2 group-data-[status=active]:ring-amber-300",
+    item: "hover:bg-amber-50 data-[status=active]:bg-amber-100 data-[status=active]:text-amber-950", card: "border-amber-200 bg-amber-50 text-amber-950",
+  },
+  {
+    to: "/turnos", label: "Turnos", icon: CalendarCheck,
+    bubble: "bg-emerald-600 text-white shadow-sm", bubbleActive: "group-data-[status=active]:bg-emerald-700 group-data-[status=active]:ring-2 group-data-[status=active]:ring-emerald-300",
+    item: "hover:bg-emerald-50 data-[status=active]:bg-emerald-100 data-[status=active]:text-emerald-950", card: "border-emerald-200 bg-emerald-50 text-emerald-950",
+  },
 ] as const;
+
+type NavItem = (typeof NAV)[number];
 
 export function Header() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/85 backdrop-blur-md">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
+    <header className="sticky top-0 z-40 w-full border-b border-border bg-background/90 backdrop-blur-md">
+      <div className="container mx-auto flex h-[4.5rem] items-center justify-between gap-3 px-4 md:px-6">
         <Link to="/" className="flex shrink-0 items-center gap-2.5 group" onClick={() => setOpen(false)}>
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-[var(--shadow-card)] transition-transform group-hover:scale-105 overflow-hidden border border-border/40">
             <img
@@ -29,18 +59,18 @@ export function Header() {
           </div>
           <div className="leading-tight">
             <div className="font-display text-base font-bold text-[color:var(--primary-deep)]">CIMT</div>
-            <div className="hidden text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:block">
-              Centro Integral de Tartamudez
+            <div className="hidden max-w-[11.5rem] text-[10px] font-semibold uppercase leading-snug tracking-wide text-muted-foreground sm:block">
+              {CENTER.name}
             </div>
           </div>
         </Link>
 
-        {/* Escritorio */}
-        <nav className="hidden items-center gap-1 lg:flex lg:gap-2">
-          {NAV.map((item) => <NavLink key={item.to} to={item.to}>{item.label}</NavLink>)}
+        {/* Escritorio: ícono arriba y nombre abajo */}
+        <nav className="hidden items-center gap-0.5 lg:flex xl:gap-1.5">
+          {NAV.map((item) => <DesktopLink key={item.to} item={item} />)}
           <Link
             to="/turnos"
-            className="ml-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-card)] transition-all hover:bg-[color:var(--primary-deep)] hover:shadow-[var(--shadow-elegant)]"
+            className="ml-2 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-card)] transition-all hover:bg-[color:var(--primary-deep)] hover:shadow-[var(--shadow-elegant)]"
           >
             Solicitar turno
           </Link>
@@ -48,7 +78,7 @@ export function Header() {
             to="/ingresar"
             title={PORTAL_ENABLED ? "Familias con cuenta (con DNI) y equipo del CIMT (con email)" : "Equipo del CIMT"}
             aria-label="Ingresar"
-            className="flex h-9 min-w-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-primary/30 px-2 text-sm font-semibold text-[color:var(--primary-deep)] transition-colors hover:border-primary hover:bg-[color:var(--primary-soft)] xl:px-3.5"
+            className="ml-1 flex h-9 min-w-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 px-2 text-sm font-semibold text-[color:var(--primary-deep)] transition-colors hover:border-primary hover:bg-[color:var(--primary-soft)] xl:px-3.5"
           >
             <UserRound className="h-4 w-4" aria-hidden="true" />
             <span className="hidden xl:inline">Ingresar</span>
@@ -69,21 +99,26 @@ export function Header() {
           </Link>
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="mobile-nav"
             aria-label={open ? "Cerrar menú" : "Abrir menú"}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-[color:var(--primary-deep)]">
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-[color:var(--primary-deep)]">
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
 
+      {/* Menú del celular: tarjetas de colores con su ícono */}
       {open && (
-        <nav id="mobile-nav" className="border-t border-border/60 bg-background lg:hidden">
-          <div className="container mx-auto flex flex-col gap-1 px-4 py-3">
+        <nav id="mobile-nav" className="border-t border-border bg-background lg:hidden">
+          <div className="container mx-auto grid grid-cols-2 gap-2.5 px-4 py-4 sm:grid-cols-3">
             {NAV.map((item) => (
-              <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} block>{item.label}</NavLink>
+              <MobileLink key={item.to} item={item} onClick={() => setOpen(false)} />
             ))}
-            <NavLink to="/ingresar" onClick={() => setOpen(false)} block>
+            <Link to="/ingresar" onClick={() => setOpen(false)}
+              className="col-span-2 flex items-center gap-3 rounded-2xl border-2 border-primary/30 bg-[color:var(--primary-soft)]/60 p-3 font-semibold text-[color:var(--primary-deep)] sm:col-span-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <UserRound className="h-5 w-5" aria-hidden="true" />
+              </span>
               {PORTAL_ENABLED ? "Ingresar (familias con cuenta y equipo)" : "Ingresar (equipo del CIMT)"}
-            </NavLink>
+            </Link>
           </div>
         </nav>
       )}
@@ -91,15 +126,42 @@ export function Header() {
   );
 }
 
-function NavLink({ to, children, onClick, block }: { to: string; children: React.ReactNode; onClick?: () => void; block?: boolean }) {
+// Ícono de la sección, o la imagen si tiene (Explorá lleva la cara de Migue)
+function NavIcon({ item, className }: { item: NavItem; className: string }) {
+  if ("image" in item) {
+    return <img src={item.image} alt="" aria-hidden="true" draggable={false} className="h-full w-full rounded-[inherit] bg-white object-cover" />;
+  }
+  const Icon = item.icon;
+  return <Icon className={className} aria-hidden="true" />;
+}
+
+function DesktopLink({ item }: { item: NavItem }) {
   return (
     <Link
-      to={to}
-      onClick={onClick}
-      activeOptions={{ exact: to === "/" }}
-      className={`${block ? "block px-4 py-2.5 text-base" : "px-3 py-1.5 text-sm"} rounded-full font-medium text-muted-foreground transition-colors hover:bg-[color:var(--primary-soft)] hover:text-[color:var(--primary-deep)] data-[status=active]:bg-[color:var(--primary-soft)] data-[status=active]:text-[color:var(--primary-deep)]`}
+      to={item.to}
+      activeOptions={{ exact: item.to === "/" }}
+      className={`group flex min-w-[4.5rem] flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-[13px] font-semibold text-foreground/85 transition-colors xl:min-w-[5.25rem] ${item.item}`}
     >
-      {children}
+      <span className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl transition-colors ${item.bubble} ${item.bubbleActive}`}>
+        <NavIcon item={item} className="h-4 w-4" />
+      </span>
+      <span className="whitespace-nowrap leading-none">{item.label}</span>
+    </Link>
+  );
+}
+
+function MobileLink({ item, onClick }: { item: NavItem; onClick: () => void }) {
+  return (
+    <Link
+      to={item.to}
+      onClick={onClick}
+      activeOptions={{ exact: item.to === "/" }}
+      className={`group flex flex-col items-center gap-2 rounded-2xl border-2 px-2 py-3 text-center text-base font-semibold leading-tight data-[status=active]:ring-2 data-[status=active]:ring-current ${item.card}`}
+    >
+      <span className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl ${item.bubble} ${item.bubbleActive}`}>
+        <NavIcon item={item} className="h-6 w-6" />
+      </span>
+      {item.label}
     </Link>
   );
 }
