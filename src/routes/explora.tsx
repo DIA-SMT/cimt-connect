@@ -76,7 +76,8 @@ const STEPS: Step[] = [
 
 const INTRO_MESSAGES = [
   "¡Hola! 👋 Soy **Migue**, el asistente virtual de la **Dirección Centro Integral Municipal de Tartamudez**.",
-  "Estoy aquí para ayudarte a entender mejor la fluidez del habla con unas preguntas simples.",
+  "Si tenés dificultad para entender lo que te pasa, o no sabés si es tartamudez, **acá podés sacarte todas las dudas** 💬",
+  "Te voy a ayudar a entender mejor la fluidez del habla con unas preguntas simples.",
   "Es anónimo, gratuito y lleva solo **~1 minuto** ⏱️ ¿Empezamos?",
 ];
 
@@ -323,7 +324,7 @@ function ExploraPage() {
         }
       `}</style>
 
-      <section className="relative flex flex-col" style={{ minHeight: "calc(100vh - 68px)" }}>
+      <section className="relative flex flex-col" style={{ minHeight: "calc(100vh - 72px)" }}>
 
         {/* ── Header ── */}
         <div className="sticky top-0 z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">
@@ -333,7 +334,7 @@ function ExploraPage() {
               <p className="font-display font-bold text-[color:var(--primary-deep)] leading-none">
                 Migue
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">Asistente virtual · CIMT</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Asistente virtual · Acá podés sacarte todas las dudas</p>
             </div>
             <div className="ml-auto flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />

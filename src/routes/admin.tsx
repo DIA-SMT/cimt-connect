@@ -396,13 +396,13 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             onOpenNotices={portalStaffApi.enabled ? openNotices : undefined} />
         ) : activeTab === "solicitudes" ? (
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
-            onCountChange={setNewRequests} />
+            onCountChange={setNewRequests} professionals={professionals} canAssign={isDirector(staff.role)} />
         ) : activeTab === "portal" && portalStaffApi.enabled ? (
           <PortalInboxTab key={portalView ?? "auto"} initialView={portalView} onOpenPatient={setOpenPatientId} onCountChange={setPortalCounts} />
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} staff={staff} />
         ) : activeTab === "estadisticas" ? (
-          <StatsTab key={patientsVersion} professionals={professionals} />
+          <StatsTab key={patientsVersion} professionals={professionals} canPublish={isDirector(staff.role)} />
         ) : activeTab === "rincon" ? (
           <SocialCornerTab />
         ) : activeTab === "equipo" && isDirector(staff.role) ? (

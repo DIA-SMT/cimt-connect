@@ -10,6 +10,7 @@ import heroImg from "@/assets/hero.jpg";
 import { CENTER } from "@/lib/center";
 import { ServicesGrid } from "@/components/ServicesGrid";
 import { RequirementsList } from "@/components/Requirements";
+import { Milestones } from "@/components/Milestones";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -116,6 +117,9 @@ function Index() {
           </div>
         </div>
       </section>
+
+      {/* REFERENTE E HITOS (los publica Dirección desde Estadísticas) */}
+      <Milestones />
 
       {/* INFO SECTION */}
       <section className="container mx-auto px-4 py-16 md:px-6 md:py-20">

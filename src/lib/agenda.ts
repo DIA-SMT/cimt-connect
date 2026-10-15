@@ -25,6 +25,11 @@ export type IntakeRequest = {
   consent_version?: string | null;
   locality: string | null;
   province?: string | null;
+  /** Derivación (Dirección) y primer contacto, desde el script 30 */
+  assigned_professional_id?: string | null;
+  assigned_at?: string | null;
+  assigned_by?: string | null;
+  first_contact_at?: string | null;
   address: string | null;
   preferred_modality: Modality;
   referred_by: string | null;

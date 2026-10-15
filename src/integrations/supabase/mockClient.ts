@@ -32,6 +32,7 @@ type Row = Record<string, unknown>;
 // una tabla patients (por DNI) como en la base real.
 const PATIENT_DEFAULTS: Row = {
   notes: null,
+  photo_path: null,
   case_status: "en_evaluacion",
   professional_id: null,
   referred_by: null,
@@ -112,6 +113,7 @@ const store: Record<string, Row[]> = {
   patient_guardians: [],
   clinical_forms: [],
   patient_files: [],
+  public_milestones: [],
 };
 
 // ── Datos de ejemplo de la fase 2: taller, solicitudes y agenda del día ──
@@ -127,6 +129,13 @@ function demoDay(offset: number): string {
     id: "ws-demo-1", workshop_date: demoDay(9), start_time: "09:00:00", place: "Catamarca 411",
     capacity: 20, notes: null, canceled: false, created_at: nowIso,
   });
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600000).toISOString();
+  // Ejemplo de hitos publicados, para ver la landing en el modo demo
+  store.public_milestones.push({
+    id: "ms-demo-1", hidden: false, patients_total: 432, patients_since: "2025-05-01", response_hours: 48,
+    wait_days: 12, waiting_list: 3, month: "2026-09-01", month_value: 118, month_label: "consultas atendidas",
+    published_at: hoursAgo(24), published_by: "direccion@cimt.local", created_at: hoursAgo(24),
+  });
   const reqBase = { email: null, preferred_modality: "presencial", workshop_id: null, workshop_attended: null,
     patient_id: null, notes: null, created_at: nowIso, updated_at: nowIso };
   store.intake_requests.push(
@@ -134,11 +143,12 @@ function demoDay(offset: number): string {
       patient_type: "niño", phone: "381-4001122", guardian_name: "Laura Acosta", locality: "Yerba Buena", province: "Tucumán",
       guardian_dni: "28111222", guardian_relationship: "madre", guardian_consent_at: nowIso, consent_version: CONSENT_VERSION,
       referred_by: "Jardín de infantes", reason: "Repite sílabas al empezar las frases desde hace 4 meses.", status: "nueva" },
-    { ...reqBase, id: "req-demo-2", first_name: "Camila", last_name: "Ruiz", dni: "45111999", age: 14,
+    { ...reqBase, id: "req-demo-2", created_at: hoursAgo(72), first_contact_at: hoursAgo(50), first_name: "Camila", last_name: "Ruiz", dni: "45111999", age: 14,
       patient_type: "adolescente", phone: "381-4556677", guardian_name: "Jorge Ruiz", locality: "Tafí Viejo", province: "Tucumán",
       guardian_dni: "25999888", guardian_relationship: "padre", guardian_consent_at: nowIso, consent_version: CONSENT_VERSION,
       referred_by: null, reason: "Bloqueos al leer en voz alta en el colegio, le genera mucha ansiedad.", status: "contactada" },
-    { ...reqBase, id: "req-demo-3", first_name: "Martín", last_name: "Sosa", dni: "33444555", age: 38,
+    { ...reqBase, id: "req-demo-3", created_at: hoursAgo(240), first_contact_at: hoursAgo(220),
+      assigned_professional_id: "pro-001", assigned_at: hoursAgo(200), assigned_by: "direccion@cimt.local", first_name: "Martín", last_name: "Sosa", dni: "33444555", age: 38,
       patient_type: "adulto", phone: "381-5998877", guardian_name: null, locality: "Córdoba", province: "Córdoba",
       referred_by: null, reason: "Tartamudeo desde chico, quiero empezar un tratamiento.", status: "taller",
       workshop_id: "ws-demo-1", preferred_modality: "telemedicina" },
@@ -316,7 +326,7 @@ if (demo) {
 
 const INSERT_DEFAULTS: Record<string, Row> = {
   appointments: { status: "pendiente", modality: "presencial", duration_minutes: 60, attendance: null, practice_number: null, practice_registered_at: null, reminder_sent_at: null, reminder_sent_by: null, reminder_channel: null },
-  intake_requests: { status: "nueva", workshop_id: null, workshop_attended: null, patient_id: null, notes: null },
+  intake_requests: { status: "nueva", workshop_id: null, workshop_attended: null, patient_id: null, notes: null, assigned_professional_id: null, assigned_at: null, assigned_by: null, first_contact_at: null },
   workshops: { canceled: false, place: "Catamarca 411", capacity: null, notes: null },
   schedule_blocks: { active: true, start_time: null, end_time: null, professional_id: null },
   patients: PATIENT_DEFAULTS,
@@ -326,6 +336,7 @@ const INSERT_DEFAULTS: Record<string, Row> = {
   patient_guardians: { relationship: null, dni: null, phone: null, email: null, lives_with_patient: null, is_primary: false, notes: null, active: true },
   clinical_forms: { answers: {}, status: "borrador", professional_id: null },
   patient_files: { mime_type: null, size_bytes: null, category: "otro", description: null },
+  public_milestones: { hidden: false, patients_total: null, patients_since: null, response_hours: null, wait_days: null, waiting_list: null, month: null, month_value: null, month_label: null },
 };
 
 function currentEmail(): string | null {
@@ -436,6 +447,7 @@ class MockQueryBuilder {
         ...(this._table === "patient_referrals" ? { created_by: currentEmail() } : {}),
         ...(["patient_followups", "patient_reports", "clinical_forms"].includes(this._table) ? { author_email: currentEmail() } : {}),
         ...(this._table === "patient_files" ? { uploaded_by_email: currentEmail() } : {}),
+        ...(this._table === "public_milestones" ? { published_at: now, published_by: currentEmail() } : {}),
         ...this._insertPayload,
       };
       if (this._table === "appointments") {
@@ -486,6 +498,16 @@ class MockQueryBuilder {
         // Práctica numerada al marcar presente (una sola vez por turno)
         if (this._table === "appointments" && payload.attendance === "presente" && !row.practice_number) {
           Object.assign(payload, { practice_number: practiceSeq++, practice_registered_at: now });
+        }
+        // Lo que hace el trigger intake_requests_guard (script 30): derivación y primer contacto
+        if (this._table === "intake_requests") {
+          if ("assigned_professional_id" in payload && payload.assigned_professional_id !== row.assigned_professional_id) {
+            Object.assign(payload, payload.assigned_professional_id
+              ? { assigned_at: now, assigned_by: currentEmail() } : { assigned_at: null, assigned_by: null });
+          }
+          if (row.status === "nueva" && payload.status && payload.status !== "nueva" && !row.first_contact_at) {
+            payload.first_contact_at = now;
+          }
         }
         const changes: Row = {};
         for (const [k, v] of Object.entries(payload)) {

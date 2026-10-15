@@ -8,6 +8,10 @@ import {
   type CaseStatus, type PatientType, type ProfessionalOption, type TherapyMode,
 } from "@/lib/patients";
 import { INTAKE_STATUS_LABEL, type IntakeStatus } from "@/lib/agenda";
+import {
+  MONTHLY_KINDS, PATIENTS_SINCE_DEFAULT, RESPONSE_HOURS_DEFAULT, previousMonth,
+  type MilestonesDraft, type MonthlyKind,
+} from "@/lib/milestones";
 
 export type StatPatient = {
   id: string;
@@ -29,7 +33,15 @@ export type StatAppt = {
 };
 export type StatIntake = {
   created_at: string; status: IntakeStatus; workshop_id: string | null; workshop_attended: boolean | null; patient_id: string | null;
+  // Para las estadísticas de solicitudes (el informe semanal no los pide)
+  age?: number; province?: string | null; locality?: string | null; preferred_modality?: string | null;
+  referred_by?: string | null; first_contact_at?: string | null;
 };
+
+// Solicitudes en curso = lista de espera (todavía no admitidas ni descartadas)
+export const OPEN_INTAKE: IntakeStatus[] = ["nueva", "contactada", "taller"];
+// Compromiso de respuesta del centro
+export const RESPONSE_GOAL_HOURS = RESPONSE_HOURS_DEFAULT;
 export type StatWorkshop = { id: string; workshop_date: string; canceled: boolean };
 export type StatSurvey = {
   created_at: string; respondent: string; rating_attention: number; rating_communication: number;
@@ -93,6 +105,7 @@ export function computeStats(data: StatsData, range: Range) {
   const current = {
     total: patients.length,
     active,
+    waitingList: intake.filter((r) => OPEN_INTAKE.includes(r.status)).length,
     pendingReferrals: liveReferrals.filter((r) => r.status === "pendiente").length,
     unregistered: liveReferrals.filter((r) => !r.registered && r.status !== "cancelada").length,
     byStatus: (Object.keys(CASE_STATUS_LABEL) as CaseStatus[])
@@ -169,6 +182,17 @@ export function computeStats(data: StatsData, range: Range) {
     const days = daysBetween(localDateKey(r.created_at), first);
     return days >= 0 ? [days] : [];
   });
+  // Tiempo de respuesta: de la solicitud al primer contacto del equipo (horas)
+  const responses = periodIntake.flatMap((r) => {
+    if (!r.first_contact_at) return [];
+    const h = (Date.parse(r.first_contact_at) - Date.parse(r.created_at)) / 3600000;
+    return h >= 0 ? [h] : [];
+  });
+  // Las nuevas que ya pasaron el plazo sin contacto también cuentan como fuera de término
+  const now = Date.now();
+  const overdue = periodIntake.filter((r) => r.status === "nueva" && !r.first_contact_at
+    && (now - Date.parse(r.created_at)) / 3600000 > RESPONSE_GOAL_HOURS).length;
+  const onTime = responses.filter((h) => h <= RESPONSE_GOAL_HOURS).length;
   const enrolledIds = new Set(periodWorkshops.map((w) => w.id));
   const enrolled = intake.filter((r) => r.workshop_id && enrolledIds.has(r.workshop_id));
   const intakeStats = {
@@ -181,6 +205,19 @@ export function computeStats(data: StatsData, range: Range) {
     waitAvg: avg(waits),
     waitMedian: median(waits),
     waitCount: waits.length,
+    byMonth: countByMonth(periodIntake.map((r) => localDateKey(r.created_at)), range.start),
+    byProvince: topN(countBy(periodIntake.map((r) => r.province?.trim() || "Sin dato")), 8),
+    byLocality: topN(groupLocalities(periodIntake.map((r) => r.locality ?? null)), 10),
+    byAge: AGE_RANGES.map((a) => ({ name: a.label, value: periodIntake.filter((r) => r.age !== undefined && r.age >= a.min && r.age <= a.max).length })),
+    byModality: [
+      { name: "Presencial", value: periodIntake.filter((r) => r.preferred_modality === "presencial").length },
+      { name: "Telemedicina", value: periodIntake.filter((r) => r.preferred_modality === "telemedicina").length },
+    ],
+    byReferrer: topN(groupLocalities(periodIntake.map((r) => r.referred_by ?? null)), 8),
+    responseMedianHours: median(responses),
+    responseCount: responses.length,
+    responseOnTimePct: responses.length + overdue > 0 ? Math.round((onTime / (responses.length + overdue)) * 100) : null,
+    responseOverdue: overdue,
   };
 
   // ── Derivaciones ──
@@ -282,4 +319,39 @@ export function weekOf(dateKey: string): Range & { start: string; end: string } 
 
 export function fmt1(n: number | null): string {
   return n === null ? "—" : n.toFixed(1).replace(".", ",");
+}
+
+// ─── Hitos de la landing ─────────────────────────────────────────────────────
+
+/**
+ * Propuesta de hitos para publicar en la landing, con los números del panel.
+ * Dirección la revisa (y puede corregirla) antes de publicarla.
+ *   - pacientes: todas las fichas (el CIMT abrió en mayo de 2025)
+ *   - respuesta: el compromiso de 48 hs (la medición real se ve en Estadísticas)
+ *   - espera: mediana de días de la solicitud a la primera sesión, de los últimos 6 meses
+ *   - lista de espera: solicitudes en curso hoy
+ *   - análisis mensual: el dato elegido del mes cerrado anterior
+ */
+export function milestonesDraftFrom(data: StatsData, today: string, kind: MonthlyKind): MilestonesDraft {
+  const month = previousMonth(today);
+  const [y, m] = month.split("-").map(Number);
+  const monthEnd = `${month.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  const monthStats = computeStats(data, { start: month, end: monthEnd });
+  const [ty, tm, td] = today.split("-").map(Number);
+  const sixMonthsAgo = new Date(ty, tm - 7, td);
+  const waitStart = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-${String(sixMonthsAgo.getDate()).padStart(2, "0")}`;
+  const recent = computeStats(data, { start: waitStart, end: today });
+  const monthValue = kind === "consultas" ? monthStats.attention.practices
+    : kind === "solicitudes" ? monthStats.intake.received
+    : monthStats.admissions.count;
+  return {
+    patients_total: data.patients.length,
+    patients_since: PATIENTS_SINCE_DEFAULT,
+    response_hours: RESPONSE_HOURS_DEFAULT,
+    wait_days: recent.intake.waitMedian === null ? null : Math.round(recent.intake.waitMedian),
+    waiting_list: recent.current.waitingList,
+    month,
+    month_value: monthValue,
+    month_label: MONTHLY_KINDS[kind],
+  };
 }

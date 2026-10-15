@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Loader2, Save, User, Stethoscope, ArrowRightLeft, NotebookPen, CalendarDays, Plus, X,
-  Home, History, FileCheck2,
+  Home, History, FileCheck2, MonitorSmartphone,
 } from "lucide-react";
 import { formatTime } from "@/lib/appointments";
 import { Chip, Section, TextAreaField, TextField, selectClass } from "./fields";
@@ -19,6 +19,7 @@ import { PatientHistory } from "./PatientHistory";
 import { GuardiansSection } from "./GuardiansSection";
 import { ClinicalFormsSection } from "./ClinicalFormsSection";
 import { AttachmentsSection } from "./AttachmentsSection";
+import { PatientPhoto } from "./PatientPhoto";
 import { PortalPatientSection } from "./portal/PortalPatientSection";
 import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
 import { canEditClinical, type Staff } from "@/lib/staff";
@@ -70,8 +71,21 @@ const EDITABLE_FIELDS = [
 ] as const satisfies readonly (keyof PatientRecord)[];
 
 
+// La ficha se abre a pantalla completa y se reparte en pestañas (misma
+// información de siempre). Las pestañas ocultas siguen montadas: lo que se
+// está escribiendo en una no se pierde al pasar a otra.
+const SHEET_TABS = [
+  { id: "datos", label: "Datos personales", icon: User },
+  { id: "clinica", label: "Resumen de historia clínica", icon: Stethoscope },
+  { id: "turnos", label: "Turnos y derivaciones", icon: CalendarDays },
+  { id: "portal", label: "Portal", icon: MonitorSmartphone },
+  { id: "documentos", label: "Documentos", icon: FileCheck2 },
+] as const;
+type SheetTab = (typeof SHEET_TABS)[number]["id"];
+
 export function PatientRecordSheet({ patientId, professionals, onClose, onChanged, staff }: Props) {
   const clinical = canEditClinical(staff.role);
+  const [tab, setTab] = useState<SheetTab>("datos");
   const [patient, setPatient] = useState<PatientRecord | null>(null);
   const [draft, setDraft] = useState<PatientRecord | null>(null);
   const [referrals, setReferrals] = useState<Referral[]>([]);
@@ -85,6 +99,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
   useEffect(() => {
     if (!patientId) return;
     changed.current = false;
+    setTab("datos");
     let cancelled = false;
     setLoading(true);
     Promise.all([
@@ -172,7 +187,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
   return (
     <Sheet open={!!patientId} onOpenChange={(open) => { if (!open) requestClose(); }}>
       {/* El botón de cerrar por defecto se oculta: scrollea con el contenido. Va uno propio en el header fijo. */}
-      <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-3xl [&>button:last-child]:hidden">
+      <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-none [&>button:last-child]:hidden">
         {loading || !draft ? (
           <>
             <SheetHeader className="sr-only">
@@ -192,38 +207,71 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   <X className="h-5 w-5" />
                 </Button>
               </SheetClose>
-              <SheetTitle className="font-display text-2xl font-extrabold text-[color:var(--primary-deep)]">
-                {fullName(draft)}
-              </SheetTitle>
-              <SheetDescription>
-                DNI {draft.dni} · {draft.age} años · {PATIENT_TYPE_LABEL[draft.patient_type]}
-              </SheetDescription>
-              <div className="flex flex-wrap items-center gap-2 pt-2">
-                <select
-                  aria-label="Estado del caso"
-                  disabled={!clinical}
-                  title={clinical ? undefined : "Solo los profesionales pueden cambiar el estado del caso"}
-                  value={draft.case_status}
-                  onChange={(e) => set("case_status", e.target.value as CaseStatus)}
-                  className={`${selectClass} h-9 w-auto`}
-                >
-                  {(Object.keys(CASE_STATUS_LABEL) as CaseStatus[]).map((s) => (
-                    <option key={s} value={s}>{CASE_STATUS_LABEL[s]}</option>
-                  ))}
-                </select>
+              <div className="mx-auto w-full max-w-7xl">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+              <div className="flex min-w-0 items-center gap-4">
+                {/* La foto se guarda sola (no hace falta "Guardar cambios") */}
+                <PatientPhoto patientId={draft.id} photoPath={draft.photo_path ?? null}
+                  initials={`${draft.first_name.charAt(0)}${draft.last_name.charAt(0)}`.toUpperCase()}
+                  onChanged={(path) => {
+                    setPatient((p) => (p ? { ...p, photo_path: path } : p));
+                    setDraft((d) => (d ? { ...d, photo_path: path } : d));
+                    changed.current = true;
+                  }} />
+                <div className="min-w-0">
+                  <SheetTitle className="font-display text-2xl font-extrabold text-[color:var(--primary-deep)]">
+                    {fullName(draft)}
+                  </SheetTitle>
+                  <SheetDescription>
+                    DNI {draft.dni} · {draft.age} años · {PATIENT_TYPE_LABEL[draft.patient_type]}
+                  </SheetDescription>
+                </div>
+              </div>
+              <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+                <div className="min-w-0 flex-1 sm:w-52 sm:flex-none">
+                  <select
+                    aria-label="Estado del caso"
+                    disabled={!clinical}
+                    title={clinical ? undefined : "Solo los profesionales pueden cambiar el estado del caso"}
+                    value={draft.case_status}
+                    onChange={(e) => set("case_status", e.target.value as CaseStatus)}
+                    className={`${selectClass} h-9`}
+                  >
+                    {(Object.keys(CASE_STATUS_LABEL) as CaseStatus[]).map((s) => (
+                      <option key={s} value={s}>{CASE_STATUS_LABEL[s]}</option>
+                    ))}
+                  </select>
+                </div>
                 <Button
                   size="sm"
                   onClick={save}
                   disabled={!dirty || saving}
-                  className="ml-auto bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]"
+                  className="shrink-0 bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]"
                 >
                   {saving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1.5 h-3.5 w-3.5" />}
                   {dirty ? "Guardar cambios" : "Guardado"}
                 </Button>
               </div>
+              </div>
+              {/* Pestañas: la misma información de siempre, agrupada para no scrollear tanto */}
+              <div role="tablist" aria-label="Secciones de la ficha" className="-mx-1 mt-3 flex gap-1 overflow-x-auto px-1 pb-0.5">
+                {SHEET_TABS.map((t) => (
+                  <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+                    className={[
+                      "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors",
+                      tab === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-foreground/80 hover:bg-[color:var(--primary-soft)]",
+                    ].join(" ")}>
+                    <t.icon className="h-4 w-4" aria-hidden="true" />
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              </div>
             </SheetHeader>
 
-            <div className="space-y-8 px-5 py-6 sm:px-6">
+            <div className="mx-auto w-full max-w-7xl px-5 py-6 sm:px-8">
+              {/* ── Datos personales ── */}
+              <div role="tabpanel" hidden={tab !== "datos"} className="grid items-start gap-8 xl:grid-cols-2">
               <Section icon={User} title="Datos personales y contacto">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField label="Nombre" value={draft.first_name} onChange={(v) => set("first_name", v)} />
@@ -289,6 +337,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 </div>
               </Section>
 
+              <div className="space-y-8">
               <GuardiansSection patientId={draft.id} patientRev={patient} onChanged={() => { changed.current = true; }} />
 
               <Section icon={Home} title="Contexto familiar y convivencia">
@@ -303,7 +352,12 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                     onChange={(v) => set("parents_dedication", v)} placeholder="Trabajo, horarios" />
                 </div>
               </Section>
+              </div>
+              </div>
 
+              {/* ── Resumen de historia clínica ── */}
+              <div role="tabpanel" hidden={tab !== "clinica"} className="space-y-8">
+              <div className="grid items-start gap-8 xl:grid-cols-2">
               <Section icon={Stethoscope} title="Información clínica">
                 {!clinical && (
                   <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
@@ -406,6 +460,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                     onChange={(v) => set("frustration_communicating", v)} />
                 </fieldset>
               </Section>
+              </div>
 
               <ClinicalFormsSection
                 patient={patient ?? draft}
@@ -415,14 +470,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 onChanged={() => { changed.current = true; }}
               />
 
-              <ReferralsSection
-                patientId={draft.id}
-                referrals={referrals}
-                canEdit={clinical}
-                staffEmail={staff.email}
-                onChange={(r) => { setReferrals(r); changed.current = true; }}
-              />
-
+              <div className="grid items-start gap-8 xl:grid-cols-2">
               <ReportsSection
                 patient={patient ?? draft}
                 professionals={professionals}
@@ -439,9 +487,11 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 staffEmail={staff.email}
                 onChange={(f) => { setFollowups(f); changed.current = true; }}
               />
+              </div>
+              </div>
 
-              <PortalPatientSection patientId={draft.id} />
-
+              {/* ── Turnos y derivaciones ── */}
+              <div role="tabpanel" hidden={tab !== "turnos"} className="grid items-start gap-8 xl:grid-cols-2">
               <Section icon={CalendarDays} title="Turnos y asistencia">
                 <AttendanceSummary appts={appts} />
                 {appts.length === 0 ? (
@@ -473,6 +523,23 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 )}
               </Section>
 
+              <ReferralsSection
+                patientId={draft.id}
+                referrals={referrals}
+                canEdit={clinical}
+                staffEmail={staff.email}
+                onChange={(r) => { setReferrals(r); changed.current = true; }}
+              />
+              </div>
+
+              {/* ── Portal ── */}
+              <div role="tabpanel" hidden={tab !== "portal"}>
+              <PortalPatientSection patientId={draft.id} />
+              </div>
+
+              {/* ── Documentos ── */}
+              <div role="tabpanel" hidden={tab !== "documentos"} className="space-y-8">
+              <div className="grid items-start gap-8 xl:grid-cols-2">
               <Section icon={FileCheck2} title="Consentimiento y alta">
                 <div className="space-y-3 rounded-2xl border border-border/60 p-4">
                   <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-semibold">
@@ -501,8 +568,10 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
               </Section>
 
               <AttachmentsSection patientId={draft.id} staff={staff} onChanged={() => { changed.current = true; }} />
+              </div>
 
               <PatientHistory key={draft.id} patientId={draft.id} professionals={professionals} />
+              </div>
             </div>
           </>
         )}
