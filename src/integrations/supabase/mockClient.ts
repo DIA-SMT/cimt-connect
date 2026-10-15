@@ -33,6 +33,10 @@ type Row = Record<string, unknown>;
 const PATIENT_DEFAULTS: Row = {
   notes: null,
   photo_path: null,
+  other_history: null,
+  autonomy: null,
+  phone_kind: null,
+  guardian_phone_kind: null,
   case_status: "en_evaluacion",
   professional_id: null,
   referred_by: null,
@@ -333,7 +337,7 @@ const INSERT_DEFAULTS: Record<string, Row> = {
   patient_referrals: { status: "pendiente", outcome: null, destination: null, reason: null, registered: false },
   patient_followups: {},
   patient_reports: { professional_id: null, diagnosis: null, progress: null, therapy_evolution: null },
-  patient_guardians: { relationship: null, dni: null, phone: null, email: null, lives_with_patient: null, is_primary: false, notes: null, active: true },
+  patient_guardians: { relationship: null, dni: null, phone: null, email: null, lives_with_patient: null, is_primary: false, notes: null, active: true, caregiver_role: null, phone_kind: null },
   clinical_forms: { answers: {}, status: "borrador", professional_id: null },
   patient_files: { mime_type: null, size_bytes: null, category: "otro", description: null },
   public_milestones: { hidden: false, patients_total: null, patients_since: null, response_hours: null, wait_days: null, waiting_list: null, month: null, month_value: null, month_label: null },
@@ -618,7 +622,7 @@ function rpc(fn: string, args: Row = {}) {
       id: `req-${Date.now()}`, first_name: args.p_first_name, last_name: args.p_last_name, dni: args.p_dni,
       age: Number(args.p_age), patient_type: args.p_patient_type, phone: args.p_phone, email: args.p_email ?? null,
       guardian_name: minor ? args.p_guardian_name : null, locality: args.p_locality ?? null, address: args.p_address ?? null,
-      province: args.p_province ?? null, guardian_dni: minor ? args.p_guardian_dni : null,
+      province: args.p_province ?? null, guardian_dni: minor ? args.p_guardian_dni : null, phone_kind: args.p_phone_kind ?? null,
       guardian_relationship: minor ? args.p_guardian_relationship : null,
       guardian_consent_at: minor ? nowIso : null, consent_version: minor ? args.p_consent_version : null,
       preferred_modality: args.p_preferred_modality ?? "presencial", referred_by: args.p_referred_by ?? null,
@@ -627,6 +631,15 @@ function rpc(fn: string, args: Row = {}) {
     };
     store.intake_requests.push(row);
     return Promise.resolve({ data: row.id, error: null });
+  }
+
+  // Nombre y rol de cada usuario del panel, para el historial (script 31)
+  if (fn === "staff_directory") {
+    const proByUser = new Map(store.professionals.filter((p) => p.user_id).map((p) => [p.user_id, p.name]));
+    const data = store.admins.filter((a) => a.email).map((a) => ({
+      email: a.email, full_name: proByUser.get(a.user_id) ?? a.full_name ?? null, role: a.role,
+    }));
+    return Promise.resolve({ data, error: null });
   }
 
   if (fn === "get_public_team") {

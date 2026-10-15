@@ -16,6 +16,8 @@ import {
 export type StatPatient = {
   id: string;
   created_at: string;
+  /** Fecha de ingreso (script 31); si falta, el día en que se creó la ficha */
+  admission_date?: string | null;
   locality: string | null;
   patient_type: PatientType;
   case_status: CaseStatus;
@@ -115,12 +117,13 @@ export function computeStats(data: StatsData, range: Range) {
   };
 
   // ── Ingresos (pacientes nuevos) ──
-  const newPatients = patients.filter((p) => inRange(localDateKey(p.created_at), range));
+  const admittedOn = (p: StatPatient) => p.admission_date ?? localDateKey(p.created_at);
+  const newPatients = patients.filter((p) => inRange(admittedOn(p), range));
   const conditions = new Map<string, number>();
   for (const p of newPatients) for (const c of p.other_conditions ?? []) conditions.set(c, (conditions.get(c) ?? 0) + 1);
   const admissions = {
     count: newPatients.length,
-    byMonth: countByMonth(newPatients.map((p) => localDateKey(p.created_at)), range.start),
+    byMonth: countByMonth(newPatients.map(admittedOn), range.start),
     byLocality: topN(groupLocalities(newPatients.map((p) => p.locality)), 10),
     byAge: AGE_RANGES.map((r) => ({ name: r.label, value: newPatients.filter((p) => p.age >= r.min && p.age <= r.max).length })),
     byType: (Object.keys(PATIENT_TYPE_LABEL) as PatientType[])

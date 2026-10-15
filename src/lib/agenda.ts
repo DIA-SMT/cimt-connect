@@ -3,6 +3,7 @@
 
 import type { PatientType } from "@/lib/patients";
 import type { GuardianRelationship } from "@/lib/intake";
+import type { Autonomy, PhoneKind } from "@/lib/contact";
 
 export type IntakeStatus = "nueva" | "contactada" | "taller" | "admitida" | "no_corresponde";
 export type Attendance = "presente" | "ausente" | "justificado";
@@ -30,6 +31,8 @@ export type IntakeRequest = {
   assigned_at?: string | null;
   assigned_by?: string | null;
   first_contact_at?: string | null;
+  /** Tipo del teléfono que dejaron (script 31) */
+  phone_kind?: PhoneKind | null;
   address: string | null;
   preferred_modality: Modality;
   referred_by: string | null;
@@ -82,6 +85,8 @@ export type AgendaAppointment = {
   patients: {
     first_name: string; last_name: string; dni: string; phone: string;
     guardian_phone: string | null; guardian_name?: string | null; patient_type?: string;
+    // Cómo contactar (31_ficha_contacto_semaforo.sql)
+    phone_kind?: PhoneKind | null; guardian_phone_kind?: PhoneKind | null; autonomy?: Autonomy | null;
   } | null;
 };
 

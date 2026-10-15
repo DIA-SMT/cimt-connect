@@ -3,6 +3,7 @@
 // equipo tenga abierta en ese dispositivo; la persona solo toca "enviar".
 
 import { CENTER } from "@/lib/center";
+import { acceptsWhatsApp, type PhoneKind } from "@/lib/contact";
 import { formatShortDate, todayKey } from "@/lib/patients";
 import { addDays, fromMinutes, toMinutes, type AgendaAppointment } from "@/lib/agenda";
 import { supabase } from "@/integrations/supabase/client";
@@ -72,7 +73,18 @@ export function reminderMessage(a: AgendaAppointment, professionalName?: string)
     `Si no ${minor ? "pueden" : "podés"} asistir, avisanos respondiendo este mensaje o llamando al ${CENTER.phoneDisplay}. ¡Gracias!`;
 }
 
+// El tipo del teléfono al que se le escribe (mismo criterio que reminderPhone)
+export function reminderPhoneKind(a: AgendaAppointment): PhoneKind | null {
+  const p = a.patients;
+  if (!p) return null;
+  const minor = p.patient_type !== "adulto";
+  const useGuardian = minor ? !!p.guardian_phone : !p.phone && !!p.guardian_phone;
+  return (useGuardian ? p.guardian_phone_kind : p.phone_kind) ?? null;
+}
+
 export function whatsappLink(a: AgendaAppointment, professionalName?: string): string | null {
+  // Un fijo o un celular sin WhatsApp no recibe el mensaje: se avisa por llamada
+  if (!acceptsWhatsApp(reminderPhoneKind(a))) return null;
   const number = whatsappNumber(reminderPhone(a));
   if (!number) return null;
   return `https://wa.me/${number}?text=${encodeURIComponent(reminderMessage(a, professionalName))}`;

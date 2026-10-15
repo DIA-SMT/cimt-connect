@@ -25,6 +25,10 @@ import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { LOCALITY_OPTIONS } from "@/lib/center";
 import {
+  AUTONOMIES, AUTONOMY_COLOR, AUTONOMY_HINT, AUTONOMY_LABEL, PHONE_KINDS, PHONE_KIND_HINT, PHONE_KIND_LABEL,
+  type Autonomy, type PhoneKind,
+} from "@/lib/contact";
+import {
   CASE_STATUS_LABEL, CIE10_OPTIONS, CUD_LABEL, CONDITION_OPTIONS, ageFromBirth, PATIENT_TYPE_LABEL, REFERRAL_KIND_LABEL,
   REFERRAL_STATUS_LABEL, SPECIALTY_OPTIONS, THERAPY_MODE_LABEL, formatShortDate, fullName, normalizePatient, todayKey,
   type TherapyMode,
@@ -68,6 +72,8 @@ const EDITABLE_FIELDS = [
   "arrival_route", "stutter_onset_age", "stutter_onset_form", "stutter_situations",
   "previous_treatments", "family_history", "avoids_speaking", "frustration_communicating",
   "diagnosis_code", "consent_signed", "consent_date", "discharge_date", "discharge_notes",
+  // 31_ficha_contacto_semaforo.sql
+  "admission_date", "other_history", "autonomy", "phone_kind",
 ] as const satisfies readonly (keyof PatientRecord)[];
 
 
@@ -224,7 +230,15 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   </SheetTitle>
                   <SheetDescription>
                     DNI {draft.dni} · {draft.age} años · {PATIENT_TYPE_LABEL[draft.patient_type]}
+                    {draft.admission_date && <> · Ingreso: <strong className="text-foreground">{formatShortDate(draft.admission_date)}</strong></>}
                   </SheetDescription>
+                  {draft.autonomy && (
+                    <span title={AUTONOMY_HINT[draft.autonomy]}
+                      className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${AUTONOMY_COLOR[draft.autonomy].chip}`}>
+                      <span className={`h-2.5 w-2.5 rounded-full ${AUTONOMY_COLOR[draft.autonomy].dot}`} aria-hidden="true" />
+                      Semáforo {AUTONOMY_LABEL[draft.autonomy].toLowerCase()}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
@@ -286,6 +300,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                       onChange={(e) => set("age", Number(e.target.value))} />
                   </div>
                   <TextField label="Teléfono" value={draft.phone} onChange={(v) => set("phone", v)} inputMode="tel" />
+                  <div className="space-y-1.5">
+                    <Label htmlFor="phone_kind">Tipo de teléfono</Label>
+                    <select id="phone_kind" value={draft.phone_kind ?? ""} className={selectClass}
+                      onChange={(e) => set("phone_kind", (e.target.value || null) as PhoneKind | null)}>
+                      <option value="">Sin dato</option>
+                      {PHONE_KINDS.map((k) => <option key={k} value={k}>{PHONE_KIND_LABEL[k]} ({PHONE_KIND_HINT[k].toLowerCase()})</option>)}
+                    </select>
+                  </div>
                   <TextField label="Email" value={draft.email ?? ""} type="email" onChange={(v) => set("email", v)} />
                   <div className="space-y-1.5">
                     <Label htmlFor="patient_type">Tipo de paciente</Label>
@@ -334,6 +356,27 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                   </div>
                   <TextField label="Grado / sala" value={draft.school_grade ?? ""}
                     onChange={(v) => set("school_grade", v)} placeholder="Ej: 2do grado, sala de 5" />
+                  <TextField label="Fecha de ingreso" type="date" value={draft.admission_date ?? ""}
+                    onChange={(v) => set("admission_date", v || null)} />
+                </div>
+
+                {/* Semáforo: si quien gestiona los turnos puede hacerlo solo */}
+                <div className="space-y-2 rounded-2xl border border-border p-4">
+                  <Label className="font-semibold">Semáforo de autonomía</Label>
+                  <p className="text-xs text-muted-foreground">
+                    ¿Quien gestiona los turnos (el paciente o su adulto responsable) lee, escribe y usa el celular?
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Chip active={!draft.autonomy} onClick={() => set("autonomy", null)}>Sin evaluar</Chip>
+                    {AUTONOMIES.map((a: Autonomy) => (
+                      <button key={a} type="button" onClick={() => set("autonomy", a)} aria-pressed={draft.autonomy === a}
+                        className={`inline-flex items-center gap-1.5 rounded-full border-2 px-3 py-1 text-xs font-semibold transition-colors ${draft.autonomy === a ? AUTONOMY_COLOR[a].chip : "border-border bg-background text-muted-foreground hover:bg-muted"}`}>
+                        <span className={`h-2.5 w-2.5 rounded-full ${AUTONOMY_COLOR[a].dot}`} aria-hidden="true" />
+                        {AUTONOMY_LABEL[a]}
+                      </button>
+                    ))}
+                  </div>
+                  {draft.autonomy && <p className="text-sm">{AUTONOMY_HINT[draft.autonomy]}</p>}
                 </div>
               </Section>
 
@@ -438,7 +481,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                 </fieldset>
               </Section>
 
-              <Section icon={History} title="Antecedentes de tartamudez">
+              <Section icon={History} title="Antecedentes (tartamudez u otros)">
                 <fieldset disabled={!clinical} className="min-w-0 space-y-4 disabled:opacity-80">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <TextField label="Edad de inicio" value={draft.stutter_onset_age ?? ""}
@@ -453,6 +496,10 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                       onChange={(v) => set("previous_treatments", v)} />
                     <TextAreaField label="Antecedentes familiares" value={draft.family_history ?? ""}
                       onChange={(v) => set("family_history", v)} placeholder="¿Alguien más en la familia tartamudea?" />
+                    <div className="sm:col-span-2">
+                      <TextAreaField label="Otros antecedentes" value={draft.other_history ?? ""}
+                        onChange={(v) => set("other_history", v)} placeholder="Otros antecedentes relevantes (de salud, del desarrollo, escolares...)" />
+                    </div>
                   </div>
                   <YesNoField label="¿Evita hablar en algunas situaciones?" value={draft.avoids_speaking}
                     onChange={(v) => set("avoids_speaking", v)} />
@@ -942,6 +989,8 @@ function validate(p: PatientRecord): string | null {
   if (p.birth_date && p.birth_date > todayKey()) return "La fecha de nacimiento no puede ser futura";
   if (!Number.isInteger(p.age) || p.age < 1 || p.age > 120) return "Edad inválida";
   if (p.discharge_date && p.discharge_date > todayKey()) return "La fecha de alta no puede ser futura";
+  if (!p.admission_date) return "Indicá la fecha de ingreso";
+  if (p.admission_date > todayKey()) return "La fecha de ingreso no puede ser futura";
   if (p.phone.trim().length < 6) return "Teléfono inválido";
   return null;
 }

@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Chip, Section, TextField } from "./fields";
+import { Chip, Section, TextField, selectClass } from "./fields";
 import { GUARDIAN_RELATIONSHIPS, type Guardian } from "@/lib/patients";
+import {
+  CAREGIVER_ROLE_LABEL, PHONE_KINDS, PHONE_KIND_HINT, PHONE_KIND_LABEL, type CaregiverRole, type PhoneKind,
+} from "@/lib/contact";
 import { PortalGuardianAccess } from "./portal/PortalGuardianAccess";
 import { PortalPatientAccess } from "./portal/PortalPatientAccess";
 
@@ -22,7 +25,9 @@ export function GuardiansSection({ patientId, onChanged, patientRev }: { patient
 
   async function load() {
     const { data } = await supabase.from("patient_guardians").select("*").eq("patient_id", patientId).eq("active", true);
-    setGuardians(((data ?? []) as Guardian[]).sort((a, b) => Number(b.is_primary) - Number(a.is_primary)));
+    // Primero el principal cuidador, después el 2do responsable, después el resto
+    const rank = (g: Guardian) => (g.caregiver_role === "principal" ? 0 : g.caregiver_role === "segundo" ? 1 : 2);
+    setGuardians(((data ?? []) as Guardian[]).sort((a, b) => rank(a) - rank(b) || Number(b.is_primary) - Number(a.is_primary)));
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -50,10 +55,16 @@ export function GuardiansSection({ patientId, onChanged, patientRev }: { patient
                 <div className="flex flex-wrap items-center gap-2 font-semibold">
                   {g.full_name}
                   {g.relationship && <span className="font-normal text-muted-foreground">· {g.relationship}</span>}
+                  {g.caregiver_role && (
+                    <span className="rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-xs font-semibold text-[color:var(--primary-deep)]">
+                      {CAREGIVER_ROLE_LABEL[g.caregiver_role]}
+                    </span>
+                  )}
                   {g.is_primary && <span className="inline-flex items-center gap-0.5 text-xs text-[color:var(--primary-deep)]"><Star className="h-3 w-3" /> Contacto principal</span>}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {g.phone && <a href={`tel:${g.phone.replace(/[^\d+]/g, "")}`} className="font-semibold text-foreground hover:underline"><Phone className="mr-0.5 inline h-3 w-3" />{g.phone}</a>}
+                  {g.phone && g.phone_kind && ` (${PHONE_KIND_LABEL[g.phone_kind].toLowerCase()})`}
                   {g.dni && ` · DNI ${g.dni}`}{g.email && ` · ${g.email}`}
                   {g.lives_with_patient === true && " · Convive"}{g.lives_with_patient === false && " · No convive"}
                 </div>
@@ -90,6 +101,8 @@ function GuardianDialog({ patientId, guardian, isFirst, onClose, onSaved }: {
     lives_with_patient: guardian?.lives_with_patient ?? null as boolean | null,
     is_primary: guardian?.is_primary ?? isFirst,
     notes: guardian?.notes ?? "",
+    caregiver_role: (guardian?.caregiver_role ?? null) as CaregiverRole | null,
+    phone_kind: (guardian?.phone_kind ?? null) as PhoneKind | null,
   });
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
@@ -108,7 +121,14 @@ function GuardianDialog({ patientId, guardian, isFirst, onClose, onSaved }: {
       lives_with_patient: form.lives_with_patient,
       is_primary: form.is_primary,
       notes: form.notes.trim() || null,
+      caregiver_role: form.caregiver_role,
+      phone_kind: form.phone ? form.phone_kind : null,
     };
+    // Un principal cuidador y un 2do responsable por paciente: se le quita a quien lo tenía
+    if (form.caregiver_role && form.caregiver_role !== guardian?.caregiver_role) {
+      await supabase.from("patient_guardians").update({ caregiver_role: null })
+        .eq("patient_id", patientId).eq("caregiver_role", form.caregiver_role);
+    }
     // Un solo contacto principal por paciente
     if (form.is_primary) {
       await supabase.from("patient_guardians").update({ is_primary: false }).eq("patient_id", patientId).eq("is_primary", true);
@@ -120,7 +140,9 @@ function GuardianDialog({ patientId, guardian, isFirst, onClose, onSaved }: {
     if (error) { toast.error("No se pudo guardar"); return; }
     // La agenda y los recordatorios usan el contacto principal de la ficha
     if (form.is_primary) {
-      await supabase.from("patients").update({ guardian_name: payload.full_name, guardian_phone: payload.phone }).eq("id", patientId);
+      await supabase.from("patients").update({
+        guardian_name: payload.full_name, guardian_phone: payload.phone, guardian_phone_kind: payload.phone_kind,
+      }).eq("id", patientId);
     }
     toast.success("Adulto responsable guardado");
     onSaved();
@@ -145,7 +167,27 @@ function GuardianDialog({ patientId, guardian, isFirst, onClose, onSaved }: {
           </div>
           <TextField label="DNI" value={form.dni} onChange={(v) => set("dni", v)} inputMode="numeric" />
           <TextField label="Teléfono" value={form.phone} onChange={(v) => set("phone", v)} inputMode="tel" />
-          <TextField label="Email" value={form.email} onChange={(v) => set("email", v)} type="email" />
+          <div className="space-y-1.5">
+            <Label htmlFor="g-phone-kind">Tipo de teléfono</Label>
+            <select id="g-phone-kind" value={form.phone_kind ?? ""} className={selectClass}
+              onChange={(e) => set("phone_kind", (e.target.value || null) as PhoneKind | null)}>
+              <option value="">Sin dato</option>
+              {PHONE_KINDS.map((k) => <option key={k} value={k}>{PHONE_KIND_LABEL[k]} ({PHONE_KIND_HINT[k].toLowerCase()})</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-2">
+            <TextField label="Email" value={form.email} onChange={(v) => set("email", v)} type="email" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Rol en el cuidado</Label>
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={form.caregiver_role === null} onClick={() => set("caregiver_role", null)}>Ninguno</Chip>
+            {(Object.keys(CAREGIVER_ROLE_LABEL) as CaregiverRole[]).map((r) => (
+              <Chip key={r} active={form.caregiver_role === r} onClick={() => set("caregiver_role", r)}>{CAREGIVER_ROLE_LABEL[r]}</Chip>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">Hay un principal cuidador y un 2do responsable por paciente.</p>
         </div>
         <div className="space-y-1.5">
           <Label>¿Convive con el paciente?</Label>
