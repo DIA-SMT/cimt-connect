@@ -310,7 +310,7 @@ async function printClinicalForm(t: FormTemplate, f: ClinicalForm, p: PatientRec
   .firma { margin-top: 50px; width: 55%; margin-left: auto; text-align: center; border-top: 1px solid #1a2b3c; padding-top: 5px; font-size: 10pt; }
   footer { margin-top: 18px; font-size: 8.5pt; color: #7a8899; text-align: center; }
 </style></head><body>
-<header><strong>Evaluación · Centro Integral Municipal de Tartamudez</strong><div>Municipalidad de San Miguel de Tucumán · Catamarca 411</div></header>
+<header><strong>Evaluación · Dirección Centro Integral Municipal de Tartamudez</strong><div>Municipalidad de San Miguel de Tucumán · Catamarca 411</div></header>
 <h1>Área: ${esc(t.area)}</h1>
 <p class="sub">Fecha: ${esc(formatShortDate(f.form_date))}${f.status === "borrador" ? " · BORRADOR" : ""}</p>
 

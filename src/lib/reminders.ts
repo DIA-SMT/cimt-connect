@@ -68,7 +68,7 @@ export function reminderMessage(a: AgendaAppointment, professionalName?: string)
   const when = `${dayLabel(a.appointment_date)} a las ${fromMinutes(toMinutes(a.appointment_time))} hs`;
   const where = a.modality === "telemedicina" ? "por telemedicina" : `en ${CENTER.address}`;
   const withPro = professionalName ? ` con ${professionalName}` : "";
-  return `${greeting} Te recordamos ${who} en el CIMT (Centro Integral Municipal de Tartamudez) ${when}${withPro}, ${where}. ` +
+  return `${greeting} Te recordamos ${who} en el CIMT (Dirección Centro Integral Municipal de Tartamudez) ${when}${withPro}, ${where}. ` +
     `Si no ${minor ? "pueden" : "podés"} asistir, avisanos respondiendo este mensaje o llamando al ${CENTER.phoneDisplay}. ¡Gracias!`;
 }
 

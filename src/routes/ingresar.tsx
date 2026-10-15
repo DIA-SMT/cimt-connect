@@ -17,7 +17,7 @@ export const Route = createFileRoute("/ingresar")({
   head: () => ({
     meta: [
       { title: "Ingresar — CIMT" },
-      { name: "description", content: "Ingreso al portal de familias y al panel del equipo del Centro Integral Municipal de Tartamudez." },
+      { name: "description", content: "Ingreso al portal de familias y al panel del equipo de la Dirección Centro Integral Municipal de Tartamudez." },
       { name: "robots", content: "noindex" },
     ],
   }),

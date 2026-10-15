@@ -240,7 +240,7 @@ function printReport(r: Report, p: PatientRecord, pro: ProfessionalOption | unde
 </style></head>
 <body>
   <header>
-    <strong>CIMT — Centro Integral Municipal de Tartamudez</strong>
+    <strong>CIMT — Dirección Centro Integral Municipal de Tartamudez</strong>
     <div>Municipalidad de San Miguel de Tucumán · Catamarca 411 · cimt@smt.gob.ar</div>
   </header>
   <h1>Informe profesional</h1>

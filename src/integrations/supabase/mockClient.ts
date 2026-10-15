@@ -22,6 +22,7 @@ import {
   MOCK_APPOINTMENTS,
 } from "@/lib/mockData";
 import { PASSWORD_MIN, PASSWORD_MIN_MESSAGE } from "@/lib/passwords";
+import { CONSENT_VERSION, intakeGuardianError } from "@/lib/intake";
 
 type Row = Record<string, unknown>;
 
@@ -130,13 +131,15 @@ function demoDay(offset: number): string {
     patient_id: null, notes: null, created_at: nowIso, updated_at: nowIso };
   store.intake_requests.push(
     { ...reqBase, id: "req-demo-1", first_name: "Tomás", last_name: "Acosta", dni: "50222333", age: 5,
-      patient_type: "niño", phone: "381-4001122", guardian_name: "Laura Acosta (madre)", locality: "Yerba Buena",
+      patient_type: "niño", phone: "381-4001122", guardian_name: "Laura Acosta", locality: "Yerba Buena", province: "Tucumán",
+      guardian_dni: "28111222", guardian_relationship: "madre", guardian_consent_at: nowIso, consent_version: CONSENT_VERSION,
       referred_by: "Jardín de infantes", reason: "Repite sílabas al empezar las frases desde hace 4 meses.", status: "nueva" },
     { ...reqBase, id: "req-demo-2", first_name: "Camila", last_name: "Ruiz", dni: "45111999", age: 14,
-      patient_type: "adolescente", phone: "381-4556677", guardian_name: "Jorge Ruiz (padre)", locality: "Tafí Viejo",
+      patient_type: "adolescente", phone: "381-4556677", guardian_name: "Jorge Ruiz", locality: "Tafí Viejo", province: "Tucumán",
+      guardian_dni: "25999888", guardian_relationship: "padre", guardian_consent_at: nowIso, consent_version: CONSENT_VERSION,
       referred_by: null, reason: "Bloqueos al leer en voz alta en el colegio, le genera mucha ansiedad.", status: "contactada" },
     { ...reqBase, id: "req-demo-3", first_name: "Martín", last_name: "Sosa", dni: "33444555", age: 38,
-      patient_type: "adulto", phone: "381-5998877", guardian_name: null, locality: "San Miguel de Tucumán",
+      patient_type: "adulto", phone: "381-5998877", guardian_name: null, locality: "Córdoba", province: "Córdoba",
       referred_by: null, reason: "Tartamudeo desde chico, quiero empezar un tratamiento.", status: "taller",
       workshop_id: "ws-demo-1", preferred_modality: "telemedicina" },
   );
@@ -166,6 +169,10 @@ let practiceSeq = 2;
 
 // Rincón social de ejemplo (el contenido real lo carga 14_rincon_social.sql)
 store.social_corner_items.push(
+  // Ejemplo inventado, solo para ver la sección "Nuestra comunidad" en el modo demo
+  { id: "sc-demo-com", slug: null, category: "desafios", title: "Pedir en el kiosco", subtitle: "Sofía, 12 años (ejemplo de demo)",
+    description: "Antes le pedía a mi hermana que comprara por mí. Ahora practico lo que voy a decir y voy yo, aunque me trabe.",
+    link_url: null, link_label: null, image_url: null, featured: false, published: true, sort_order: 1 },
   { id: "sc-1", slug: "yo-y-la-tartamudez", category: "libros", title: "Yo y la tartamudez",
     subtitle: "Libro de la Municipalidad de San Miguel de Tucumán",
     description: "Relatos de familias y de personas con tartamudez que se atienden en el CIMT.",
@@ -577,9 +584,9 @@ function rpc(fn: string, args: Row = {}) {
     if (Number(args.p_age) < 2) {
       return Promise.resolve({ data: null, error: { message: "INVALID_AGE: El centro atiende a partir de los 2 años" } });
     }
-    if (args.p_patient_type !== "adulto" && !String(args.p_guardian_name ?? "").trim()) {
-      return Promise.resolve({ data: null, error: { message: "INVALID_GUARDIAN: Indicá el nombre del adulto responsable" } });
-    }
+    const guardianError = intakeGuardianError(args);
+    if (guardianError) return Promise.resolve({ data: null, error: { message: guardianError } });
+    const minor = args.p_patient_type !== "adulto";
     const open = store.intake_requests.some((r) => r.dni === args.p_dni && ["nueva", "contactada", "taller"].includes(String(r.status)));
     if (open) {
       return Promise.resolve({ data: null, error: { message: "ALREADY_REQUESTED: Ya tenemos una solicitud en curso con ese DNI. El equipo se va a comunicar al teléfono que dejaste." } });
@@ -588,7 +595,10 @@ function rpc(fn: string, args: Row = {}) {
     const row: Row = {
       id: `req-${Date.now()}`, first_name: args.p_first_name, last_name: args.p_last_name, dni: args.p_dni,
       age: Number(args.p_age), patient_type: args.p_patient_type, phone: args.p_phone, email: args.p_email ?? null,
-      guardian_name: args.p_guardian_name ?? null, locality: args.p_locality ?? null, address: args.p_address ?? null,
+      guardian_name: minor ? args.p_guardian_name : null, locality: args.p_locality ?? null, address: args.p_address ?? null,
+      province: args.p_province ?? null, guardian_dni: minor ? args.p_guardian_dni : null,
+      guardian_relationship: minor ? args.p_guardian_relationship : null,
+      guardian_consent_at: minor ? nowIso : null, consent_version: minor ? args.p_consent_version : null,
       preferred_modality: args.p_preferred_modality ?? "presencial", referred_by: args.p_referred_by ?? null,
       reason: args.p_reason, status: "nueva", workshop_id: null, workshop_attended: null, patient_id: null,
       notes: null, created_at: nowIso, updated_at: nowIso,

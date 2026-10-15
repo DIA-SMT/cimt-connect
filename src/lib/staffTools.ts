@@ -115,7 +115,7 @@ export const STAFF_ROLE_LABEL: Record<string, string> = {
 export function staffSystemPrompt(staff: { role: string; full_name: string | null; email: string; professional_name?: string | null }, now = new Date()): string {
   const who = staff.full_name || staff.email;
   const role = STAFF_ROLE_LABEL[staff.role] ?? staff.role;
-  return `Sos Migue, el asistente interno del CIMT (Centro Integral Municipal de Tartamudez) para el equipo, dentro del panel.
+  return `Sos Migue, el asistente interno del CIMT (Dirección Centro Integral Municipal de Tartamudez) para el equipo, dentro del panel.
 Estás hablando con ${who} (rol: ${role}${staff.professional_name ? `, profesional vinculado: ${staff.professional_name}` : ""}).
 Hoy es ${centerLongDate(now)} (${centerToday(now)}), son las ${centerTime(now)} en Tucumán.
 

@@ -4,18 +4,19 @@ import { Button } from "@/components/ui/button";
 import {
   MapPin, Clock, Phone, Mail, CalendarCheck, Stethoscope,
   HeartHandshake, Users, Sparkles, ArrowRight,
-  Info, AlertCircle, Baby, Activity, CheckCircle2, Scale,
+  Info, AlertCircle, Baby, Activity, CheckCircle2, Scale, ListChecks,
 } from "lucide-react";
 import heroImg from "@/assets/hero.jpg";
 import { CENTER } from "@/lib/center";
 import { ServicesGrid } from "@/components/ServicesGrid";
+import { RequirementsList } from "@/components/Requirements";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "CIMT — Centro Integral Municipal de Tartamudez | San Miguel de Tucumán" },
-      { name: "description", content: "Atención gratuita e interdisciplinaria de la tartamudez en Catamarca 411, San Miguel de Tucumán. Detección temprana, diagnóstico y tratamiento integral." },
-      { property: "og:title", content: "CIMT — Centro Integral Municipal de Tartamudez" },
+      { title: "CIMT — Dirección Centro Integral Municipal de Tartamudez | San Miguel de Tucumán" },
+      { name: "description", content: "Atención gratuita e interdisciplinaria de la tartamudez. Estamos en Catamarca 411, San Miguel de Tucumán, Argentina, y recibimos consultas de todo el país." },
+      { property: "og:title", content: "CIMT — Dirección Centro Integral Municipal de Tartamudez" },
       { property: "og:description", content: "Atención gratuita e interdisciplinaria de la disfluencia. Solicitá tu turno online." },
     ],
   }),
@@ -71,13 +72,15 @@ function Index() {
       <section className="relative overflow-hidden">
         <div className="container mx-auto grid gap-10 px-4 py-10 md:grid-cols-2 md:gap-12 md:px-6 md:py-16 lg:py-20">
           <div className="flex flex-col justify-center">
-            <h1 className="font-hand text-5xl leading-[1.05] text-[color:var(--primary-deep)] sm:text-6xl lg:text-7xl">
+            <h1 className="font-hand text-4xl leading-[1.1] text-[color:var(--primary-deep)] sm:text-5xl xl:text-6xl">
+              <span className="mb-2 block text-xl font-semibold uppercase tracking-[0.12em] text-primary sm:text-2xl">Dirección</span>
               Centro Integral Municipal de <span className="text-primary">Tartamudez</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
               Atención <strong className="text-foreground">gratuita e interdisciplinaria</strong> para
               personas con disfluencia, desde los {CENTER.minAge} años. Detección temprana, diagnóstico
-              y tratamiento integral en San Miguel de Tucumán.
+              y tratamiento integral. Estamos en San Miguel de Tucumán, Argentina, y{" "}
+              <strong className="text-foreground">recibimos consultas de todo el país</strong>.
             </p>
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -171,6 +174,31 @@ function Index() {
             </div>
           </div>
           <Button asChild size="lg" className="h-12 shrink-0 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
+            <Link to="/turnos">
+              Solicitar turno
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* REQUISITOS */}
+      <section id="requisitos" className="container mx-auto scroll-mt-24 px-4 pb-16 md:px-6 md:pb-20">
+        <div className="mx-auto max-w-3xl text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[color:var(--primary-deep)]">
+            <ListChecks className="h-3.5 w-3.5" />
+            Ingreso
+          </div>
+          <h2 className="font-hand mt-4 text-4xl text-[color:var(--primary-deep)] sm:text-5xl">
+            ¿Cuáles son los requisitos?
+          </h2>
+          <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+            Estos son los requisitos para ser paciente del CIMT:
+          </p>
+        </div>
+        <RequirementsList className="mx-auto mt-10 max-w-4xl" />
+        <div className="mt-8 flex justify-center">
+          <Button asChild size="lg" className="h-12 rounded-full bg-primary px-7 font-semibold hover:bg-[color:var(--primary-deep)]">
             <Link to="/turnos">
               Solicitar turno
               <ArrowRight className="ml-1 h-4 w-4" />
@@ -281,6 +309,7 @@ function Index() {
             </h2>
             <p className="mt-3 text-muted-foreground">
               Estamos ubicados en pleno centro de San Miguel de Tucumán. Ingreso libre y gratuito.
+              Si vivís en otra ciudad o provincia, también podés pedir atención por telemedicina.
             </p>
             <ul className="mt-6 space-y-4">
               <ContactItem icon={MapPin} label="Dirección" value={`${CENTER.address}, ${CENTER.city}`} />

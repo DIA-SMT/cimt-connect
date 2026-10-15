@@ -2,6 +2,7 @@
 // Esquema en supabase/sql_para_copiar/12_circuito_turnos.sql
 
 import type { PatientType } from "@/lib/patients";
+import type { GuardianRelationship } from "@/lib/intake";
 
 export type IntakeStatus = "nueva" | "contactada" | "taller" | "admitida" | "no_corresponde";
 export type Attendance = "presente" | "ausente" | "justificado";
@@ -17,7 +18,13 @@ export type IntakeRequest = {
   phone: string;
   email: string | null;
   guardian_name: string | null;
+  /** Datos del adulto responsable y su consentimiento (menores, desde el script 28) */
+  guardian_dni?: string | null;
+  guardian_relationship?: GuardianRelationship | null;
+  guardian_consent_at?: string | null;
+  consent_version?: string | null;
   locality: string | null;
+  province?: string | null;
   address: string | null;
   preferred_modality: Modality;
   referred_by: string | null;

@@ -30,8 +30,8 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "CIMT — Centro Integral Municipal de Tartamudez" },
-      { name: "description", content: "Atención gratuita e interdisciplinaria de la disfluencia en San Miguel de Tucumán. Solicitá tu turno online." },
+      { title: "CIMT — Dirección Centro Integral Municipal de Tartamudez" },
+      { name: "description", content: "Atención gratuita e interdisciplinaria de la disfluencia. Desde San Miguel de Tucumán, Argentina, para todo el país. Solicitá tu turno online." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

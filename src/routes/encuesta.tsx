@@ -15,7 +15,7 @@ export const Route = createFileRoute("/encuesta")({
   head: () => ({
     meta: [
       { title: "Encuesta de satisfacción — CIMT" },
-      { name: "description", content: "Contanos cómo fue tu experiencia en el Centro Integral Municipal de Tartamudez. Es anónima." },
+      { name: "description", content: "Contanos cómo fue tu experiencia en la Dirección Centro Integral Municipal de Tartamudez. Es anónima." },
       { name: "robots", content: "noindex" },
     ],
   }),

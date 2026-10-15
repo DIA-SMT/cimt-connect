@@ -9,8 +9,8 @@ export function Footer() {
           <div>
             <h3 className="text-lg font-bold text-[color:var(--primary-deep)]">CIMT</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Centro Integral Municipal de Tartamudez. Atención gratuita e interdisciplinaria
-              para personas con disfluencia.
+              {CENTER.name}. Atención gratuita e interdisciplinaria para personas con disfluencia.
+              Estamos en {CENTER.city}, Argentina, y recibimos consultas de todo el país.
             </p>
           </div>
           <div>

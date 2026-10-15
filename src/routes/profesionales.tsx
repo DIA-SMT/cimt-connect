@@ -17,7 +17,7 @@ export const Route = createFileRoute("/profesionales")({
   head: () => ({
     meta: [
       { title: "Nuestro equipo — CIMT" },
-      { name: "description", content: "Equipo interdisciplinario del Centro Integral Municipal de Tartamudez: fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
+      { name: "description", content: "Equipo interdisciplinario de la Dirección Centro Integral Municipal de Tartamudez: fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
       { property: "og:title", content: "Nuestro equipo — CIMT" },
       { property: "og:description", content: "Fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
     ],

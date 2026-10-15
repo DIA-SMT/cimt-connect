@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ExternalLink, Eye, EyeOff, Loader2, Plus, Star } from "lucide-react";
 import { TextAreaField, TextField, selectClass } from "./fields";
-import { CORNER_CATEGORY_LABEL, sortCorner, type CornerCategory, type CornerItem } from "@/lib/corner";
+import { CORNER_CATEGORY_LABEL, isCommunityCategory, sortCorner, type CornerCategory, type CornerItem } from "@/lib/corner";
 
 // Pestaña "Rincón social": el equipo administra las recomendaciones que se
 // ven en /rincon. Nada se publica hasta marcarlo como publicado.
@@ -103,6 +103,10 @@ function ItemDialog({ item, onClose, onSaved }: { item: CornerItem | null; onClo
     sort_order: String(item?.sort_order ?? 100),
   });
   const [saving, setSaving] = useState(false);
+  // Historias de pacientes: antes de publicarlas hay que confirmar la autorización escrita
+  const [authorized, setAuthorized] = useState(false);
+  const community = isCommunityCategory(form.category);
+  const needsAuthorization = community && form.published && !item?.published;
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   async function save() {
@@ -110,6 +114,10 @@ function ItemDialog({ item, onClose, onSaved }: { item: CornerItem | null; onClo
     const description = form.description.trim();
     if (title.length < 2) { toast.error("Indicá el título"); return; }
     if (description.length < 10) { toast.error("Escribí una descripción (al menos 10 caracteres)"); return; }
+    if (needsAuthorization && !authorized) {
+      toast.error("Para publicar la historia, confirmá que tenés la autorización escrita");
+      return;
+    }
     for (const [label, url] of [["link", form.link_url], ["imagen", form.image_url]] as const) {
       if (url.trim() && !/^https?:\/\//.test(url.trim())) { toast.error(`El ${label} tiene que empezar con https://`); return; }
     }
@@ -142,7 +150,7 @@ function ItemDialog({ item, onClose, onSaved }: { item: CornerItem | null; onClo
           <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">
             {item ? "Editar recomendación" : "Nueva recomendación"}
           </DialogTitle>
-          <DialogDescription>Personas, películas, libros, artistas o deportistas relacionados con la tartamudez.</DialogDescription>
+          <DialogDescription>Personas, películas, libros, artistas o deportistas relacionados con la tartamudez, o historias de pacientes del CIMT.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -177,6 +185,22 @@ function ItemDialog({ item, onClose, onSaved }: { item: CornerItem | null; onClo
               <Switch id="sc-pub" checked={form.published} onCheckedChange={(v) => set("published", v)} />
             </div>
           </div>
+          {community && (
+            <div className="space-y-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+              <p>
+                <strong>Historia de un paciente.</strong> Publicala solo con la autorización escrita del paciente
+                (y de su adulto responsable si es menor), con el nombre o las iniciales que elija y sin fotos
+                de la cara de menores. Guardá la autorización en su legajo.
+              </p>
+              {needsAuthorization && (
+                <label className="flex cursor-pointer items-start gap-2.5 font-semibold">
+                  <input type="checkbox" checked={authorized} onChange={(e) => setAuthorized(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[color:var(--primary)]" />
+                  Tengo la autorización escrita para publicar esta historia
+                </label>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
             <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">

@@ -3,19 +3,27 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, BookOpen, Clapperboard, ExternalLink, Loader2, Mic2, PlayCircle, Sparkles, Trophy, Users } from "lucide-react";
+import {
+  ArrowRight, BookOpen, Clapperboard, ExternalLink, Footprints, HeartHandshake, Loader2, MessagesSquare, Mic2, Mountain,
+  PlayCircle, Sparkles, Trophy, Users,
+} from "lucide-react";
 import { CENTER } from "@/lib/center";
-import { CORNER_CATEGORY_LABEL, sortCorner, type CornerCategory, type CornerItem } from "@/lib/corner";
+import {
+  COMMUNITY_CATEGORIES, COMMUNITY_CATEGORY_TEXT, CORNER_CATEGORY_LABEL, isCommunityCategory, sortCorner,
+  type CornerCategory, type CornerItem,
+} from "@/lib/corner";
 
-// Rincón social: espacio motivacional con personas que tartamudean, películas,
-// libros, artistas y deportistas. El contenido lo administra el equipo desde
-// el panel (pestaña "Rincón social"); acá se muestra solo lo publicado.
+// Rincón social: espacio motivacional. Arriba, "Nuestra comunidad": historias
+// de pacientes del CIMT que se animan a contar su experiencia. Abajo, personas
+// que tartamudean, películas, libros, artistas y deportistas. El contenido lo
+// administra el equipo desde el panel (pestaña "Rincón social"); acá se
+// muestra solo lo publicado.
 
 export const Route = createFileRoute("/rincon")({
   head: () => ({
     meta: [
       { title: "Rincón social — CIMT" },
-      { name: "description", content: "Historias, películas, libros, artistas y deportistas que inspiran: la tartamudez no define lo que una persona puede lograr." },
+      { name: "description", content: "Historias de nuestros pacientes, películas, libros, artistas y deportistas que inspiran: la tartamudez no define lo que una persona puede lograr." },
       { property: "og:title", content: "Rincón social — CIMT" },
       { property: "og:description", content: "Historias que inspiran sobre la tartamudez." },
     ],
@@ -29,6 +37,20 @@ const CATEGORY_ICON: Record<CornerCategory, typeof Users> = {
   deportistas: Trophy,
   peliculas: Clapperboard,
   libros: BookOpen,
+  pacientes: HeartHandshake,
+  desafios: Mountain,
+  experiencias: MessagesSquare,
+  huellas: Footprints,
+};
+
+type CommunityCategory = (typeof COMMUNITY_CATEGORIES)[number];
+
+// Un color por sección de "Nuestra comunidad" (texto oscuro sobre fondo claro)
+const COMMUNITY_COLOR: Record<CommunityCategory, { card: string; icon: string }> = {
+  pacientes: { card: "border-sky-300 bg-sky-50 text-sky-950", icon: "bg-sky-700 text-white" },
+  desafios: { card: "border-amber-300 bg-amber-50 text-amber-950", icon: "bg-amber-700 text-white" },
+  experiencias: { card: "border-violet-300 bg-violet-50 text-violet-950", icon: "bg-violet-700 text-white" },
+  huellas: { card: "border-emerald-300 bg-emerald-50 text-emerald-950", icon: "bg-emerald-700 text-white" },
 };
 
 function RinconPage() {
@@ -40,13 +62,16 @@ function RinconPage() {
       .then(({ data }: { data: CornerItem[] | null }) => setItems(sortCorner(data ?? [])));
   }, []);
 
-  const featured = items?.filter((i) => i.featured) ?? [];
+  // Las historias de pacientes van en su sección; el resto, como siempre
+  const community = useMemo(() => (items ?? []).filter((i) => isCommunityCategory(i.category)), [items]);
+  const inspiration = useMemo(() => (items ?? []).filter((i) => !isCommunityCategory(i.category)), [items]);
+  const featured = inspiration.filter((i) => i.featured);
   const rest = useMemo(
-    () => (items ?? []).filter((i) => !i.featured && (filter === "todo" || i.category === filter)),
-    [items, filter],
+    () => inspiration.filter((i) => !i.featured && (filter === "todo" || i.category === filter)),
+    [inspiration, filter],
   );
   const categories = (Object.keys(CORNER_CATEGORY_LABEL) as CornerCategory[])
-    .filter((c) => items?.some((i) => !i.featured && i.category === c));
+    .filter((c) => inspiration.some((i) => !i.featured && i.category === c));
 
   return (
     <Layout>
@@ -59,17 +84,25 @@ function RinconPage() {
             Historias que inspiran
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-muted-foreground">
-            Personas, películas, libros, artistas y deportistas que muestran que la tartamudez
-            <strong className="text-foreground"> no define lo que una persona puede lograr</strong>.
+            Nuestros pacientes, y también personas, películas, libros, artistas y deportistas que muestran
+            que la tartamudez <strong className="text-foreground">no define lo que una persona puede lograr</strong>.
           </p>
         </div>
       </section>
 
+      {items === null ? (
+        <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
+      ) : (
+        <CommunitySection items={community} />
+      )}
+
       <section className="container mx-auto px-4 pb-16 md:px-6">
-        {items === null ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
-        ) : items.length === 0 ? (
-          <p className="py-16 text-center text-muted-foreground">Muy pronto vamos a compartir recomendaciones en este espacio.</p>
+        <div className="mx-auto mb-8 max-w-2xl text-center">
+          <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">Personalidades y recomendaciones</h2>
+          <p className="mt-3 text-muted-foreground">Figuras, artistas, deportistas, películas y libros.</p>
+        </div>
+        {items === null ? null : inspiration.length === 0 ? (
+          <p className="py-10 text-center text-muted-foreground">Muy pronto vamos a compartir recomendaciones en este espacio.</p>
         ) : (
           <>
             {featured.map((item) => <FeaturedCard key={item.id} item={item} />)}
@@ -101,6 +134,72 @@ function RinconPage() {
         </div>
       </section>
     </Layout>
+  );
+}
+
+// "Nuestra comunidad": una tarjeta de color por sección (lleva a la sección)
+// y, abajo, las historias publicadas de cada una. "Dejar tu huella" siempre se
+// muestra, con la invitación a contar la propia historia.
+function CommunitySection({ items }: { items: CornerItem[] }) {
+  const byCategory = (c: CommunityCategory) => sortCorner(items.filter((i) => i.category === c));
+  return (
+    <section id="comunidad" className="container mx-auto px-4 pb-16 md:px-6">
+      <div className="mx-auto max-w-2xl text-center">
+        <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">Nuestra comunidad</h2>
+        <p className="mt-3 text-muted-foreground">
+          Pacientes del CIMT que se animan a contar su experiencia, para que nadie se sienta solo.
+        </p>
+      </div>
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {COMMUNITY_CATEGORIES.map((c) => {
+          const Icon = CATEGORY_ICON[c];
+          const count = byCategory(c).length;
+          const action = c === "huellas" ? "Dejá la tuya"
+            : count === 0 ? "Muy pronto" : count === 1 ? "Ver 1 historia" : `Ver ${count} historias`;
+          return (
+            <a key={c} href={`#${c}`}
+              className={`group flex flex-col gap-3 rounded-3xl border-2 p-5 transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elegant)] ${COMMUNITY_COLOR[c].card}`}>
+              <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${COMMUNITY_COLOR[c].icon}`}>
+                <Icon className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <span className="text-lg font-bold leading-tight">{CORNER_CATEGORY_LABEL[c]}</span>
+              <span className="text-sm leading-relaxed">{COMMUNITY_CATEGORY_TEXT[c]}</span>
+              <span className="mt-auto text-sm font-semibold">
+                {action}
+                <ArrowRight className="ml-1 inline h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </span>
+            </a>
+          );
+        })}
+      </div>
+
+      {COMMUNITY_CATEGORIES.map((c) => {
+        const list = byCategory(c);
+        if (c !== "huellas" && list.length === 0) return null;
+        return (
+          <div key={c} id={c} className="mt-12 scroll-mt-24">
+            <h3 className="font-display text-2xl font-bold text-[color:var(--primary-deep)]">{CORNER_CATEGORY_LABEL[c]}</h3>
+            {list.length > 0 && (
+              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {list.map((item) => <ItemCard key={item.id} item={item} />)}
+              </div>
+            )}
+            {c === "huellas" && (
+              <div className={`mt-5 rounded-3xl border-2 p-6 ${COMMUNITY_COLOR.huellas.card}`}>
+                <p className="text-lg font-bold">¿Querés dejar tu huella?</p>
+                <p className="mt-2 leading-relaxed">
+                  Si te atendés en el CIMT y querés contar tu historia o dejar un mensaje para quienes recién
+                  empiezan, hablá con tu profesional o escribinos a{" "}
+                  <a href={`mailto:${CENTER.email}`} className="font-semibold underline">{CENTER.email}</a>.
+                  La publicamos solo con tu autorización (y la de tu adulto responsable, si sos menor).
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

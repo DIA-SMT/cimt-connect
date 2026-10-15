@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { CalendarPlus, CheckCircle2, Loader2, Phone, Search, UserPlus, Users, XCircle } from "lucide-react";
 import { selectClass } from "./fields";
 import { PATIENT_TYPE_LABEL, formatShortDate, todayKey } from "@/lib/patients";
+import { GUARDIAN_RELATIONSHIP_LABEL, localityWithProvince } from "@/lib/intake";
 import {
   INTAKE_STATUS_COLOR, INTAKE_STATUS_LABEL, longDate,
   type IntakeRequest, type IntakeStatus, type Workshop,
@@ -81,7 +82,7 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
         phone: r.phone,
         email: r.email,
         patient_type: r.patient_type,
-        locality: r.locality,
+        locality: localityWithProvince(r.locality, r.province),
         address: r.address,
         referred_by: r.referred_by,
         guardian_name: r.guardian_name,
@@ -93,6 +94,8 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
       if (r.guardian_name) {
         await supabase.from("patient_guardians").insert({
           patient_id: patientId, full_name: r.guardian_name, phone: r.phone, is_primary: true,
+          dni: r.guardian_dni ?? null, email: r.email,
+          relationship: r.guardian_relationship ? GUARDIAN_RELATIONSHIP_LABEL[r.guardian_relationship].toLowerCase() : null,
         });
       }
     }
@@ -166,7 +169,7 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {r.age} años · {PATIENT_TYPE_LABEL[r.patient_type]} · {r.phone}
-                        {r.guardian_name && ` · Responsable: ${r.guardian_name}`}{r.locality && ` · ${r.locality}`}
+                        {r.guardian_name && ` · Responsable: ${r.guardian_name}`}{r.locality && ` · ${localityWithProvince(r.locality, r.province)}`}
                       </div>
                       {w && (
                         <div className="text-xs font-semibold text-[color:var(--primary-deep)]">
@@ -281,8 +284,9 @@ function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate,
           <Item label="Edad" value={`${r.age} años (${PATIENT_TYPE_LABEL[r.patient_type]})`} />
           <Item label="Teléfono" value={<a href={`tel:${r.phone.replace(/[^\d+]/g, "")}`} className="font-semibold hover:underline"><Phone className="mr-1 inline h-3.5 w-3.5" />{r.phone}</a>} />
           <Item label="Email" value={r.email ?? "—"} />
-          {r.guardian_name && <Item label="Adulto responsable" value={r.guardian_name} />}
-          <Item label="Localidad" value={r.locality ?? "—"} />
+          {r.guardian_name && <Item label="Adulto responsable" value={guardianLine(r)} />}
+          {r.guardian_name && <Item label="Consentimiento informado" value={consentLine(r)} />}
+          <Item label="Localidad" value={localityWithProvince(r.locality, r.province) ?? "—"} />
           <Item label="Domicilio" value={r.address ?? "—"} />
           <Item label="Modalidad preferida" value={r.preferred_modality === "telemedicina" ? "Telemedicina" : "Presencial"} />
           {r.referred_by && <Item label="Derivado por" value={r.referred_by} />}
@@ -501,6 +505,25 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       {children}
     </button>
   );
+}
+
+// "Laura Acosta · Madre · DNI 28111222" (las solicitudes viejas solo tienen el nombre)
+function guardianLine(r: IntakeRequest): string {
+  return [
+    r.guardian_name,
+    r.guardian_relationship && GUARDIAN_RELATIONSHIP_LABEL[r.guardian_relationship],
+    r.guardian_dni && `DNI ${r.guardian_dni}`,
+  ].filter(Boolean).join(" · ");
+}
+
+// Fecha y hora del centro en que el adulto responsable aceptó el consentimiento
+function consentLine(r: IntakeRequest): string {
+  if (!r.guardian_consent_at) return "Sin registrar: pedirlo en el centro";
+  const when = new Date(r.guardian_consent_at).toLocaleString("es-AR", {
+    timeZone: "America/Argentina/Tucuman", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+  return `Dado el ${when} hs${r.consent_version ? ` (texto ${r.consent_version})` : ""}`;
 }
 
 function Item({ label, value }: { label: string; value: React.ReactNode }) {
