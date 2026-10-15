@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CalendarPlus, CheckCircle2, Loader2, Phone, Search, UserPlus, Users, XCircle } from "lucide-react";
 import { selectClass } from "./fields";
-import { PATIENT_TYPE_LABEL, formatShortDate, todayKey } from "@/lib/patients";
+import { PATIENT_TYPE_LABEL, formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
 import { GUARDIAN_RELATIONSHIP_LABEL, localityWithProvince } from "@/lib/intake";
 import {
   INTAKE_STATUS_COLOR, INTAKE_STATUS_LABEL, longDate,
@@ -25,11 +25,15 @@ type Props = {
   onOpenPatient: (patientId: string) => void;
   /** Avisa al panel que cambió la cantidad de solicitudes nuevas */
   onCountChange: (nuevas: number) => void;
+  /** Para derivar cada solicitud al profesional que la va a atender */
+  professionals: ProfessionalOption[];
+  /** Solo Dirección deriva (la base también lo controla) */
+  canAssign: boolean;
 };
 
 const OPEN_STATUSES: IntakeStatus[] = ["nueva", "contactada", "taller"];
 
-export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
+export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssign }: Props) {
   const [requests, setRequests] = useState<IntakeRequest[]>([]);
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +67,10 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
 
   async function update(id: string, patch: Partial<IntakeRequest>, okMessage?: string) {
     const { error } = await supabase.from("intake_requests").update(patch).eq("id", id);
-    if (error) { toast.error("No se pudo actualizar la solicitud"); return false; }
+    if (error) {
+      toast.error(error.message?.startsWith("NOT_ALLOWED") ? "Solo Dirección puede derivar solicitudes" : "No se pudo actualizar la solicitud");
+      return false;
+    }
     patchLocal(id, patch);
     if (okMessage) toast.success(okMessage);
     return true;
@@ -87,6 +94,8 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
         referred_by: r.referred_by,
         guardian_name: r.guardian_name,
         guardian_phone: r.guardian_name ? r.phone : null,
+        // El profesional al que Dirección derivó la solicitud queda como profesional de la ficha
+        professional_id: r.assigned_professional_id ?? null,
       }).select().single();
       if (error || !data) { toast.error("No se pudo crear la ficha del paciente"); return; }
       patientId = (data as { id: string }).id;
@@ -107,6 +116,7 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
   }
 
   const workshopById = useMemo(() => new Map(workshops.map((w) => [w.id, w])), [workshops]);
+  const proName = useMemo(() => new Map(professionals.map((p) => [p.id, p.name])), [professionals]);
   const upcoming = workshops.filter((w) => !w.canceled && w.workshop_date >= todayKey())
     .sort((a, b) => a.workshop_date.localeCompare(b.workshop_date));
 
@@ -165,6 +175,13 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
                         <span className="font-bold">{r.last_name}, {r.first_name}</span>
                         <StatusBadge status={r.status} />
                         {r.preferred_modality === "telemedicina" && <span className="text-xs font-semibold text-[color:var(--primary-deep)]">Telemedicina</span>}
+                        {r.assigned_professional_id ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900">
+                            → {proName.get(r.assigned_professional_id) ?? "Profesional"}
+                          </span>
+                        ) : OPEN_STATUSES.includes(r.status) && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Sin derivar</span>
+                        )}
                         <span className="ml-auto text-xs text-muted-foreground">{formatShortDate(r.created_at)}</span>
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -231,6 +248,8 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
           onUpdate={(patch, msg) => update(openRequest.id, patch, msg)}
           onAdmit={() => admit(openRequest)}
           onOpenPatient={onOpenPatient}
+          professionals={professionals}
+          canAssign={canAssign}
         />
       )}
       {openWorkshop && (
@@ -248,7 +267,9 @@ export function IntakeTab({ onOpenPatient, onCountChange }: Props) {
 
 // ─── Detalle de una solicitud ────────────────────────────────────────────────
 
-function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate, onAdmit, onOpenPatient }: {
+function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate, onAdmit, onOpenPatient, professionals, canAssign }: {
+  professionals: ProfessionalOption[];
+  canAssign: boolean;
   request: IntakeRequest;
   workshops: Workshop[];
   workshopById: Map<string, Workshop>;
@@ -295,6 +316,10 @@ function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate,
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Motivo</div>
           <p className="mt-1 whitespace-pre-wrap">{r.reason}</p>
         </div>
+
+        <AssignBox request={r} professionals={professionals} canAssign={canAssign} busy={busy}
+          onAssign={(id) => run(() => onUpdate({ assigned_professional_id: id },
+            id ? "Solicitud derivada" : "Se quitó la derivación"))} />
 
         <div className="space-y-1.5">
           <Label htmlFor="intake-notes">Notas internas</Label>
@@ -504,6 +529,45 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
     ].join(" ")}>
       {children}
     </button>
+  );
+}
+
+// Derivación: Dirección elige el profesional que va a atender la solicitud.
+// Al admitir, ese profesional queda en la ficha.
+function AssignBox({ request: r, professionals, canAssign, busy, onAssign }: {
+  request: IntakeRequest;
+  professionals: ProfessionalOption[];
+  canAssign: boolean;
+  busy: boolean;
+  onAssign: (professionalId: string | null) => void;
+}) {
+  const [choice, setChoice] = useState(r.assigned_professional_id ?? "");
+  const current = professionals.find((p) => p.id === r.assigned_professional_id);
+  const when = r.assigned_at ? ` el ${formatShortDate(r.assigned_at)}` : "";
+  const who = r.assigned_by ? ` por ${r.assigned_by}` : "";
+  const options = professionals.filter((p) => p.active !== false || p.id === r.assigned_professional_id);
+  return (
+    <div className="space-y-2 rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 p-4">
+      <Label htmlFor="intake-assign" className="font-semibold">Derivación</Label>
+      <p className="text-sm">
+        {current ? <>Derivada a <strong>{current.name}</strong> ({current.specialty}){who}{when}.</>
+          : r.assigned_professional_id ? "Derivada a un profesional que ya no está en la lista." : "Todavía sin derivar."}
+      </p>
+      {canAssign ? (
+        <div className="flex flex-wrap gap-2">
+          <select id="intake-assign" value={choice} onChange={(e) => setChoice(e.target.value)} className={`${selectClass} h-9 w-auto max-w-full`}>
+            <option value="">Sin derivar</option>
+            {options.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.specialty}</option>)}
+          </select>
+          <Button size="sm" variant="outline" disabled={busy || choice === (r.assigned_professional_id ?? "")}
+            onClick={() => onAssign(choice || null)}>
+            {choice ? "Derivar" : "Quitar derivación"}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">La derivación la hace Dirección.</p>
+      )}
+    </div>
   );
 }
 

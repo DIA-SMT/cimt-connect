@@ -55,6 +55,8 @@ export type PatientRecord = {
   consent_date: string | null;
   discharge_date: string | null;
   discharge_notes: string | null;
+  /** Foto de perfil en el bucket patient-files (30_hitos_derivacion_foto.sql) */
+  photo_path?: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  ArrowRightLeft, CalendarCheck, ClipboardX, Copy, Download, FileText, Hourglass, Inbox, Loader2, Smile, UserPlus, Users, UserX,
+  ArrowRightLeft, CalendarCheck, Clock, ClipboardX, Copy, Download, FileText, Hourglass, Inbox, ListOrdered, Loader2, Smile,
+  TimerOff, UserPlus, Users, UserX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,11 +12,12 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
 import {
-  computeStats, fmt1, weekOf,
+  RESPONSE_GOAL_HOURS, computeStats, fmt1, weekOf,
   type Range, type Row, type Stats, type StatsData, type StatAppt, type StatIntake, type StatPatient,
   type StatReferral, type StatSurvey, type StatWorkshop,
 } from "@/lib/stats";
 import { exportStatsCsv, printWeeklyReport } from "./weeklyReport";
+import { MilestonesPublisher } from "./MilestonesPublisher";
 
 // Estadísticas para reportar (relevamiento 38–39). "Situación actual" no
 // depende del período; el resto cuenta solo lo que pasó dentro del período.
@@ -36,7 +38,11 @@ const BAR_COLOR = "hsl(200 78% 42%)";
 const GRID = "hsl(215 20% 92%)";
 const TICK = { fontSize: 11, fill: "hsl(215 16% 45%)" };
 
-export function StatsTab({ professionals }: { professionals: ProfessionalOption[] }) {
+export function StatsTab({ professionals, canPublish = false }: {
+  professionals: ProfessionalOption[];
+  /** Dirección: puede publicar los hitos de la landing */
+  canPublish?: boolean;
+}) {
   const [data, setData] = useState<Omit<StatsData, "professionals"> | null>(null);
   const [period, setPeriod] = useState<Period>("mes");
   const [weekly, setWeekly] = useState(false);
@@ -46,7 +52,7 @@ export function StatsTab({ professionals }: { professionals: ProfessionalOption[
       supabase.from("patients").select("id, created_at, locality, patient_type, case_status, has_health_insurance, therapy_modes, other_conditions, age"),
       supabase.from("patient_referrals").select("specialty, status, registered, referral_date, voided_at"),
       supabase.from("appointments").select("patient_id, professional_id, appointment_date, status, modality, attendance"),
-      supabase.from("intake_requests").select("created_at, status, workshop_id, workshop_attended, patient_id"),
+      supabase.from("intake_requests").select("created_at, status, workshop_id, workshop_attended, patient_id, age, province, locality, preferred_modality, referred_by, first_contact_at"),
       supabase.from("workshops").select("id, workshop_date, canceled"),
       supabase.from("satisfaction_surveys").select("*"),
     ]).then(([p, r, a, i, w, s]) => {
@@ -74,6 +80,8 @@ export function StatsTab({ professionals }: { professionals: ProfessionalOption[
   const s = stats;
   return (
     <div className="mt-6 space-y-8">
+      {canPublish && <MilestonesPublisher data={{ ...data, professionals }} />}
+
       {/* Situación actual */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -82,8 +90,9 @@ export function StatsTab({ professionals }: { professionals: ProfessionalOption[
             <FileText className="mr-1.5 h-4 w-4" /> Informe semanal
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <Tile icon={Users} label="Pacientes registrados" value={s.current.total} />
+          <Tile icon={ListOrdered} label="Lista de espera" value={s.current.waitingList} sub="Solicitudes en curso" />
           <Tile icon={Users} label="Activos" value={s.current.active} sub="En evaluación o en tratamiento" />
           <Tile icon={ArrowRightLeft} label="Derivaciones pendientes" value={s.current.pendingReferrals} />
           <Tile icon={ClipboardX} label="Sin registrar" value={s.current.unregistered} sub="Derivaciones / interconsultas" />
@@ -135,6 +144,8 @@ export function StatsTab({ professionals }: { professionals: ProfessionalOption[
             sub={`${s.intake.workshopAttended} de ${s.intake.workshopEnrolled} familias asistieron`} />
         </div>
 
+        <IntakeCard stats={s} />
+
         {/* Atención por profesional */}
         <Card title="Atención por profesional" note="Prácticas = turnos marcados como presentes.">
           {s.attention.byProfessional.length === 0 ? <Empty /> : (
@@ -180,7 +191,6 @@ export function StatsTab({ professionals }: { professionals: ProfessionalOption[
           <HBarCard title="Ingresos por edad" data={s.admissions.byAge} />
           <HBarCard title="Condiciones asociadas (ingresos)" data={s.admissions.byCondition} />
           <HBarCard title="Ingresos por obra social" data={s.admissions.byInsurance} />
-          <HBarCard title="Solicitudes por estado" data={s.intake.byStatus} unit="solicitudes" />
           <HBarCard title="Derivaciones por especialidad" data={s.referrals.bySpecialty} unit="derivaciones" />
         </div>
 
@@ -209,6 +219,48 @@ function periodRange(p: Period): Range {
   if (p === "12m") return { start: first(11), end: null };
   if (p === "anio") return { start: `${now.getFullYear()}-01-01`, end: null };
   return { start: null, end: null };
+}
+
+// ─── Solicitudes de turno ────────────────────────────────────────────────────
+
+// Cuántas personas piden turno, de dónde son y qué tan rápido se les responde
+function IntakeCard({ stats: s }: { stats: Stats }) {
+  const i = s.intake;
+  return (
+    <Card title="Solicitudes de turno" note={`Pedidos desde el sitio en el período. Respuesta = de la solicitud al primer contacto del equipo (compromiso: ${RESPONSE_GOAL_HOURS} hs).`}>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Tile icon={Inbox} label="Solicitudes" value={i.received} sub="Turnos solicitados" />
+        <Tile icon={Clock} label={`Respondidas en ${RESPONSE_GOAL_HOURS} hs`} value={i.responseOnTimePct === null ? "—" : `${i.responseOnTimePct}%`}
+          sub={i.responseCount ? `De ${i.responseCount + i.responseOverdue} con plazo cumplido o vencido` : "Todavía sin datos"} />
+        <Tile icon={Hourglass} label="Tiempo de respuesta" value={i.responseMedianHours === null ? "—" : `${fmt1(i.responseMedianHours)} hs`}
+          sub="Mediana · solicitud → primer contacto" />
+        <Tile icon={TimerOff} label="Sin respuesta en plazo" value={i.responseOverdue}
+          sub={`Nuevas con más de ${RESPONSE_GOAL_HOURS} hs`} />
+      </div>
+      <div className="mt-5">
+        <h4 className="text-sm font-semibold text-[color:var(--primary-deep)]">Solicitudes por mes</h4>
+        {i.byMonth.every((m) => m.value === 0) ? <Empty /> : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={i.byMonth} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="name" tick={TICK} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip content={<StatTooltip unit="solicitudes" />} cursor={{ fill: "hsl(200 78% 42% / 0.06)" }} />
+              <Bar dataKey="value" fill={BAR_COLOR} radius={[4, 4, 0, 0]} maxBarSize={36} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <HBarCard title="Por provincia" data={i.byProvince} unit="solicitudes" />
+        <HBarCard title="Por localidad" data={i.byLocality} unit="solicitudes" />
+        <HBarCard title="Por edad" data={i.byAge} unit="solicitudes" />
+        <HBarCard title="Modalidad que prefieren" data={i.byModality} unit="solicitudes" />
+        <HBarCard title="Quién los deriva" data={i.byReferrer} unit="solicitudes" note="«Sin dato»: nadie los derivó." />
+        <HBarCard title="Por estado" data={i.byStatus} unit="solicitudes" />
+      </div>
+    </Card>
+  );
 }
 
 // ─── Satisfacción ────────────────────────────────────────────────────────────
