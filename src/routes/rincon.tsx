@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, BookOpen, Clapperboard, ExternalLink, Loader2, Mic2, Sparkles, Trophy, Users } from "lucide-react";
+import { ArrowRight, BookOpen, Clapperboard, ExternalLink, Loader2, Mic2, PlayCircle, Sparkles, Trophy, Users } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { CORNER_CATEGORY_LABEL, sortCorner, type CornerCategory, type CornerItem } from "@/lib/corner";
 
@@ -121,13 +121,19 @@ function FeaturedCard({ item }: { item: CornerItem }) {
         {item.link_url && (
           <Button asChild className="mt-4 rounded-full bg-primary font-semibold hover:bg-[color:var(--primary-deep)]">
             <a href={item.link_url} target="_blank" rel="noopener noreferrer">
-              {item.link_label || "Ver más"} <ExternalLink className="ml-1.5 h-4 w-4" />
+              {item.link_label || "Ver más"} <LinkIcon url={item.link_url} className="ml-1.5 h-4 w-4" />
             </a>
           </Button>
         )}
       </div>
     </article>
   );
+}
+
+// Los videos de YouTube llevan el ícono de "play" en lugar del de link externo
+function LinkIcon({ url, className }: { url: string; className: string }) {
+  const isVideo = /^https:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url);
+  return isVideo ? <PlayCircle className={className} /> : <ExternalLink className={className} />;
 }
 
 function ItemCard({ item }: { item: CornerItem }) {
@@ -147,7 +153,7 @@ function ItemCard({ item }: { item: CornerItem }) {
       {item.link_url && (
         <a href={item.link_url} target="_blank" rel="noopener noreferrer"
           className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">
-          {item.link_label || "Ver más"} <ExternalLink className="h-3.5 w-3.5" />
+          {item.link_label || "Ver más"} <LinkIcon url={item.link_url} className="h-3.5 w-3.5" />
         </a>
       )}
     </article>

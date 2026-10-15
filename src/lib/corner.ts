@@ -19,7 +19,7 @@ export type CornerItem = {
 };
 
 export const CORNER_CATEGORY_LABEL: Record<CornerCategory, string> = {
-  figuras: "Figuras públicas",
+  figuras: "Figuras públicas e históricas",
   artistas: "Artistas y músicos",
   deportistas: "Deportistas",
   peliculas: "Películas y series",
