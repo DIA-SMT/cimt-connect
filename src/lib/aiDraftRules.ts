@@ -361,14 +361,18 @@ export const AI_DEFAULT_MODEL = "openai/gpt-4o-mini";
 
 type Env = Record<string, string | undefined>;
 
-// OPENROUTER_DRAFT_MODEL, si no OPENROUTER_MODEL, si no openai/gpt-4o-mini
+// OPENROUTER_DRAFT_MODEL, si no openai/gpt-4o-mini. No sigue al modelo de
+// Migue (OPENROUTER_MODEL): los borradores necesitan json_schema y
+// proveedores sin retención de datos, y un cambio en el chat no los rompe
 export function draftModel(env: Env): string {
-  return env.OPENROUTER_DRAFT_MODEL?.trim() || env.OPENROUTER_MODEL?.trim() || AI_DEFAULT_MODEL;
+  return env.OPENROUTER_DRAFT_MODEL?.trim() || AI_DEFAULT_MODEL;
 }
 
-// OPENROUTER_DRAFT_API_KEY (clave aparte, con su propio tope), si no OPENROUTER_API_KEY. null: IA apagada
+// OPENROUTER_DRAFT_API_KEY (clave aparte, con su propio tope), si no la
+// misma de Migue (OPENROUTER_API_KEY o VITE_OPENROUTER_API_KEY, como
+// server/api/chat.ts). Solo la lee el servidor. null: IA apagada
 export function draftApiKey(env: Env): string | null {
-  return env.OPENROUTER_DRAFT_API_KEY?.trim() || env.OPENROUTER_API_KEY?.trim() || null;
+  return env.OPENROUTER_DRAFT_API_KEY?.trim() || env.OPENROUTER_API_KEY?.trim() || env.VITE_OPENROUTER_API_KEY?.trim() || null;
 }
 
 // Tope del centro por día (AI_DRAFT_DAILY_CAP, 150 por defecto)

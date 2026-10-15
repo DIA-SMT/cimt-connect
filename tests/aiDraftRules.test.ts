@@ -402,10 +402,15 @@ describe("lo que ve el profesional", () => {
 describe("configuración", () => {
   test("modelo, clave y tope", () => {
     expect(draftModel({})).toBe(AI_DEFAULT_MODEL);
-    expect(draftModel({ OPENROUTER_MODEL: "x/a" })).toBe("x/a");
+    // El modelo de Migue no cambia el de los borradores
+    expect(draftModel({ OPENROUTER_MODEL: "x/a", VITE_OPENROUTER_MODEL: "x/c" })).toBe(AI_DEFAULT_MODEL);
     expect(draftModel({ OPENROUTER_MODEL: "x/a", OPENROUTER_DRAFT_MODEL: "x/b" })).toBe("x/b");
     expect(draftApiKey({})).toBeNull();
     expect(draftApiKey({ OPENROUTER_API_KEY: "k1", OPENROUTER_DRAFT_API_KEY: "k2" })).toBe("k2");
+    // Sin clave propia, la de Migue (con cualquiera de sus dos nombres)
+    expect(draftApiKey({ OPENROUTER_API_KEY: "k1", VITE_OPENROUTER_API_KEY: "k3" })).toBe("k1");
+    expect(draftApiKey({ VITE_OPENROUTER_API_KEY: "k3" })).toBe("k3");
+    expect(draftApiKey({ OPENROUTER_API_KEY: " ", VITE_OPENROUTER_API_KEY: "" })).toBeNull();
     expect(draftDailyCap({})).toBe(150);
     expect(draftDailyCap({ AI_DRAFT_DAILY_CAP: "40" })).toBe(40);
     expect(draftDailyCap({ AI_DRAFT_DAILY_CAP: "x" })).toBe(150);
