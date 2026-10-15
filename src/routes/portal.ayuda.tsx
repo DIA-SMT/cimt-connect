@@ -3,8 +3,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Phone } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { type ClinicalFeature, portalApi } from "@/lib/portal";
+import { PRACTICE_TEXT } from "@/lib/practiceRules";
 import { PageTitle } from "@/components/portal/ui";
 import { card } from "@/components/portal/styles";
+import { announcePracticeNav, practiceHomes, practicePeople } from "@/components/portal/practiceFormat";
 
 export const Route = createFileRoute("/portal/ayuda")({
   component: AyudaPage,
@@ -81,11 +83,38 @@ const CLINICAL_FAQ: Faq[] = [
   },
 ];
 
+// Medallas y ejercicios (etapa "practice"), después de la información de
+// salud. La de las medallas, si alguna persona de esta cuenta tiene algo para
+// ver (también sin plan, en "Mis logros"); las de los ejercicios, solo si
+// alguna tiene un plan publicado
+const MEDALS_FAQ: Faq[] = [
+  {
+    q: "¿Las medallas son por hablar sin trabarse?",
+    a: "No. Son por practicar y por las metas que acordaron con tu profesional, que son de práctica y de animarse. Una medalla no se pierde nunca.",
+  },
+];
+const EXERCISE_FAQ: Faq[] = [
+  {
+    q: "¿Qué pasa si un día no practicamos?",
+    a: "No pasa nada. Las medallas no se pierden nunca y no hay rachas que se corten: se retoma cuando se pueda.",
+  },
+  {
+    q: "¿Los ejercicios los hace una computadora?",
+    a: "Los arma tu profesional, a partir de ejercicios que aprobó el centro. A veces usa una herramienta de inteligencia artificial para adaptarlos, pero siempre los revisa y los aprueba antes de publicarlos.",
+  },
+  {
+    q: "¿Quién lee lo que contamos en «¿Cómo te fue?»?",
+    a: `Lo lee el equipo profesional del CIMT antes del próximo turno. No es un chat ni se contesta al momento: si es urgente, llamanos al ${CENTER.phoneDisplay}. ${PRACTICE_TEXT.emergency_hint}`,
+  },
+];
+
 function AyudaPage() {
   // Etapas prendidas para esta cuenta (null: sin sesión, sin la etapa
   // "consent" o sin conexión: los textos de siempre)
   const [features, setFeatures] = useState<ClinicalFeature[] | null>(null);
   const [canAskAppt, setCanAskAppt] = useState(false);
+  const [hasPractice, setHasPractice] = useState(false);
+  const [hasExercises, setHasExercises] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +125,10 @@ function AyudaPage() {
         if (cancelled || !r.ok) return;
         if (r.data.clinical) setFeatures(r.data.clinical.features);
         if (r.data.can_request_appts === true && r.data.children.length > 0) setCanAskAppt(true);
+        // También sin plan: la pregunta de las medallas vale para "Mis logros"
+        setHasPractice(practiceHomes(r.data).length > 0);
+        setHasExercises(practicePeople(r.data).length > 0);
+        announcePracticeNav(r.data);
       } catch { /* sin sesión o sin conexión: la ayuda se ve igual */ }
     })();
     return () => { cancelled = true; };
@@ -107,7 +140,9 @@ function AyudaPage() {
     if (f.q === APPT_Q && canAskAppt) return [{ ...f, a: APPT_A_ASK }];
     if (f.q === REPORTS_Q) {
       const reports = infoOn ? REPORTS_INFO : digital ? { ...f, a: REPORTS_A_CHOOSE } : f;
-      return features ? [reports, ...CLINICAL_FAQ] : [reports];
+      return features
+        ? [reports, ...CLINICAL_FAQ, ...(hasPractice ? MEDALS_FAQ : []), ...(hasExercises ? EXERCISE_FAQ : [])]
+        : [reports];
     }
     if (f.q === COPY_Q && digital) return [{ ...f, a: COPY_A_CHOOSE }];
     return [f];

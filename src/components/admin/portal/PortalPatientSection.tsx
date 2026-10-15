@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { supabase } from "@/integrations/supabase/client";
 import { Section, selectClass } from "../fields";
 import { todayKey } from "@/lib/patients";
 import { CLINICAL_NOTICE_VERSION, adolescentAgreed } from "@/lib/portalClinicalRules";
@@ -15,6 +16,11 @@ import {
 } from "@/lib/portalStaff";
 import { usePortalClinicalFeatures } from "./usePortalClinicalFeatures";
 import { PortalInfoEditor } from "./PortalInfoEditor";
+import { type MedalAsk, PortalPracticeSection } from "./PortalPracticeSection";
+import {
+  allowUnsaved, dropUnsaved, forgetGoalMedal, hasUnsaved, isPatientSectionMounted, ownerChange, patientSectionMounted,
+  refreshesPractice, setPanelOwner, takeGoalMedal, unsavedOwner,
+} from "./practiceHandoff";
 
 // Sección "Portal del paciente" de la ficha: quién puede ver la información
 // de salud del paciente en el Portal de familias y por qué no (eso lo ve solo
@@ -27,6 +33,7 @@ type WithoutPatient<T> = T extends unknown ? Omit<T, "patient_id"> : never;
 type ActionBody = WithoutPatient<ClinicalAction>;
 type Act = (body: ActionBody) => Promise<string | null>; // null: salió bien; si no, el mensaje de error
 type PartKey = "who" | "enable" | "adolescent" | "pause" | "block";
+type AuthSession = Parameters<typeof unsavedOwner>[0];
 
 type DialogState =
   | { kind: "verify"; row: StaffAccessRow }
@@ -44,6 +51,7 @@ const BLOCK_REASON_LABEL: Record<string, string> = {
 };
 
 const PENDING_TEXT = "text-[oklch(0.45_0.11_70)]";
+const PRACTICE_UNSAVED_CONFIRM = "Hay cambios sin guardar en «Ejercicios, devoluciones y medallas» (el plan de práctica o la devolución). ¿Cerrar igual? Se van a perder.";
 const ERROR_BOX = "rounded-xl bg-[color:var(--status-occupied-bg)] px-3 py-2 text-sm font-semibold text-[oklch(0.48_0.19_25)]";
 const PILL_BTN = "h-8 rounded-full";
 
@@ -121,7 +129,22 @@ export function PortalPatientSection({ patientId }: { patientId: string }) {
   const [dialog, setDialog] = useState<DialogState>(null);
   const current = useRef(patientId);
   const loadSeq = useRef(0);
+  // La sección de práctica avisa si tiene cambios sin guardar (plan o devolución)
+  const practiceDirty = useRef(false);
+  // «Dar la medalla» desde la bandeja, ya tomado (practiceHandoff): lo
+  // atiende la sección de práctica, una vez
+  const [medalAsk, setMedalAsk] = useState<MedalAsk | null>(null);
+  // Quién usa el panel (practiceHandoff.unsavedOwner): lo sin guardar de la
+  // práctica es solo suyo. undefined mientras se averigua; null: sin sesión.
+  // Sigue a la sesión (ownerRef: el último que se supo, para compararlo)
+  const [owner, setOwner] = useState<string | null | undefined>(undefined);
+  const ownerRef = useRef<string | null | undefined>(undefined);
+  // Sube cada vez que cambia quién usa el panel: las respuestas de antes no se usan
+  const sessionSeq = useRef(0);
+  // La práctica (más abajo) se vuelve a cargar cuando sube (practiceHandoff.refreshesPractice)
+  const [practiceRefresh, setPracticeRefresh] = useState(0);
   const contentId = useId();
+  const practiceOn = !!features?.includes("practice");
 
   // Otra ficha: se empieza de cero (y se ignoran respuestas de la anterior)
   if (forPatient !== patientId) {
@@ -134,6 +157,8 @@ export function PortalPatientSection({ patientId }: { patientId: string }) {
     setBusy(false);
     setError(null);
     setDialog(null);
+    setMedalAsk(null);
+    practiceDirty.current = false;
   }
 
   async function load() {
@@ -150,11 +175,16 @@ export function PortalPatientSection({ patientId }: { patientId: string }) {
 
   const act: Act = async (body) => {
     const id = patientId;
+    const session = sessionSeq.current;
     setBusy(true);
     setError(null);
     const r = await portalStaffApi.clinical({ ...body, patient_id: id } as ClinicalAction);
     if (current.current !== id) return "Se abrió otra ficha.";
+    // Cambió quién usa el panel mientras tanto: la sección ya empezó de cero
+    if (sessionSeq.current !== session) return "Cambió la sesión del panel: abrí de nuevo la sección.";
     setBusy(false);
+    // Se guardó algo o se trae lo último (409): la práctica también se recarga
+    if (refreshesPractice(r)) setPracticeRefresh((n) => n + 1);
     if (!r.ok) {
       // Otra persona lo cambió mientras tanto: se trae lo último
       if (r.status === 409) void load();
@@ -175,12 +205,105 @@ export function PortalPatientSection({ patientId }: { patientId: string }) {
     return !message;
   }
 
-  function toggle() {
-    if (open) { setOpen(false); return; }
+  function openSection() {
     setOpen(true);
     setError(null);
     void load();
   }
+
+  function toggle() {
+    if (!open) { openSection(); return; }
+    // Con cambios sin guardar en la práctica se pregunta antes de perderlos.
+    // Si se cierra la ficha o se abre otra (eso no pasa por acá), quedan
+    // aparte y vuelven al abrir de nuevo esta sección (practiceHandoff)
+    if (practiceDirty.current) {
+      if (!window.confirm(PRACTICE_UNSAVED_CONFIRM)) return;
+      dropUnsaved(patientId, owner);
+    }
+    practiceDirty.current = false;
+    // Un «Dar la medalla» ya atendido no se repite al volver a abrir
+    setMedalAsk(null);
+    setOpen(false);
+  }
+
+  // Quién usa el panel: con la sesión, como portalStaffApi (solo con la etapa
+  // practice), y siguiéndola: otra persona puede entrar en esta pestaña o en
+  // otra (la sesión es de todo el navegador) sin que se cierre la ficha. Si
+  // cambia (practiceHandoff.ownerChange), la sección se cierra y empieza de
+  // cero, sin preguntar ni borrar nada: lo sin guardar de quien estaba lo
+  // dejan aparte para esa persona las partes de la práctica al desmontarse, y
+  // nadie más lo ve ni lo borra. Renovar el token no cambia nada
+  useEffect(() => {
+    if (!practiceOn) return;
+    let alive = true;
+    let heard = false; // ya avisó un cambio de sesión: vale más que lo que traiga getSession
+    function follow(session: AuthSession) {
+      if (!alive) return;
+      const next = unsavedOwner(session);
+      const change = ownerChange(ownerRef.current, next);
+      if (change === "same") return;
+      ownerRef.current = next;
+      setPanelOwner(next);
+      setOwner(next);
+      if (change !== "switched") return;
+      // Lo que estaba en pantalla (y lo que esté en camino) era de la sesión anterior
+      sessionSeq.current++;
+      loadSeq.current++;
+      practiceDirty.current = false;
+      setOpen(false);
+      setDto(null);
+      setLoading(false);
+      setLoadError(null);
+      setBusy(false);
+      setError(null);
+      setDialog(null);
+      setMedalAsk(null);
+    }
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: AuthSession) => {
+      heard = true;
+      follow(session);
+    });
+    Promise.resolve()
+      .then(() => supabase.auth.getSession())
+      .then(({ data }: { data: { session: AuthSession } }) => { if (!heard) follow(data.session); })
+      .catch(() => { if (!heard) follow(null); });
+    return () => {
+      alive = false;
+      sub?.subscription?.unsubscribe();
+    };
+  }, [practiceOn]);
+
+  // Con la sección abierta (y sabiendo quién es) se vuelve a guardar aparte
+  // lo sin guardar de este paciente, aunque antes se haya cerrado
+  // confirmando que se perdía (dropUnsaved)
+  useEffect(() => {
+    if (open && owner) allowUnsaved(patientId, owner);
+  }, [open, owner, patientId]);
+
+  // «Dar la medalla» desde la bandeja (practiceHandoff): se toma acá, una
+  // vez; la sección se abre sola y la de práctica abre la devolución de esa
+  // meta con la medalla
+  useEffect(() => {
+    if (!practiceOn) return;
+    const goalId = takeGoalMedal(patientId);
+    if (!goalId) return;
+    setMedalAsk({ goalId, n: Date.now() });
+    if (!open) openSection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [practiceOn, patientId]);
+
+  // Si la ficha se cierra (o se abre otra) antes de tomar un «Dar la medalla»
+  // de este paciente (por ejemplo, mientras se averiguaban las etapas), se
+  // olvida: que no se cargue más tarde en otra ficha abierta. Se espera un
+  // momento por si se vuelve a montar enseguida
+  useEffect(() => {
+    const id = patientId;
+    const unmount = patientSectionMounted(id);
+    return () => {
+      unmount();
+      window.setTimeout(() => { if (!isPatientSectionMounted(id)) forgetGoalMedal(id); }, 0);
+    };
+  }, [patientId]);
 
   if (!features || features.length === 0) return null;
 
@@ -201,6 +324,11 @@ export function PortalPatientSection({ patientId }: { patientId: string }) {
       <div>
         <p className="text-sm font-semibold">Información de salud en el portal</p>
         {!open && <p className="text-xs text-muted-foreground">{summary(dto)}</p>}
+        {!open && practiceOn && hasUnsaved(patientId, owner) && (
+          <p className={`text-xs font-semibold ${PENDING_TEXT}`}>
+            Quedaron cambios sin guardar en «Ejercicios, devoluciones y medallas»: abrí la sección para seguir.
+          </p>
+        )}
       </div>
 
       {open && (
@@ -232,6 +360,13 @@ export function PortalPatientSection({ patientId }: { patientId: string }) {
               <Blocks dto={dto} busy={busy} error={errorFor("block")} actIn={actIn} onDialog={setDialog} />
               {/* Se recarga cuando esta sección guarda algo: «quién lo ve» y la habilitación cambian acá */}
               {features.includes("info") && <PortalInfoEditor key={patientId} patientId={patientId} refreshKey={dto} />}
+              {/* Espera a saber quién usa el panel: lo sin guardar que retoma es solo suyo (y con
+                  otra persona sería otra sección). Se recarga con practiceRefresh, no con cada carga
+                  de dto: al abrir de nuevo se carga una sola vez */}
+              {practiceOn && owner !== undefined && (
+                <PortalPracticeSection key={JSON.stringify([patientId, owner])} patientId={patientId} refreshKey={practiceRefresh}
+                  owner={owner} medalAsk={medalAsk} onDirtyChange={(d) => { practiceDirty.current = d; }} />
+              )}
             </>
           )}
         </div>
@@ -373,7 +508,9 @@ function Enablement({ dto, busy, error, actIn }: PartProps & { actIn: ActIn }) {
       </div>
       <p className="text-xs text-muted-foreground">
         {dto.features.includes("info")
-          ? "Lo que publiques en «Mi información» (más abajo) lo ven solo las personas de «Quién lo ve». Los ejercicios y las medallas llegan más adelante."
+          ? dto.features.includes("practice")
+            ? "Lo que publiques en «Mi información» y en el plan de práctica (más abajo) lo ven solo las personas de «Quién lo ve»."
+            : "Lo que publiques en «Mi información» (más abajo) lo ven solo las personas de «Quién lo ve». Los ejercicios y las medallas llegan más adelante."
           : "Todavía no hay nada para publicar: esto deja listo el acceso."}
       </p>
       {s.updated_by_email && (

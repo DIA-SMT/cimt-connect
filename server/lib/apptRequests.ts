@@ -418,6 +418,12 @@ export async function staffApptUpdate(ctx: Ctx, staffEmail: string, body: {
   if (rErr) throw new PortalError(503, OFFLINE);
   if (!row) throw new PortalError(404, "No encontramos ese pedido.");
   const current = row as StaffRow;
+  // Ya quedó agendado con este mismo turno (por ejemplo, se guardó pero no
+  // llegó la respuesta y el panel lo vuelve a enlazar): no es un cambio
+  if (to === "agendado" && current.status === "agendado" && isUuid(body.appointment_id)
+    && current.appointment_id === body.appointment_id) {
+    return (await toStaff(ctx, [current]))[0];
+  }
   if (!APPT_REQ_TRANSITIONS[current.status].includes(to)) {
     throw new PortalError(409, "Este pedido cambió mientras tanto. Actualizá la bandeja.");
   }

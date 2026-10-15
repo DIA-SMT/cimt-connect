@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { type LucideIcon, CalendarDays, CircleAlert, CircleCheck, FileHeart, Info, Loader2, ShieldCheck } from "lucide-react";
 import {
-  type ApptDTO, type ChildDTO, type FamilyClinicalDTO, type HcRequestDTO, type MeDTO, apptDateLabel, portalApi,
+  type LucideIcon, CalendarDays, CircleAlert, CircleCheck, FileHeart, Info, ListChecks, Loader2, Medal, ShieldCheck,
+} from "lucide-react";
+import {
+  type ApptDTO, type ChildDTO, type FamilyClinicalDTO, type HcRequestDTO, type MeDTO, type PracticeHomeDTO, apptDateLabel,
+  capitalize, portalApi,
 } from "@/lib/portal";
+import { centerNow } from "@/lib/portalRules";
+import { breakLine, onBreak, weekLine } from "@/lib/practiceRules";
 import { AppointmentCard, CallUs, PageTitle } from "@/components/portal/ui";
 import { HcRequestCard } from "@/components/portal/HcRequestCard";
+import { Celebration } from "@/components/portal/Celebration";
+import { announcePracticeNav, medalTerms, medalsHint, newThingsSr, whoOf } from "@/components/portal/practiceFormat";
 import {
   TONE_CLASS, card, clinicalNoticeSnoozed, newChip, pillOutline, pillPrimary, sectionTitle, snoozeClinicalNotice,
   tileLink, tileWideLink,
@@ -59,6 +66,8 @@ function InicioPage() {
       return;
     }
     setData(r.data);
+    // "Ejercicios" en la barra de abajo (sin que la barra pida /me de nuevo)
+    announcePracticeNav(r.data);
   }, [navigate]);
 
   useEffect(() => { void load(); }, [load]);
@@ -158,8 +167,24 @@ function InicioPage() {
     pageRef.current?.querySelector("h1")?.focus();
   }
 
+  // Medalla nueva que esta cuenta todavía no vio (etapa "practice"): es el
+  // aviso destacado del inicio. Con "Seguir" desaparece y el foco vuelve al título
+  const celebration = data.celebration ?? null;
+  function celebrationDone(seen?: Promise<unknown>) {
+    setData((d) => d && { ...d, celebration: null });
+    pageRef.current?.querySelector("h1")?.focus();
+    // Cuando el servidor ya la marcó como vista, las tarjetas toman su cuenta
+    // de lo nuevo ("Nuevo" en «Mis logros» / «Medallas»; una de constancia
+    // marca su grupo entero). Sin traer otra celebración: esa, en otra visita
+    void seen?.then(async () => {
+      const r = await portalApi.me();
+      if (r.ok) setData((d) => d && { ...d, children: r.data.children });
+    }).catch(() => undefined);
+  }
+
   // Información de salud (solo con la etapa prendida en el servidor): la
-  // novedad hasta que la activa (o toca "Ahora no"), y después un acceso directo
+  // novedad hasta que la activa (o toca "Ahora no"), y después un acceso
+  // directo. Un solo aviso destacado: con una celebración, la novedad espera
   const clinical = data.clinical;
   const clinicalSection = !clinical ? null
     : clinical.consent.accepted ? (
@@ -168,7 +193,7 @@ function InicioPage() {
         <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden="true" />
         Información de salud: activada →
       </Link>
-    ) : data.children.length > 0 && !clinicalSnoozed ? (
+    ) : data.children.length > 0 && !clinicalSnoozed && !celebration ? (
       <ClinicalNovelty clinical={clinical} onNotNow={clinicalNotNow} />
     ) : null;
   const infoOn = !!clinical?.features.includes("info");
@@ -193,6 +218,8 @@ function InicioPage() {
           </span>
         </p>
       </div>
+
+      {celebration && <Celebration items={[celebration]} place="inicio" onClose={celebrationDone} />}
 
       {/* Una copia para retirar o descargar (o rechazada) va antes que la novedad */}
       {readyNotice}
@@ -260,11 +287,14 @@ function CopyNotice({ req: r }: { req: HcRequestDTO }) {
 }
 
 // Tarjeta de cada persona: su próximo turno y, abajo, un cuadradito por cada
-// cosa que puede ver: sus turnos y "Mi información" (la copia del historial y,
-// con la etapa "info", lo que compartió el equipo; más adelante, ejercicios y
-// medallas). canAskAppt: el servidor ya tiene los pedidos de turno (si no, no
-// se invita a pedirlos) · hasHc: esta cuenta tiene pedidos de copia de esa
-// persona · copy: alguno está listo para retirar o para descargar
+// cosa que puede ver: sus turnos, "Mi información" (la copia del historial y,
+// con la etapa "info", lo que compartió el equipo) y, con la etapa
+// "practice", "Ejercicios" (solo con un plan publicado) y "Mis logros" /
+// "Medallas" (metas, medallas y devoluciones: también sin plan, si hay algo).
+// Dos columnas: con 3 cuadraditos, el último ocupa la fila entera; con 4, dos filas.
+// canAskAppt: el servidor ya tiene los pedidos de turno (si no, no se invita
+// a pedirlos) · hasHc: esta cuenta tiene pedidos de copia de esa persona ·
+// copy: alguno está listo para retirar o para descargar
 function PersonCard({ child: c, infoOn, canAskAppt, hasHc, copy }: {
   child: ChildDTO; infoOn: boolean; canAskAppt: boolean; hasHc: boolean; copy: CopyAction | null;
 }) {
@@ -275,8 +305,11 @@ function PersonCard({ child: c, infoOn, canAskAppt, hasHc, copy }: {
   const showInfo = c.can_request_hc || hasHc;
   const fresh = (c.clinical?.info_new ?? 0) > 0;
   const of = c.self ? "" : ` de ${c.first_name}`;
-  // Un solo acceso (sin derecho a la copia): una fila de ancho completo
-  const wide = !showInfo;
+  // Ejercicios y logros: solo si esta cuenta los puede ver y hay algo (el
+  // servidor manda null si no hay plan publicado ni metas, medallas o devoluciones)
+  const home = c.clinical?.practice === "ok" ? c.clinical.practice_home ?? null : null;
+  // Un solo acceso (sin derecho a la copia ni ejercicios ni logros): una fila de ancho completo
+  const wide = !showInfo && !home;
   const link = wide ? tileWideLink : tileLink;
   const infoHint = infoOn ? "Lo que compartió el equipo y la copia del historial" : c.self ? "Copia de tu historial" : "Copia del historial";
   const noNext = c.self
@@ -290,7 +323,7 @@ function PersonCard({ child: c, infoOn, canAskAppt, hasHc, copy }: {
           {c.next ? <>Próximo después de esta semana: <b className="text-foreground">{apptDateLabel(c.next)}</b></> : noNext}
         </p>
       </div>
-      <ul aria-label={c.self ? "Tus accesos" : `Accesos de ${c.first_name}`} className={wide ? "flex" : "grid grid-cols-2 gap-3"}>
+      <ul aria-label={c.self ? "Tus accesos" : `Accesos de ${c.first_name}`} className={wide ? "flex" : "grid grid-cols-2 gap-3 [&>li:last-child:nth-child(odd)]:col-span-2"}>
         <li className="flex min-w-0 flex-1">
           <Link to="/portal/chico/$patientId" params={{ patientId: c.id }} className={link}>
             <Tile icon={CalendarDays} label={c.self ? "Mis turnos" : "Turnos"} srLabel={of} hint={canAskAppt ? "Ver, avisar y pedir turno" : "Ver todos y avisar"} wide={wide} />
@@ -304,17 +337,60 @@ function PersonCard({ child: c, infoOn, canAskAppt, hasHc, copy }: {
             </Link>
           </li>
         )}
+        {home && <PracticeTiles child={c} home={home} of={of} />}
       </ul>
     </article>
   );
 }
 
+// "Ejercicios" / "Mis ejercicios", solo con un plan publicado (con la
+// semana: "Esta semana 2 de 3 días", o la pausa de vacaciones), y "Mis
+// logros" / "Medallas" / "Logros": metas, medallas y devoluciones, con plan o
+// sin él. Sin números para no comparar hermanos. Cada cosa en un solo lugar:
+// lo nuevo (una devolución o una medalla que esta cuenta todavía no vio) se
+// marca en "Mis logros", no en "Ejercicios"
+function PracticeTiles({ child: c, home, of }: {
+  child: ChildDTO; home: PracticeHomeDTO; of: string;
+}) {
+  const w = whoOf({ first_name: c.first_name, self: c.self, audience: home.audience });
+  const t = medalTerms(w);
+  // Solo la primera frase de la pausa ("Pausa de vacaciones: vuelve el 02/02.")
+  const paused = onBreak(home.on_break_until, centerNow().date) && home.on_break_until
+    ? `${breakLine(home.on_break_until).split(". ")[0]}.`
+    : null;
+  // Lo nuevo, dicho para el lector de pantalla: ", hay un mensaje nuevo y una medalla nueva"
+  const freshSr = newThingsSr(w, home.feedback_new, home.medals_new);
+  return (
+    <>
+      {home.has_plan && (
+        <li className="flex min-w-0">
+          <Link to="/portal/ejercicios/$patientId" params={{ patientId: c.id }} className={tileLink}>
+            <Tile icon={ListChecks} label={c.self ? "Mis ejercicios" : "Ejercicios"} srLabel={of}
+              hint={paused ?? (home.week ? capitalize(weekLine(home.week)) : "Para practicar en casa")} />
+          </Link>
+        </li>
+      )}
+      <li className="flex min-w-0">
+        <Link to="/portal/medallas/$patientId" params={{ patientId: c.id }} className={tileLink}>
+          <Tile icon={Medal} label={c.self ? "Mis logros" : capitalize(t.many)} srLabel={of}
+            hint={medalsHint(w)} fresh={freshSr !== ""} freshSr={freshSr} />
+        </Link>
+      </li>
+    </>
+  );
+}
+
 // Contenido de un acceso: ícono, nombre y una ayuda corta. fresh: hay algo
-// que esta cuenta todavía no abrió ("Nuevo") · copy: hay una copia del
-// historial lista para retirar o para descargar ("Copia lista") · wide: es el
-// único de la tarjeta y va en una fila
-function Tile({ icon: Icon, label, srLabel, hint, fresh = false, copy = null, wide = false }: {
-  icon: LucideIcon; label: string; srLabel: string; hint: string; fresh?: boolean; copy?: CopyAction | null; wide?: boolean;
+// que esta cuenta todavía no abrió ("Nuevo"; freshText y freshSr cambian el
+// texto de la marca y lo que oye el lector de pantalla) · copy: hay una copia
+// del historial lista para retirar o para descargar ("Copia lista") · wide: es
+// el único de la tarjeta y va en una fila
+function Tile({
+  icon: Icon, label, srLabel, hint, fresh = false, freshText = "Nuevo", freshSr = ", hay información nueva", copy = null,
+  wide = false,
+}: {
+  icon: LucideIcon; label: string; srLabel: string; hint: string; fresh?: boolean; freshText?: string; freshSr?: string;
+  copy?: CopyAction | null; wide?: boolean;
 }) {
   const icon = (
     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-card text-primary shadow-sm">
@@ -323,13 +399,13 @@ function Tile({ icon: Icon, label, srLabel, hint, fresh = false, copy = null, wi
   );
   // En el cuadradito, "Nuevo" va en la esquina: así no lo ensancha
   const chip = fresh && (
-    <span aria-hidden="true" className={wide ? newChip : `${newChip} absolute right-3 top-3`}>Nuevo</span>
+    <span aria-hidden="true" className={wide ? newChip : `${newChip} absolute right-3 top-3`}>{freshText}</span>
   );
   const text = (
     <span className={`flex min-w-0 flex-col gap-0.5 ${wide ? "flex-1" : ""}`}>
       <span className="break-words text-base font-bold leading-snug">
         {label}<span className="sr-only">{srLabel}</span>
-        {fresh && <span className="sr-only">, hay información nueva</span>}
+        {fresh && <span className="sr-only">{freshSr}</span>}
         {copy && (
           <span className="sr-only">
             {copy === "descargar" ? ", la copia del historial está para descargar" : ", la copia del historial está lista para retirar"}

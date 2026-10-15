@@ -4,15 +4,21 @@ import { apptRequestsFor } from "../../lib/apptRequests";
 import { activeChildren, addDaysKey, appointmentsFor, centerNow, handle, requireFamily, setup } from "../../lib/portal";
 import { childrenClinical, familyClinical, features } from "../../lib/portalClinical";
 import { infoNewCounts } from "../../lib/portalInfo";
+import { practiceHomeFor } from "../../lib/practice";
 import { hcRequestsFor } from "../../lib/requests";
 
-// GET /api/portal/me → { guardian_first_name, week, children, requests, appt_requests, can_request_appts, clinical? }
+// GET /api/portal/me → { guardian_first_name, week, children, requests, appt_requests, can_request_appts, clinical?, celebration? }
 // appt_requests: pedidos de turno de todas sus personas, los haya hecho el adulto que sea.
 // can_request_appts: se pueden pedir turnos desde el portal (false: no invitar a pedirlos).
 // clinical (y children[].clinical) solo viajan con la etapa "consent" prendida;
 // children[].clinical.info_new (lo nuevo en "Mi información"), con la etapa "info".
 // clinical.features nombra "hc_digital" solo si la copia digital está
 // disponible de verdad (con el script 25 corrido): familyClinical lo averigua.
+// Etapa "practice": children[].clinical.practice_home (cuadraditos
+// "Ejercicios", con has_plan, y "Mis logros"; null si no hay nada para ver)
+// solo para quienes la práctica da "ok", y celebration: la medalla nueva de
+// más prioridad que esta cuenta todavía no vio (las del profesional, sin su
+// nombre).
 export default defineEventHandler((event) => handle(event, async () => {
   const ctx = setup();
   const account = await requireFamily(ctx, event);
@@ -31,8 +37,18 @@ export default defineEventHandler((event) => handle(event, async () => {
   const infoOk = perChild && features().includes("info")
     ? [...perChild].filter(([, v]) => v.info === "ok").map(([id]) => id)
     : [];
-  const fresh = infoOk.length ? await infoNewCounts(ctx, account, infoOk) : new Map<string, number>();
+  // Ejercicios: semana, devoluciones y medallas nuevas, solo de quienes la
+  // cuenta puede ver (practiceHomeFor aplica la regla de acceso)
+  const withPractice = !!perChild && features().includes("practice");
+  const [fresh, practice] = await Promise.all([
+    infoOk.length ? infoNewCounts(ctx, account, infoOk) : Promise.resolve(new Map<string, number>()),
+    withPractice ? practiceHomeFor(ctx, account, children, perChild!) : Promise.resolve(null),
+  ]);
   for (const id of infoOk) perChild!.get(id)!.info_new = fresh.get(id) ?? 0;
+  for (const [id, home] of practice?.home ?? []) {
+    const v = perChild!.get(id);
+    if (v) v.practice_home = home;
+  }
   return {
     guardian_first_name: account.first_name,
     week: all.filter((a) => a.date <= weekEnd),
@@ -51,5 +67,6 @@ export default defineEventHandler((event) => handle(event, async () => {
     // 23). apptRequestsFor se fija aunque la cuenta no tenga personas vinculadas
     can_request_appts: apptRequests !== null,
     ...(clinical ? { clinical } : {}),
+    ...(withPractice ? { celebration: practice?.celebration ?? null } : {}),
   };
 }));

@@ -26,8 +26,13 @@ import { Route as PortalInformacionSaludRouteImport } from './routes/portal.info
 import { Route as PortalIngresarRouteImport } from './routes/portal.ingresar'
 import { Route as PortalPrivacidadRouteImport } from './routes/portal.privacidad'
 import { Route as PortalChicoPatientIdRouteImport } from './routes/portal.chico.$patientId'
+import { Route as PortalDevolucionesPatientIdRouteImport } from './routes/portal.devoluciones.$patientId'
+import { Route as PortalEjerciciosIndexRouteImport } from './routes/portal.ejercicios.index'
+import { Route as PortalEjerciciosPatientIdRouteImport } from './routes/portal.ejercicios.$patientId'
 import { Route as PortalInformacionPatientIdRouteImport } from './routes/portal.informacion.$patientId'
+import { Route as PortalMedallasPatientIdRouteImport } from './routes/portal.medallas.$patientId'
 import { Route as PortalPedirTurnoPatientIdRouteImport } from './routes/portal.pedir-turno.$patientId'
+import { Route as PortalPracticarExerciseIdRouteImport } from './routes/portal.practicar.$exerciseId'
 import { Route as PortalTurnoAppointmentIdRouteImport } from './routes/portal.turno.$appointmentId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -115,16 +120,44 @@ const PortalChicoPatientIdRoute = PortalChicoPatientIdRouteImport.update({
   path: '/chico/$patientId',
   getParentRoute: () => PortalRoute,
 } as any)
+const PortalDevolucionesPatientIdRoute =
+  PortalDevolucionesPatientIdRouteImport.update({
+    id: '/devoluciones/$patientId',
+    path: '/devoluciones/$patientId',
+    getParentRoute: () => PortalRoute,
+  } as any)
+const PortalEjerciciosIndexRoute = PortalEjerciciosIndexRouteImport.update({
+  id: '/ejercicios/',
+  path: '/ejercicios/',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalEjerciciosPatientIdRoute =
+  PortalEjerciciosPatientIdRouteImport.update({
+    id: '/ejercicios/$patientId',
+    path: '/ejercicios/$patientId',
+    getParentRoute: () => PortalRoute,
+  } as any)
 const PortalInformacionPatientIdRoute =
   PortalInformacionPatientIdRouteImport.update({
     id: '/informacion/$patientId',
     path: '/informacion/$patientId',
     getParentRoute: () => PortalRoute,
   } as any)
+const PortalMedallasPatientIdRoute = PortalMedallasPatientIdRouteImport.update({
+  id: '/medallas/$patientId',
+  path: '/medallas/$patientId',
+  getParentRoute: () => PortalRoute,
+} as any)
 const PortalPedirTurnoPatientIdRoute =
   PortalPedirTurnoPatientIdRouteImport.update({
     id: '/pedir-turno/$patientId',
     path: '/pedir-turno/$patientId',
+    getParentRoute: () => PortalRoute,
+  } as any)
+const PortalPracticarExerciseIdRoute =
+  PortalPracticarExerciseIdRouteImport.update({
+    id: '/practicar/$exerciseId',
+    path: '/practicar/$exerciseId',
     getParentRoute: () => PortalRoute,
   } as any)
 const PortalTurnoAppointmentIdRoute =
@@ -152,9 +185,14 @@ export interface FileRoutesByFullPath {
   '/portal/privacidad': typeof PortalPrivacidadRoute
   '/portal/': typeof PortalIndexRoute
   '/portal/chico/$patientId': typeof PortalChicoPatientIdRoute
+  '/portal/devoluciones/$patientId': typeof PortalDevolucionesPatientIdRoute
+  '/portal/ejercicios/$patientId': typeof PortalEjerciciosPatientIdRoute
   '/portal/informacion/$patientId': typeof PortalInformacionPatientIdRoute
+  '/portal/medallas/$patientId': typeof PortalMedallasPatientIdRoute
   '/portal/pedir-turno/$patientId': typeof PortalPedirTurnoPatientIdRoute
+  '/portal/practicar/$exerciseId': typeof PortalPracticarExerciseIdRoute
   '/portal/turno/$appointmentId': typeof PortalTurnoAppointmentIdRoute
+  '/portal/ejercicios/': typeof PortalEjerciciosIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -173,9 +211,14 @@ export interface FileRoutesByTo {
   '/portal/privacidad': typeof PortalPrivacidadRoute
   '/portal': typeof PortalIndexRoute
   '/portal/chico/$patientId': typeof PortalChicoPatientIdRoute
+  '/portal/devoluciones/$patientId': typeof PortalDevolucionesPatientIdRoute
+  '/portal/ejercicios/$patientId': typeof PortalEjerciciosPatientIdRoute
   '/portal/informacion/$patientId': typeof PortalInformacionPatientIdRoute
+  '/portal/medallas/$patientId': typeof PortalMedallasPatientIdRoute
   '/portal/pedir-turno/$patientId': typeof PortalPedirTurnoPatientIdRoute
+  '/portal/practicar/$exerciseId': typeof PortalPracticarExerciseIdRoute
   '/portal/turno/$appointmentId': typeof PortalTurnoAppointmentIdRoute
+  '/portal/ejercicios': typeof PortalEjerciciosIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -196,9 +239,14 @@ export interface FileRoutesById {
   '/portal/privacidad': typeof PortalPrivacidadRoute
   '/portal/': typeof PortalIndexRoute
   '/portal/chico/$patientId': typeof PortalChicoPatientIdRoute
+  '/portal/devoluciones/$patientId': typeof PortalDevolucionesPatientIdRoute
+  '/portal/ejercicios/$patientId': typeof PortalEjerciciosPatientIdRoute
   '/portal/informacion/$patientId': typeof PortalInformacionPatientIdRoute
+  '/portal/medallas/$patientId': typeof PortalMedallasPatientIdRoute
   '/portal/pedir-turno/$patientId': typeof PortalPedirTurnoPatientIdRoute
+  '/portal/practicar/$exerciseId': typeof PortalPracticarExerciseIdRoute
   '/portal/turno/$appointmentId': typeof PortalTurnoAppointmentIdRoute
+  '/portal/ejercicios/': typeof PortalEjerciciosIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -220,9 +268,14 @@ export interface FileRouteTypes {
     | '/portal/privacidad'
     | '/portal/'
     | '/portal/chico/$patientId'
+    | '/portal/devoluciones/$patientId'
+    | '/portal/ejercicios/$patientId'
     | '/portal/informacion/$patientId'
+    | '/portal/medallas/$patientId'
     | '/portal/pedir-turno/$patientId'
+    | '/portal/practicar/$exerciseId'
     | '/portal/turno/$appointmentId'
+    | '/portal/ejercicios/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -241,9 +294,14 @@ export interface FileRouteTypes {
     | '/portal/privacidad'
     | '/portal'
     | '/portal/chico/$patientId'
+    | '/portal/devoluciones/$patientId'
+    | '/portal/ejercicios/$patientId'
     | '/portal/informacion/$patientId'
+    | '/portal/medallas/$patientId'
     | '/portal/pedir-turno/$patientId'
+    | '/portal/practicar/$exerciseId'
     | '/portal/turno/$appointmentId'
+    | '/portal/ejercicios'
   id:
     | '__root__'
     | '/'
@@ -263,9 +321,14 @@ export interface FileRouteTypes {
     | '/portal/privacidad'
     | '/portal/'
     | '/portal/chico/$patientId'
+    | '/portal/devoluciones/$patientId'
+    | '/portal/ejercicios/$patientId'
     | '/portal/informacion/$patientId'
+    | '/portal/medallas/$patientId'
     | '/portal/pedir-turno/$patientId'
+    | '/portal/practicar/$exerciseId'
     | '/portal/turno/$appointmentId'
+    | '/portal/ejercicios/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -402,6 +465,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalChicoPatientIdRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/portal/devoluciones/$patientId': {
+      id: '/portal/devoluciones/$patientId'
+      path: '/devoluciones/$patientId'
+      fullPath: '/portal/devoluciones/$patientId'
+      preLoaderRoute: typeof PortalDevolucionesPatientIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/ejercicios/': {
+      id: '/portal/ejercicios/'
+      path: '/ejercicios'
+      fullPath: '/portal/ejercicios/'
+      preLoaderRoute: typeof PortalEjerciciosIndexRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/ejercicios/$patientId': {
+      id: '/portal/ejercicios/$patientId'
+      path: '/ejercicios/$patientId'
+      fullPath: '/portal/ejercicios/$patientId'
+      preLoaderRoute: typeof PortalEjerciciosPatientIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/portal/informacion/$patientId': {
       id: '/portal/informacion/$patientId'
       path: '/informacion/$patientId'
@@ -409,11 +493,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PortalInformacionPatientIdRouteImport
       parentRoute: typeof PortalRoute
     }
+    '/portal/medallas/$patientId': {
+      id: '/portal/medallas/$patientId'
+      path: '/medallas/$patientId'
+      fullPath: '/portal/medallas/$patientId'
+      preLoaderRoute: typeof PortalMedallasPatientIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/portal/pedir-turno/$patientId': {
       id: '/portal/pedir-turno/$patientId'
       path: '/pedir-turno/$patientId'
       fullPath: '/portal/pedir-turno/$patientId'
       preLoaderRoute: typeof PortalPedirTurnoPatientIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/practicar/$exerciseId': {
+      id: '/portal/practicar/$exerciseId'
+      path: '/practicar/$exerciseId'
+      fullPath: '/portal/practicar/$exerciseId'
+      preLoaderRoute: typeof PortalPracticarExerciseIdRouteImport
       parentRoute: typeof PortalRoute
     }
     '/portal/turno/$appointmentId': {
@@ -434,9 +532,14 @@ interface PortalRouteChildren {
   PortalPrivacidadRoute: typeof PortalPrivacidadRoute
   PortalIndexRoute: typeof PortalIndexRoute
   PortalChicoPatientIdRoute: typeof PortalChicoPatientIdRoute
+  PortalDevolucionesPatientIdRoute: typeof PortalDevolucionesPatientIdRoute
+  PortalEjerciciosPatientIdRoute: typeof PortalEjerciciosPatientIdRoute
   PortalInformacionPatientIdRoute: typeof PortalInformacionPatientIdRoute
+  PortalMedallasPatientIdRoute: typeof PortalMedallasPatientIdRoute
   PortalPedirTurnoPatientIdRoute: typeof PortalPedirTurnoPatientIdRoute
+  PortalPracticarExerciseIdRoute: typeof PortalPracticarExerciseIdRoute
   PortalTurnoAppointmentIdRoute: typeof PortalTurnoAppointmentIdRoute
+  PortalEjerciciosIndexRoute: typeof PortalEjerciciosIndexRoute
 }
 
 const PortalRouteChildren: PortalRouteChildren = {
@@ -447,9 +550,14 @@ const PortalRouteChildren: PortalRouteChildren = {
   PortalPrivacidadRoute: PortalPrivacidadRoute,
   PortalIndexRoute: PortalIndexRoute,
   PortalChicoPatientIdRoute: PortalChicoPatientIdRoute,
+  PortalDevolucionesPatientIdRoute: PortalDevolucionesPatientIdRoute,
+  PortalEjerciciosPatientIdRoute: PortalEjerciciosPatientIdRoute,
   PortalInformacionPatientIdRoute: PortalInformacionPatientIdRoute,
+  PortalMedallasPatientIdRoute: PortalMedallasPatientIdRoute,
   PortalPedirTurnoPatientIdRoute: PortalPedirTurnoPatientIdRoute,
+  PortalPracticarExerciseIdRoute: PortalPracticarExerciseIdRoute,
   PortalTurnoAppointmentIdRoute: PortalTurnoAppointmentIdRoute,
+  PortalEjerciciosIndexRoute: PortalEjerciciosIndexRoute,
 }
 
 const PortalRouteWithChildren =

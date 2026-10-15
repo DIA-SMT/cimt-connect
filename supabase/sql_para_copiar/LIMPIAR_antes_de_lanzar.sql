@@ -19,10 +19,12 @@
 --     Y, si se corrieron sus scripts: configuración, consentimientos,
 --     bloqueos y accesos de la información de salud (script 22), lo
 --     publicado en «Mi información» (script 23), pedidos de turno y su
---     constancia (script 24) y el registro de los PDF de la copia digital
---     de la historia clínica (script 25). Las tablas de un script opcional
---     (22, 23, 24 o 25) que todavía no se corrió se saltean: el script
---     funciona igual.
+--     constancia (script 24), el registro de los PDF de la copia digital
+--     de la historia clínica (script 25) y los ejercicios del portal:
+--     planes, ejercicios, prácticas anotadas y "¿Cómo te fue?",
+--     devoluciones, metas, medallas y borradores de la IA (script 26). Las
+--     tablas de un script opcional (22 a 26) que todavía no se corrió se
+--     saltean: el script funciona igual.
 --   · Encuestas de satisfacción, historial de cambios, límites del chat.
 --   · Reinicia la numeración de prácticas (vuelve a empezar en 000001).
 --
@@ -56,7 +58,11 @@ DECLARE
     'portal_guardian_blocks', 'patient_portal_settings',   -- script 22
     'portal_publications',                                 -- script 23
     'portal_appt_request_events', 'portal_appt_requests',  -- script 24
-    'portal_hc_documents'                                  -- script 25
+    'portal_hc_documents',                                 -- script 25
+    'patient_medals', 'patient_goals',                     -- script 26
+    'patient_practice_feedback', 'exercise_practice_notes',
+    'exercise_practice_logs', 'patient_exercises',
+    'patient_exercise_plans', 'ai_drafts'
   ];
   -- Tablas que están siempre (hasta el script 20)
   tablas text[] := ARRAY[
@@ -131,6 +137,8 @@ SELECT
   pg_temp.cuenta('public.portal_appt_requests')              AS pedidos_turno,
   pg_temp.cuenta('public.portal_publications')               AS publicaciones_portal,
   pg_temp.cuenta('public.portal_consents')                   AS consentimientos_portal,
+  pg_temp.cuenta('public.patient_exercise_plans')            AS planes_de_practica,
+  pg_temp.cuenta('public.exercise_practice_logs')            AS practicas_anotadas,
   (SELECT count(*) FROM public.satisfaction_surveys)         AS encuestas,
   (SELECT count(*) FROM public.audit_log)                    AS historial,
   (SELECT count(*) FROM public.workshops)                    AS talleres_se_conservan,

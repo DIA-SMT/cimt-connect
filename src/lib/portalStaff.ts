@@ -11,6 +11,8 @@ import { PORTAL_ENABLED, type ApiResult } from "@/lib/portal";
 import type { ClinicalBlock, ClinicalFeature, StaffClinicalDTO } from "@/lib/portalClinicalRules";
 import type { StaffInfoDTO, WithdrawReason } from "@/lib/portalInfoRules";
 import type { ApptReqRejectReason, ApptReqStaffTarget, ApptReqStatus, StaffApptRequest } from "@/lib/apptRequestRules";
+import type { PracticeAction, StaffPracticeDTO } from "@/lib/practiceRules";
+import type { AiDraftRequest, AiDraftResult } from "@/lib/aiDraftRules";
 import type {
   HcEventKind, HcRejectReason, HcSendAcks, HcStaffTarget, HcStatus, NoticeAction, NoticeResolution,
   StaffHcRequest, StaffInbox, StaffInboxCount,
@@ -124,7 +126,7 @@ function mock(): Promise<MockPortal> {
   return mockApi;
 }
 
-async function staffCall<T>(body: unknown, path: "access" | "inbox" | "clinical" = "access"): Promise<ApiResult<T>> {
+async function staffCall<T>(body: unknown, path: "access" | "inbox" | "clinical" | "practice" | "ai-draft" = "access"): Promise<ApiResult<T>> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`/api/portal-staff/${path}`, {
@@ -300,7 +302,34 @@ export const portalStaffApi = {
     if (MOCK) return (await mock()).staffInfoAction(body, issuedBy);
     return staffCall(body, "clinical");
   },
+  // Ejercicios, devoluciones, metas y medallas (etapa practice): una sola
+  // entrada para todas las acciones (ver server/api/portal-staff/practice.ts y
+  // PracticeAction); todas devuelven la vista actualizada. Escriben solo
+  // profesionales y Dirección. Errores con code: CONFLICT, REVIEW (terms),
+  // TITLE_BLOCK (terms), AI_NOT_REVIEWED, APPROACH, EXERCISES, ADOLESCENT_ACK, AUTHOR
+  async practice(body: PracticeAction): Promise<ApiResult<StaffPracticeDTO>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffPracticeAction(body, issuedBy);
+    return staffCall(body, "practice");
+  },
+  // "Adaptar con ayuda de IA" (etapa ai): borrador sobre ejercicios del
+  // catálogo (POST /api/portal-staff/ai-draft). Errores con code:
+  // AI_UNAVAILABLE (503), AI_LIMIT (429), AI_FAILED (502); ver AI_ERROR
+  async aiDraft(params: AiDraftRequest): Promise<ApiResult<AiDraftResult>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
+    if (MOCK) return (await mock()).staffAiDraft(params, issuedBy);
+    return staffCall(params, "ai-draft");
+  },
 };
+
+export type {
+  ApproachOption, CatalogEntry, ExerciseInput, FeedbackInput, GoalInput, LintOverride, PlanDraftInput, PracticeAction,
+  StaffExerciseDTO, StaffFeedbackDTO, StaffGoalDTO, StaffMedalDTO, StaffNoteDTO, StaffPlanDTO, StaffPlanVersion,
+  StaffPracticeDTO, StaffPracticeGrid, StaffPracticeInboxItem, StaffPracticePending,
+} from "@/lib/practiceRules";
+export type { AiDraftRequest, AiDraftResult, AiSentDescription, DraftFlag, ExerciseDraft } from "@/lib/aiDraftRules";
 
 export type InfoAction =
   | { action: "info_get"; patient_id: string }
