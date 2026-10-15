@@ -5,10 +5,12 @@
 // las adaptaciones, los intereses, quién acompaña, dónde, los minutos y la
 // dificultad. Cada pedido pasa por el MISMO camino del servidor:
 // buildAdaptParams (lo que viaja) → generateAdaptDraft (server/lib/aiDrafts.ts:
-// OpenRouter con el mismo prompt, las mismas preferencias de proveedor, el
-// mismo plazo y el mismo reintento, y la revisión con parseExerciseDraft y el
-// lint). No usa la base ni datos de pacientes: todo es sintético. Los límites
-// por persona y el tope del centro no aplican acá.
+// OpenRouter con el mismo prompt, el mismo esquema por pedido —draftResponseFormat:
+// «ejercicios» con una clave por cada id pedido—, las mismas preferencias de
+// proveedor, el mismo plazo y el mismo reintento, y la revisión con
+// parseExerciseDraft y el lint). Antes de gastar, cada caso arma lo que viaja
+// y su esquema (prepareEvalCase). No usa la base ni datos de pacientes: todo
+// es sintético. Los límites por persona y el tope del centro no aplican acá.
 //
 // NO corre en CI ni en bun test: llama al proveedor con una clave real y
 // gasta crédito (unos centavos de dólar por cada 100 con openai/gpt-4o-mini).
@@ -51,7 +53,7 @@ import { dirname, resolve } from "node:path";
 import {
   ADAPTATIONS, AGE_BANDS, AI_CATALOG_MAX, AI_INTERESTS_MAX, AI_MINUTES, CONTEXTS, DIFFICULTIES, INTERESTS, PROMPT_VERSION,
   type Adaptacion, type AgeBand, type AiDraftRequest, type Contexto, type Interes, type QuienAcompana,
-  buildAdaptParams, draftApiKey, draftModel, lintDraft, parseExerciseDraft,
+  buildAdaptParams, draftApiKey, draftModel, draftResponseFormat, draftToWire, lintDraft, parseExerciseDraft,
 } from "../src/lib/aiDraftRules";
 import { CATALOG_VERSION, catalogFor } from "../src/lib/exerciseCatalog";
 import { APPROACHES, type Approach, type CatalogEntry, approachAllowed } from "../src/lib/practiceRules";
@@ -188,6 +190,15 @@ export function buildEvalCases(n = 300, seed = 1): EvalCase[] {
   return cases;
 }
 
+// Lo que viaja en un caso, como lo arma el servidor, y el esquema de la
+// respuesta de ese pedido (sin red: lo usan también las pruebas). Tira si el
+// caso no sirve: el banco se corta antes de gastar.
+export function prepareEvalCase(c: EvalCase) {
+  const built = buildAdaptParams(c.request, { age: c.age, diagnosis_code: c.diagnosis_code });
+  if (!built.ok) throw new Error(`Caso ${c.id} inválido: ${built.error}`);
+  return { params: built.params, entries: built.entries, response_format: draftResponseFormat(built.params.catalogo.ids) };
+}
+
 // Muestra estratificada para la revisión humana: rota por los estratos
 // (enfoque × franja) hasta juntar "size"
 export function reviewSample(cases: EvalCase[], size = 60): string[] {
@@ -311,6 +322,8 @@ async function main() {
   if (args.n < 300) console.warn(`[ai-eval] Aviso: ${args.n} pedidos (el diseño pide 300 o más para lanzar).`);
 
   const cases = buildEvalCases(args.n, args.seed);
+  // Antes de gastar: todos los casos arman lo que viaja y su esquema por pedido
+  const prepared = cases.map(prepareEvalCase);
   const sampleIds = new Set(reviewSample(cases));
   const results: CaseResult[] = new Array(cases.length);
   console.log(`[ai-eval] ${cases.length} pedidos · modelo ${model} · prompt ${PROMPT_VERSION} · catálogo ${CATALOG_VERSION}`);
@@ -324,8 +337,7 @@ async function main() {
     while (next < cases.length && !stop.config) {
       const idx = next++;
       const c = cases[idx];
-      const built = buildAdaptParams(c.request, { age: c.age, diagnosis_code: c.diagnosis_code });
-      if (!built.ok) throw new Error(`Caso ${c.id} inválido: ${built.error}`);
+      const built = prepared[idx];
       let gen: AdaptGeneration;
       try {
         gen = await generateAdaptDraft(built.params, built.entries, { apiKey, model });
@@ -336,12 +348,13 @@ async function main() {
         stop.config = gen.error_code;
         return;
       }
-      // Se vuelve a revisar el borrador final por separado (esquema y lint)
+      // Se vuelve a revisar el borrador final por separado (esquema y lint),
+      // en la forma del modelo: una clave por cada id pedido, ni más ni menos
       let ok = gen.ok;
       let errorCode = gen.ok ? null : gen.error_code;
       let reviewFlags: string[] = [];
       if (gen.ok) {
-        const again = parseExerciseDraft(gen.draft, built.params.catalogo.ids, built.params.minutos, built.params.enfoque);
+        const again = parseExerciseDraft(draftToWire(gen.draft), built.params.catalogo.ids, built.params.minutos, built.params.enfoque);
         if (!again.ok) {
           ok = false;
           errorCode = `RECHECK_${again.code}`;

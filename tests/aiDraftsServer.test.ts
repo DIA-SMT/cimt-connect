@@ -14,14 +14,14 @@ import { aiAvailable, centerDayStart, createAdaptDraft, generateAdaptDraft } fro
 import { OPENROUTER_URL, openrouterBody, openrouterJson } from "../server/lib/openrouter";
 import { type Ctx, PortalError } from "../server/lib/portal";
 import {
-  ADAPTATIONS, AGE_BANDS, AI_ERROR, AI_PROVIDER_PREFS, AI_REQUEST_OPTIONS, AI_TITLE_HEADER, DRAFT_RESPONSE_FORMAT, INTERESTS,
+  ADAPTATIONS, AGE_BANDS, AI_CATALOG_MAX, AI_ERROR, AI_PROVIDER_PREFS, AI_REQUEST_OPTIONS, AI_TITLE_HEADER, INTERESTS,
   PROMPT_VERSION, QUIEN_ACOMPANA, type AiDraftRequest, type ExerciseDraft, ageBand, buildAdaptParams, buildAdaptPrompt,
-  describeSent, draftCenterKey, mockDraft,
+  describeSent, draftCenterKey, draftResponseFormat, draftToWire, mockDraft,
 } from "../src/lib/aiDraftRules";
 import { CATALOG, CATALOG_VERSION, catalogFor } from "../src/lib/exerciseCatalog";
 import { centerNow } from "../src/lib/portalRules";
 import { APPROACHES, approachAllowed, normalizeForLint } from "../src/lib/practiceRules";
-import { EVAL_CONFIRM_FLAG, buildEvalCases, evalPreflight, evalStrata, reviewSample } from "../scripts/ai-eval";
+import { EVAL_CONFIRM_FLAG, buildEvalCases, evalPreflight, evalStrata, prepareEvalCase, reviewSample } from "../scripts/ai-eval";
 
 // ── fetch simulado ──────────────────────────────────────────────────────────
 
@@ -220,6 +220,8 @@ const goodDraft = (req: AiDraftRequest = REQ): ExerciseDraft => {
   const b = built(req);
   return mockDraft(b.params, b.entries);
 };
+// Como lo devuelve el modelo con el esquema por pedido: una clave por id
+const goodWire = (req: AiDraftRequest = REQ) => draftToWire(goodDraft(req));
 
 async function failure(p: Promise<unknown>): Promise<PortalError> {
   try {
@@ -254,7 +256,7 @@ describe("openrouterJson", () => {
   const req = {
     model: "openai/gpt-4o-mini", apiKey: "sk-or-prueba",
     messages: [{ role: "system" as const, content: "reglas" }, { role: "user" as const, content: "pedido" }],
-    response_format: DRAFT_RESPONSE_FORMAT, provider: AI_PROVIDER_PREFS,
+    response_format: draftResponseFormat(["ef-tiempo-especial"]), provider: AI_PROVIDER_PREFS,
     temperature: AI_REQUEST_OPTIONS.temperature, max_tokens: AI_REQUEST_OPTIONS.max_tokens, title: AI_TITLE_HEADER,
   };
 
@@ -319,11 +321,13 @@ describe("openrouterJson", () => {
 describe("createAdaptDraft: borrador bien armado", () => {
   test("devuelve el borrador, lo que se mandó y el id del registro", async () => {
     const db = seed();
-    replies.push(ok(goodDraft()));
+    replies.push(ok(goodWire()));
     const out = await createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV });
     const b = built();
 
     expect(out.demo).toBe(false);
+    // La forma de adentro (lista con catalogo_id), igual que antes del esquema por pedido
+    expect(out.draft).toEqual(goodDraft());
     expect(out.draft.ejercicios.map((e) => e.catalogo_id)).toEqual(["ef-tiempo-especial", "ef-turnos-mesa"]);
     expect(out.sent).toEqual(describeSent(b.params, b.entries));
     expect(db.drafts).toHaveLength(1);
@@ -338,13 +342,14 @@ describe("createAdaptDraft: borrador bien armado", () => {
     });
     expect(row.params).toEqual(b.params);
     expect(row.output).toEqual(out.draft);
+    expect(Array.isArray((row.output as ExerciseDraft).ejercicios)).toBe(true);
     expect(row.flags).toEqual(out.flags);
     expect(typeof row.latency_ms).toBe("number");
   });
 
   test("al proveedor va solo el prompt de las reglas: sin nada que identifique al paciente ni a quien pide", async () => {
     const db = seed();
-    replies.push(ok(goodDraft()));
+    replies.push(ok(goodWire()));
     await createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV });
     expect(calls).toHaveLength(1);
     const { body, raw, headers } = calls[0];
@@ -352,7 +357,7 @@ describe("createAdaptDraft: borrador bien armado", () => {
     const prompt = buildAdaptPrompt(b.params, b.entries);
     expect(body.messages).toEqual([{ role: "system", content: prompt.system }, { role: "user", content: prompt.user }]);
     expect(body).not.toHaveProperty("user");
-    expect(body.response_format).toEqual(JSON.parse(JSON.stringify(DRAFT_RESPONSE_FORMAT)));
+    expect(body.response_format).toEqual(JSON.parse(JSON.stringify(draftResponseFormat(b.params.catalogo.ids))));
     expect(body.provider).toEqual({ ...AI_PROVIDER_PREFS });
     expect(body.temperature).toBe(0.4);
     expect(body.max_tokens).toBe(1500);
@@ -385,7 +390,7 @@ describe("createAdaptDraft: borrador bien armado", () => {
     // Lo que queda registrado y lo que ve el profesional, tampoco
     expect(JSON.stringify(db.drafts[0].params)).not.toMatch(/farfull|F98/i);
     expect(out.sent.exact).not.toMatch(/farfull|F98/i);
-    expect(db.drafts[0].prompt_version).toBe("adapt-2026-10-v4");
+    expect(db.drafts[0].prompt_version).toBe("adapt-2026-10-v5");
   });
 
   test("lee del paciente solo la fecha de nacimiento y el diagnóstico, con la sesión de quien pide; no se devuelven", async () => {
@@ -675,7 +680,7 @@ describe("createAdaptDraft: reintento, plazo y errores", () => {
       expect(system.content).toContain("ni siquiera para negarlas");
     }
     expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "LINT_BLOCK", prompt_version: PROMPT_VERSION, output: null, flags: [] });
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v4");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v5");
     // El motivo queda en los intentos (las frases que bloquearon), no en los logs
     replies.push(ok(denial));
     replies.push(ok(goodDraft()));
@@ -809,18 +814,140 @@ describe("createAdaptDraft: reintento, plazo y errores", () => {
   });
 });
 
+// ── Esquema por pedido: un ejercicio por cada id pedido ─────────────────────
+// En producción falló un pedido con CATALOG en los dos intentos: con la lista
+// de antes (catalogo_id libre) el modelo podía traer un id que no se pidió,
+// repetirlo o no traer uno. Ahora «ejercicios» tiene una clave por id pedido
+// y el proveedor (strict) no puede devolver otra cosa.
+
+type SentFormat = {
+  type: string;
+  json_schema: {
+    name: string;
+    strict: boolean;
+    schema: { properties: { ejercicios: { type: string; required: string[]; additionalProperties: boolean; properties: Record<string, { properties: Record<string, unknown> }> } } };
+  };
+};
+const sentFormat = (c: Call) => c.body.response_format as SentFormat;
+
+describe("createAdaptDraft: esquema por pedido (un ejercicio por cada id pedido)", () => {
+  test("el pedido lleva el esquema armado con los ids pedidos (el mismo en los dos intentos), con las preferencias de proveedor", async () => {
+    const db = seed();
+    replies.push(ok("no es json"));
+    replies.push(ok(goodWire()));
+    const out = await createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV });
+    expect(out.draft.ejercicios.map((e) => e.catalogo_id)).toEqual(REQ.catalog_ids);
+    expect(calls).toHaveLength(2);
+    for (const c of calls) {
+      const f = sentFormat(c);
+      expect(f).toEqual(JSON.parse(JSON.stringify(draftResponseFormat(REQ.catalog_ids))));
+      expect([f.type, f.json_schema.name, f.json_schema.strict]).toEqual(["json_schema", "borrador_ejercicios", true]);
+      const ej = f.json_schema.schema.properties.ejercicios;
+      expect(ej.type).toBe("object");
+      expect(ej.required).toEqual(REQ.catalog_ids);
+      expect(Object.keys(ej.properties)).toEqual(REQ.catalog_ids);
+      expect(ej.additionalProperties).toBe(false);
+      for (const id of REQ.catalog_ids) expect(ej.properties[id].properties).not.toHaveProperty("catalogo_id");
+      expect(c.body.provider).toEqual({ data_collection: "deny", zdr: true, require_parameters: true });
+      expect(c.body.model).toBe("openai/gpt-4o-mini");
+    }
+  });
+
+  test("generateAdaptDraft: con 1 y con AI_CATALOG_MAX ids, el esquema trae exactamente esos ids y el borrador sale en ese orden", async () => {
+    // Hoy el catálogo da hasta 3 por enfoque y edad; el esquema admite AI_CATALOG_MAX
+    const base = built().params;
+    const all = CATALOG.filter((e) => e.approach === "entorno_familia").slice(0, AI_CATALOG_MAX);
+    expect(all).toHaveLength(AI_CATALOG_MAX);
+    for (const entries of [all.slice(2, 3), all, [...all].reverse()]) {
+      calls = [];
+      const ids = entries.map((e) => e.id);
+      const params = { ...base, catalogo: { ...base.catalogo, ids } };
+      replies.push(ok(draftToWire(mockDraft(params, entries))));
+      const gen = await generateAdaptDraft(params, entries, { apiKey: "k", model: "m" });
+      expect([ids.length, gen.ok && gen.draft.ejercicios.map((e) => e.catalogo_id)]).toEqual([ids.length, ids]);
+      expect(calls).toHaveLength(1);
+      const ej = sentFormat(calls[0]).json_schema.schema.properties.ejercicios;
+      expect(ej.required).toEqual(ids);
+      expect(Object.keys(ej.properties)).toEqual(ids);
+    }
+  });
+
+  test("un id que no se pidió o uno que falta: CATALOG y se reintenta; la segunda, bien", async () => {
+    const db = seed();
+    const wire = goodWire();
+    const [a, b] = REQ.catalog_ids;
+    replies.push(ok({ ...wire, ejercicios: { [a]: wire.ejercicios[a], "ef-cuento-figuras": wire.ejercicios[b] } }));
+    replies.push(ok(wire));
+    const out = await createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV });
+    expect(calls).toHaveLength(2);
+    expect(out.draft).toEqual(goodDraft());
+    expect(db.drafts[0]).toMatchObject({ status: "generado", error_code: null });
+  });
+
+  test("si vuelve a faltar o a sobrar uno: AI_FAILED con CATALOG, registrado y sin borrador", async () => {
+    const db = seed();
+    const wire = goodWire();
+    const [a] = REQ.catalog_ids;
+    replies.push(ok({ ...wire, ejercicios: { [a]: wire.ejercicios[a] } }));
+    replies.push(ok({ ...wire, ejercicios: { ...wire.ejercicios, "ef-cuento-figuras": wire.ejercicios[a] } }));
+    const e = await failure(createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV }));
+    expect([e.status, e.extra.code]).toEqual([502, "AI_FAILED"]);
+    expect(calls).toHaveLength(2);
+    expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "CATALOG", output: null, flags: [], prompt_version: "adapt-2026-10-v5" });
+    // En el log, los códigos de los intentos (nunca el texto)
+    expect(logs.join("\n")).toContain("CATALOG/200");
+    expect(logs.join("\n")).not.toContain("Tiempo especial");
+  });
+
+  test("claves en otro orden: el borrador sale en el orden pedido y se guarda en la forma de adentro, con las alertas de ese orden", async () => {
+    const db = seed();
+    const wire = goodWire();
+    const reversed = { ...wire, ejercicios: Object.fromEntries(Object.entries(wire.ejercicios).reverse()) };
+    reversed.ejercicios["ef-turnos-mesa"].pasos[0] = "Hablá más despacio mientras arman la torre.";
+    replies.push(ok(reversed));
+    const out = await createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV });
+    expect(out.draft.ejercicios.map((e) => e.catalogo_id)).toEqual(["ef-tiempo-especial", "ef-turnos-mesa"]);
+    expect(out.flags).toContainEqual({ exercise: 1, field: "pasos", term: "más despacio" });
+    const stored = db.drafts[0].output as ExerciseDraft;
+    expect(stored.ejercicios.map((e) => e.catalogo_id)).toEqual(["ef-tiempo-especial", "ef-turnos-mesa"]);
+    expect(db.drafts[0].flags).toEqual(out.flags);
+  });
+
+  test("la forma de antes (lista con catalogo_id) se sigue aceptando", async () => {
+    const db = seed();
+    replies.push(ok(goodDraft()));
+    const out = await createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV });
+    expect(out.draft).toEqual(goodDraft());
+  });
+
+  test("ids que no sirven como claves del esquema: no se llama al proveedor y es un problema de configuración", async () => {
+    const b = built();
+    const gen = await generateAdaptDraft({ ...b.params, catalogo: { ...b.params.catalogo, ids: ["No Sirve", "ef-turnos-mesa"] } }, b.entries, { apiKey: "k", model: "m" });
+    expect(gen).toMatchObject({ ok: false, error_code: "SCHEMA_IDS", unavailable: true, attempts: [] });
+    expect(calls).toHaveLength(0);
+    expect(logs.join("\n")).not.toContain("No Sirve");
+  });
+});
+
 // ── Banco de prueba (sin red) ───────────────────────────────────────────────
 
 describe("scripts/ai-eval.ts: los casos", () => {
   const cases = buildEvalCases(300, 1);
 
-  test("300 pedidos válidos, todos con lo que acepta el servidor", () => {
+  test("300 pedidos válidos, todos con lo que acepta el servidor y su esquema por pedido", () => {
     expect(cases).toHaveLength(300);
     for (const c of cases) {
       const r = buildAdaptParams(c.request, { age: c.age, diagnosis_code: c.diagnosis_code });
       expect(r.ok).toBe(true);
       expect(ageBand(c.age)).toBe(c.band);
+      // Lo que arma el banco antes de gastar: lo mismo que el servidor
+      const p = prepareEvalCase(c);
+      expect(r.ok && p.params).toEqual(r.ok && r.params);
+      expect(p.response_format).toEqual(draftResponseFormat(c.request.catalog_ids));
+      expect(p.response_format.json_schema.schema.properties.ejercicios.required).toEqual(c.request.catalog_ids);
     }
+    // Un caso que no sirve corta el banco antes de gastar
+    expect(() => prepareEvalCase({ ...cases[0], request: { ...cases[0].request, catalog_ids: [] } })).toThrow();
   });
 
   test("cubren todas las combinaciones permitidas de enfoque × franja, las adaptaciones y los intereses", () => {

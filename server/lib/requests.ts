@@ -311,7 +311,9 @@ export function digitalBlockedText(gate: HcDigitalBlock, linkKind: string | null
 
 // ── Familia ─────────────────────────────────────────────────────────────────
 
-const HC_FAMILY_COLS = "id, patient_id, account_id, status, created_at, updated_at, ready_at, delivered_at, reject_reason";
+// rejected_at y cancelled_at (del script 20) solo sirven para calcular cuándo
+// se cerró el pedido (closed_at): a la familia no le llegan como tales
+const HC_FAMILY_COLS = "id, patient_id, account_id, status, created_at, updated_at, ready_at, delivered_at, reject_reason, rejected_at, cancelled_at";
 const familyCols = async (ctx: Ctx) => ((await e1Columns(ctx)) ? HC_FAMILY_COLS + E1_FAMILY_COLS : HC_FAMILY_COLS);
 
 // Pacientes de los que esta cuenta puede ver sus pedidos: los vínculos con
@@ -330,7 +332,8 @@ async function hcPatients(ctx: Ctx, account: Account, children: ActiveChild[]) {
   });
 }
 
-// Pedidos de esta cuenta (abiertos y cerrados recientes)
+// Pedidos de esta cuenta (abiertos y cerrados recientes). Cuáles se ven
+// enteros y cuáles plegados lo decide el portal (splitHcRequests)
 export async function hcRequestsFor(ctx: Ctx, account: Account, children: ActiveChild[], onlyPatientId?: string): Promise<HcRequestDTO[]> {
   const patients = (await hcPatients(ctx, account, children))
     .filter((p) => !onlyPatientId || p.patient_id === onlyPatientId);

@@ -27,9 +27,9 @@
 
 import {
   type AiAdaptParams, type AiDraftResult, type DraftFlag, type ExerciseDraft,
-  AI_ERROR, AI_PROVIDER_PREFS, AI_REQUEST_OPTIONS, AI_RETRY_MIN_MS, AI_TIMEOUT_MS, AI_TITLE_HEADER, DRAFT_RESPONSE_FORMAT,
+  AI_ERROR, AI_PROVIDER_PREFS, AI_REQUEST_OPTIONS, AI_RETRY_MIN_MS, AI_TIMEOUT_MS, AI_TITLE_HEADER,
   PROMPT_VERSION, buildAdaptParams, buildAdaptPrompt, describeSent, draftApiKey, draftCenterKey, draftDailyCap, draftModel,
-  draftRateKey, lintDraft, parseExerciseDraft,
+  draftRateKey, draftResponseFormat, lintDraft, parseExerciseDraft,
 } from "../../src/lib/aiDraftRules";
 import { parseFeatures } from "../../src/lib/portalClinicalRules";
 import { ageOn, centerNow } from "../../src/lib/portalRules";
@@ -90,7 +90,7 @@ export type AdaptOptions = {
 // servidor, así que el mismo pedido vuelve a fallar igual). Qué revisar en
 // cada caso (va al log del servidor, sin nada del pedido ni de la respuesta).
 const CONFIG_HINT: Record<number, string> = {
-  400: "pedido inválido: revisá OPENROUTER_DRAFT_MODEL (que el modelo exista y acepte json_schema)",
+  400: "pedido inválido: revisá OPENROUTER_DRAFT_MODEL (que el modelo exista y acepte json_schema) o el esquema por pedido (draftJsonSchema)",
   401: "clave inválida: revisá OPENROUTER_DRAFT_API_KEY / OPENROUTER_API_KEY / VITE_OPENROUTER_API_KEY",
   402: "sin crédito en OpenRouter",
   403: "la clave no tiene permiso para este pedido",
@@ -105,9 +105,11 @@ function addUsage(total: OpenRouterUsage, u: OpenRouterUsage | null) {
   if (u.cost_usd !== null) total.cost_usd = (total.cost_usd ?? 0) + u.cost_usd;
 }
 
-// Un ejercicio por cada id pedido, en el orden pedido (el prompt lo pide;
-// parseExerciseDraft solo revisa que no vengan ids de más ni repetidos).
-// Si están todos pero en otro orden, se ordenan y se recalculan las alertas.
+// Un ejercicio por cada id pedido, en el orden pedido. Con el esquema por
+// pedido (draftResponseFormat) lo obliga el proveedor y parseExerciseDraft
+// ya lo devuelve así; esto queda por si llega la forma de antes (una lista
+// con catalogo_id): si están todos pero en otro orden, se ordenan y se
+// recalculan las alertas.
 function completeDraft(draft: ExerciseDraft, flags: DraftFlag[], params: AiAdaptParams): { draft: ExerciseDraft; flags: DraftFlag[] } | null {
   const ids = params.catalogo.ids;
   if (draft.ejercicios.length !== ids.length) return null;
@@ -122,17 +124,28 @@ function completeDraft(draft: ExerciseDraft, flags: DraftFlag[], params: AiAdapt
 // (AI_TIMEOUT_MS); si la respuesta no sirve (JSON inválido, fuera del
 // esquema, ejercicios que no se pidieron, frases bloqueadas) o el proveedor
 // falló un momento, se reintenta una vez si quedan AI_RETRY_MIN_MS o más.
+// El esquema de la respuesta se arma con los ids pedidos (el mismo en los
+// dos intentos): el proveedor obliga a traer un ejercicio por cada uno.
 export async function generateAdaptDraft(params: AiAdaptParams, entries: CatalogEntry[], opts: AdaptOptions): Promise<AdaptGeneration> {
   const now = opts.now ?? Date.now;
   const budget = opts.budgetMs ?? AI_TIMEOUT_MS;
   const retryMin = opts.retryMinMs ?? AI_RETRY_MIN_MS;
   const { system, user } = buildAdaptPrompt(params, entries);
   const start = now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), budget);
   const attempts: AdaptAttempt[] = [];
   const usage: OpenRouterUsage = { tokens_in: null, tokens_out: null, cost_usd: null };
   const base = () => ({ model: opts.model, attempts, usage, latency_ms: Math.max(0, now() - start) });
+  let responseFormat: ReturnType<typeof draftResponseFormat>;
+  try {
+    responseFormat = draftResponseFormat(params.catalogo.ids);
+  } catch {
+    // Ids que no sirven como claves del esquema (con el catálogo no pasa: lo
+    // revisan las pruebas). Reintentar no sirve: no se llama al proveedor
+    console.error("[ia] los ids pedidos no sirven para armar el esquema de la respuesta");
+    return { ...base(), ok: false, error_code: "SCHEMA_IDS", unavailable: true };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), budget);
   let errorCode = "FAILED";
   let config = false;
   try {
@@ -143,7 +156,7 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
         model: opts.model,
         apiKey: opts.apiKey,
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
-        response_format: DRAFT_RESPONSE_FORMAT,
+        response_format: responseFormat,
         provider: AI_PROVIDER_PREFS,
         temperature: AI_REQUEST_OPTIONS.temperature,
         max_tokens: AI_REQUEST_OPTIONS.max_tokens,
@@ -181,6 +194,12 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
     }
   } finally {
     clearTimeout(timer);
+  }
+  if (!config) {
+    // Por qué falló cada intento (código, status, tiempo y cuántas frases se
+    // bloquearon): nunca el texto del modelo, ni las frases, ni lo que se mandó
+    const why = attempts.map((a) => `${a.code ?? "OK"}${a.status ? `/${a.status}` : ""} ${a.ms}ms${a.terms?.length ? ` (${a.terms.length} bloqueada${a.terms.length === 1 ? "" : "s"})` : ""}`);
+    console.error(`[ia] no se pudo armar el borrador (${opts.model}, ${Math.round(now() - start)}ms): ${why.join(" · ") || errorCode}`);
   }
   return { ...base(), ok: false, error_code: errorCode, unavailable: config };
 }

@@ -31,7 +31,10 @@ import {
 // v4: el prompt no nombra ningún diagnóstico (ni «farfulleo», ni la
 // condición en el nombre del centro, ni la palabra «diagnóstico»): los
 // enfoques se describen por lo que se practica.
-export const PROMPT_VERSION = "adapt-2026-10-v4";
+// v5: «ejercicios» es un objeto con una clave por cada id pedido (el esquema
+// se arma por pedido, draftJsonSchema, y el proveedor obliga a traer
+// exactamente esos ids); el ejercicio ya no lleva «catalogo_id».
+export const PROMPT_VERSION = "adapt-2026-10-v5";
 
 // ── Listas cerradas (lo único que se elige en el panel) ─────────────────────
 
@@ -318,7 +321,7 @@ export const DRAFT_PRO_MAX = { intro: 1200, nota: 2000, alertas_max: 10, alerta:
 const L = DRAFT_LIMITS;
 const OUTPUT_RULES = [
   "Devolvé solo un objeto JSON que cumpla el esquema, sin texto alrededor.",
-  "Un ejercicio por cada id de <pedido>.catalogo.ids, en el mismo orden, con su «catalogo_id».",
+  "«ejercicios» es un objeto con una clave por cada id de <pedido>.catalogo.ids, escrita tal cual y en el mismo orden. El valor de cada clave es el ejercicio de <catalogo> con ese id, adaptado. Ni claves de más ni ejercicios repetidos.",
   `Largos máximos, en caracteres. titulo: hasta ${L.titulo}. para_que: hasta ${L.para_que}. pasos: de ${L.pasos_min} a ${L.pasos_max}, de hasta ${L.paso} cada uno. rol_del_adulto: hasta ${L.rol_del_adulto}. si_cuesta: hasta ${L.si_cuesta}. variantes: hasta ${L.variante} cada una.`,
   `materiales: hasta ${L.materiales_max}, cortos (todos juntos, hasta ${L.materiales} caracteres). minutos: lo pedido o cerca (nunca menos de ${L.minutos_min} ni más de ${L.minutos_over} por encima).`,
   "rol_del_adulto: qué hace el adulto que acompaña (null si practica por su cuenta). variantes: una versión más fácil y una más difícil, en una frase cada una.",
@@ -395,47 +398,82 @@ export function draftCenterKey(centerDate: string): string {
   return `draft-center:${centerDate}`;
 }
 
-// Esquema de la respuesta para response_format (strict: sin largos; los
-// controla parseExerciseDraft)
-export const DRAFT_JSON_SCHEMA = {
+// Esquema de la respuesta para response_format, armado POR PEDIDO (strict:
+// sin largos; los controla parseExerciseDraft). «ejercicios» es un objeto
+// cuyas propiedades son exactamente los ids pedidos, en el orden pedido,
+// todas obligatorias y sin otras: así es el proveedor el que obliga a traer
+// un ejercicio adaptado por cada id pedido (ni ids de más, ni repetidos, ni
+// faltantes). La clave es el id, así que el ejercicio no lleva
+// «catalogo_id»: parseExerciseDraft lo vuelve a la forma de adentro
+// (ExerciseDraft: una lista en el orden pedido, con su catalogo_id), que es
+// la que se guarda en ai_drafts.output y usa el panel.
+//
+// Dentro de lo que acepta el modo strict de OpenAI: solo type, properties,
+// required, additionalProperties e items; todas las propiedades
+// obligatorias; 4 niveles de anidamiento (el límite es 5) y, con
+// AI_CATALOG_MAX = 4, 4 + 4 + 4 × 10 = 48 propiedades en total (el límite
+// es 100). Los ids del catálogo son minúsculas, números y guiones
+// (DRAFT_ID_RE): sirven tal cual como nombres de propiedad.
+
+// Un id del catálogo que sirve como nombre de propiedad del esquema
+export const DRAFT_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const DRAFT_ID_MAX = 64;
+export const isDraftId = (id: unknown): id is string => typeof id === "string" && id.length <= DRAFT_ID_MAX && DRAFT_ID_RE.test(id);
+
+// Un ejercicio adaptado (el valor de cada clave de «ejercicios»)
+export const DRAFT_ITEM_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["intro", "ejercicios", "nota_para_profesional", "alertas"],
+  required: ["titulo", "para_que", "pasos", "minutos", "materiales", "rol_del_adulto", "si_cuesta", "variantes"],
   properties: {
-    intro: { type: "string" },
-    ejercicios: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["catalogo_id", "titulo", "para_que", "pasos", "minutos", "materiales", "rol_del_adulto", "si_cuesta", "variantes"],
-        properties: {
-          catalogo_id: { type: "string" },
-          titulo: { type: "string" },
-          para_que: { type: "string" },
-          pasos: { type: "array", items: { type: "string" } },
-          minutos: { type: "integer" },
-          materiales: { type: "array", items: { type: "string" } },
-          rol_del_adulto: { type: ["string", "null"] },
-          si_cuesta: { type: "string" },
-          variantes: {
-            type: "object",
-            additionalProperties: false,
-            required: ["mas_facil", "mas_dificil"],
-            properties: { mas_facil: { type: "string" }, mas_dificil: { type: "string" } },
-          },
-        },
-      },
+    titulo: { type: "string" },
+    para_que: { type: "string" },
+    pasos: { type: "array", items: { type: "string" } },
+    minutos: { type: "integer" },
+    materiales: { type: "array", items: { type: "string" } },
+    rol_del_adulto: { type: ["string", "null"] },
+    si_cuesta: { type: "string" },
+    variantes: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mas_facil", "mas_dificil"],
+      properties: { mas_facil: { type: "string" }, mas_dificil: { type: "string" } },
     },
-    nota_para_profesional: { type: "string" },
-    alertas: { type: "array", items: { type: "string" } },
   },
 } as const;
 
-export const DRAFT_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: { name: "borrador_ejercicios", strict: true, schema: DRAFT_JSON_SCHEMA },
-} as const;
+// ids: los del pedido (params.catalogo.ids), de 1 a AI_CATALOG_MAX, sin
+// repetir y que sirvan como nombres de propiedad. Si no, tira un error (con
+// buildAdaptParams no pasa: los ids son del catálogo, y las pruebas revisan
+// que todos sirvan).
+export function draftJsonSchema(ids: readonly string[]) {
+  if (ids.length < 1 || ids.length > AI_CATALOG_MAX || new Set(ids).size !== ids.length || !ids.every(isDraftId)) {
+    throw new Error(`El esquema de la respuesta necesita de 1 a ${AI_CATALOG_MAX} ids del catálogo, sin repetir, con minúsculas, números y guiones.`);
+  }
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["intro", "ejercicios", "nota_para_profesional", "alertas"],
+    properties: {
+      intro: { type: "string" },
+      ejercicios: {
+        type: "object",
+        additionalProperties: false,
+        required: [...ids],
+        properties: Object.fromEntries(ids.map((id) => [id, DRAFT_ITEM_JSON_SCHEMA])),
+      },
+      nota_para_profesional: { type: "string" },
+      alertas: { type: "array", items: { type: "string" } },
+    },
+  } as const;
+}
+
+export function draftResponseFormat(ids: readonly string[]) {
+  return {
+    type: "json_schema",
+    json_schema: { name: "borrador_ejercicios", strict: true, schema: draftJsonSchema(ids) },
+  } as const;
+}
 
 // ── La respuesta ────────────────────────────────────────────────────────────
 
@@ -457,6 +495,31 @@ export type ExerciseDraft = {
   nota_para_profesional: string; // nunca se publica
   alertas: string[]; // lo que la IA sugiere revisar
 };
+
+// La respuesta como la devuelve el modelo (draftJsonSchema): un ejercicio
+// por clave, y la clave es el id del catálogo
+export type ExerciseDraftWireItem = Omit<ExerciseDraftItem, "catalogo_id">;
+export type ExerciseDraftWire = Omit<ExerciseDraft, "ejercicios"> & { ejercicios: Record<string, ExerciseDraftWireItem> };
+
+const hasOwn = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+// De la forma del modelo a la de adentro: una lista en el orden de ids, con
+// el id como catalogo_id. ids: los pedidos (tienen que estar todos)
+export function draftFromWire(wire: ExerciseDraftWire, ids: readonly string[]): ExerciseDraft {
+  return {
+    ...wire,
+    ejercicios: ids.map((id) => {
+      if (!hasOwn(wire.ejercicios, id)) throw new Error("Al borrador le falta un ejercicio pedido.");
+      return { catalogo_id: id, ...wire.ejercicios[id] };
+    }),
+  };
+}
+
+// De la forma de adentro a la del modelo (para el banco de prueba y las pruebas)
+export function draftToWire(draft: ExerciseDraft): ExerciseDraftWire {
+  return { ...draft, ejercicios: Object.fromEntries(draft.ejercicios.map(({ catalogo_id, ...item }) => [catalogo_id, item])) };
+}
 
 // Alerta del lint en un campo del borrador (no bloquea; la ve el profesional)
 export type DraftFlag = { exercise: number; field: string; term: string };
@@ -487,17 +550,27 @@ const ItemSchema = z.object({
   variantes: z.object({ mas_facil: plain(L.variante), mas_dificil: plain(L.variante) }).strict(),
 }).strict();
 
+// El ejercicio como lo devuelve el modelo: sin catalogo_id (es la clave)
+const WireItemSchema = ItemSchema.omit({ catalogo_id: true });
+
 // Lo que es solo para el profesional, con los topes de DRAFT_PRO_MAX (más
 // amplios que lo que pide el prompt). Las alertas vacías se descartan.
-const DraftSchema = z.object({
+const draftObject = <E extends z.ZodTypeAny>(ejercicios: E) => z.object({
   intro: plain(PRO.intro, 0, false),
-  ejercicios: z.array(ItemSchema).min(1).max(AI_CATALOG_MAX),
+  ejercicios,
   nota_para_profesional: plain(PRO.nota, 0, false),
   alertas: z.preprocess(
     (v) => (Array.isArray(v) ? v.filter((a) => !(typeof a === "string" && !a.trim())) : v),
     z.array(plain(PRO.alerta, 1, false)).max(PRO.alertas_max),
   ),
 }).strict();
+
+// La forma de adentro (lista con catalogo_id): la que se guarda, la del modo
+// demo y la del banco de prueba. También la aceptaba el modelo hasta v4.
+const DraftSchema = draftObject(z.array(ItemSchema).min(1).max(AI_CATALOG_MAX));
+// La forma del modelo (draftJsonSchema): una clave por id pedido, sin otras
+const wireDraftSchema = (ids: readonly string[]) =>
+  draftObject(z.object(Object.fromEntries(ids.map((id) => [id, WireItemSchema]))).strict());
 
 export type DraftParseError = "INVALID_JSON" | "SCHEMA" | "CATALOG" | "MINUTES" | "LINT_BLOCK";
 
@@ -527,7 +600,12 @@ export function lintDraft(d: ExerciseDraft, approach?: Approach): { block: strin
   return { block, flags };
 }
 
-// Revisa la respuesta del modelo (texto JSON o un objeto ya parseado).
+// Revisa la respuesta del modelo (texto JSON o un objeto ya parseado), en
+// cualquiera de las dos formas: la del modelo («ejercicios» con una clave
+// por id, draftJsonSchema) o la de adentro (la lista con catalogo_id: lo
+// guardado, el modo demo y el banco de prueba). Devuelve siempre la de
+// adentro; con la del modelo, en el orden pedido. En las dos, exactamente un
+// ejercicio por cada id pedido (si no, CATALOG).
 // requestedIds: los ids del catálogo pedidos; requestedMinutes: los minutos
 // pedidos (la salida no puede pasarse en más de 5). approach: para la
 // excepción de "más despacio".
@@ -545,12 +623,26 @@ export function parseExerciseDraft(
       return { ok: false, code: "INVALID_JSON", error: "La respuesta no es un JSON válido." };
     }
   }
-  const parsed = DraftSchema.safeParse(value);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { ok: false, code: "SCHEMA", error: `La respuesta no cumple el formato (${issue ? `${issue.path.join(".")}: ${issue.message}` : "inválida"}).` };
+  const schemaError = (error: z.ZodError) => {
+    const issue = error.issues[0];
+    return { ok: false as const, code: "SCHEMA" as const, error: `La respuesta no cumple el formato (${issue ? `${issue.path.join(".")}: ${issue.message}` : "inválida"}).` };
+  };
+  let draft: ExerciseDraft;
+  const keyed = isRecord(value) && isRecord(value.ejercicios) ? value.ejercicios : null;
+  if (keyed) {
+    // La forma del modelo: las claves, exactamente los ids pedidos
+    const keys = Object.keys(keyed);
+    if (keys.length < 1 || keys.length !== requestedIds.length || !requestedIds.every((id) => hasOwn(keyed, id))) {
+      return { ok: false, code: "CATALOG", error: "La respuesta no trae exactamente un ejercicio por cada uno pedido." };
+    }
+    const parsed = wireDraftSchema(requestedIds).safeParse(value);
+    if (!parsed.success) return schemaError(parsed.error);
+    draft = draftFromWire(parsed.data as ExerciseDraftWire, requestedIds);
+  } else {
+    const parsed = DraftSchema.safeParse(value);
+    if (!parsed.success) return schemaError(parsed.error);
+    draft = parsed.data as ExerciseDraft;
   }
-  const draft = parsed.data as ExerciseDraft;
   const seen = new Set<string>();
   for (const e of draft.ejercicios) {
     if (!requestedIds.includes(e.catalogo_id) || seen.has(e.catalogo_id)) {
@@ -559,6 +651,9 @@ export function parseExerciseDraft(
     seen.add(e.catalogo_id);
     if (e.minutos > requestedMinutes + L.minutos_over) return { ok: false, code: "MINUTES", error: "La respuesta pasa los minutos pedidos." };
     if (e.materiales.join(", ").length > L.materiales) return { ok: false, code: "SCHEMA", error: "Los materiales son muy largos." };
+  }
+  if (requestedIds.some((id) => !seen.has(id))) {
+    return { ok: false, code: "CATALOG", error: "A la respuesta le falta un ejercicio pedido." };
   }
   const lint = lintDraft(draft, approach);
   if (lint.block.length) return { ok: false, code: "LINT_BLOCK", error: "La respuesta tiene frases que no van en el portal.", terms: lint.block };

@@ -397,7 +397,7 @@ const SESSION_KEY = "cimt-portal-mock-session";
 // "Volvé a poner tu contraseña": va con la sesión de la pestaña (en la base,
 // portal_step_up por session_id)
 const STEP_UP_KEY = "cimt-portal-mock-step-up";
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 
 // Etapas de la información de salud prendidas (en el servidor:
 // PORTAL_CLINICAL_FEATURES). La demo muestra las etapas A, B, C, D y E1.
@@ -612,6 +612,35 @@ function seed(): Db {
           { kind: "pedido", by_email: null, at: iso(120 * H) },
           { kind: "documento", by_email: STAFF, at: iso(73 * H) },
           { kind: "enviada", by_email: STAFF, at: iso(72 * H) },
+        ],
+      },
+      // Pedidos viejos de la copia de Martín, cerrados hace más de 30 días:
+      // Laura ve el pendiente y estos dos plegados en "Ver pedidos anteriores"
+      // (el panel ya no los muestra). Uno lo canceló ella al día siguiente; el
+      // otro se lo entregaron en mano
+      {
+        ...hcRow({
+          id: "hc-demo-3", patient_id: "c-martin", account_id: "acc-laura", link_kind: "representante_legal",
+          requester_name: "Laura Gómez", requester_dni: "30111222", created_at: iso(48 * 24 * H),
+        }),
+        status: "cancelada", cancelled_at: iso(47 * 24 * H), updated_at: iso(47 * 24 * H),
+        events: [
+          { kind: "pedido", by_email: null, at: iso(48 * 24 * H) },
+          { kind: "cancelada", by_email: null, at: iso(47 * 24 * H) },
+        ],
+      },
+      {
+        ...hcRow({
+          id: "hc-demo-4", patient_id: "c-martin", account_id: "acc-laura", link_kind: "representante_legal",
+          requester_name: "Laura Gómez", requester_dni: "30111222", created_at: iso(46 * 24 * H),
+        }),
+        status: "entregada", ready_at: iso(43 * 24 * H), ready_by_email: STAFF,
+        delivered_at: iso(40 * 24 * H), delivered_by_email: STAFF, delivered_to_name: "Laura Gómez", delivered_to_dni: "30111222",
+        updated_at: iso(40 * 24 * H),
+        events: [
+          { kind: "pedido", by_email: null, at: iso(46 * 24 * H) },
+          { kind: "lista", by_email: STAFF, at: iso(43 * 24 * H) },
+          { kind: "entregada", by_email: STAFF, at: iso(40 * 24 * H) },
         ],
       },
     ],
@@ -1303,7 +1332,8 @@ function hcPatients(db: Db, accountId: string): { patient_id: string; display: s
 
 // Pedidos de copia de esta cuenta (abiertos y cerrados recientes). Los de
 // una copia enviada por el portal llevan sus PDF (computeHcDto los muestra
-// mientras se pueda descargar)
+// mientras se pueda descargar) y todos, cuándo se cerraron (closed_at, de la
+// columna de cada paso, como el servidor)
 function hcRequestsFor(db: Db, accountId: string, onlyPatientId?: string): HcRequestDTO[] {
   const patients = hcPatients(db, accountId).filter((p) => !onlyPatientId || p.patient_id === onlyPatientId);
   if (!patients.length) return [];

@@ -16,7 +16,7 @@ import { CENTER } from "@/lib/center";
 import {
   type ApptDTO, type HcChannel, type HcDigitalBlock, type HcRejectReason, type HcRequestDTO, type ReasonCode,
   type ResponseKind,
-  centerNow,
+  centerNow, hcRejectedFresh,
 } from "@/lib/portalRules";
 import type { ChildClinicalDTO, FamilyClinicalDTO } from "@/lib/portalClinicalRules";
 import type { InfoDTO } from "@/lib/portalInfoRules";
@@ -218,16 +218,22 @@ export function apptStatus(a: ApptDTO): { tone: ApptTone; text: string } | null 
 // Estado de un pedido de copia de la historia clínica tal como lo ve la familia
 export const HC_REJECT_TEXT: Record<HcRejectReason, string> = {
   no_habilitado: "No la podemos entregar por este medio. Acercate al centro o llamanos.",
-  duplicado: "Ya había un pedido igual en curso.",
+  duplicado: "Cerramos este pedido: ya había otro igual en curso.",
   otro: "No pudimos prepararla. Llamanos para coordinar.",
 };
 
-export function hcStatus(r: HcRequestDTO): { tone: ApptTone; text: string } {
+// Una rechazada va en rojo solo la primera semana (hcRejectedFresh); después,
+// el mismo texto en gris, como lo demás ya resuelto
+export function hcStatus(r: HcRequestDTO, now: Date = new Date()): { tone: ApptTone; text: string } {
   switch (r.status) {
     case "pendiente": return { tone: "warn", text: "Pedido recibido · la estamos preparando" };
     case "lista": return { tone: "ok", text: "Lista para retirar en el centro" };
     case "entregada": return { tone: "muted", text: `Entregada el ${stampLabel(r.delivered_at ?? r.created_at)}` };
-    case "rechazada": return { tone: "bad", text: r.reject_reason ? HC_REJECT_TEXT[r.reject_reason] : "No pudimos prepararla. Llamanos." };
+    case "rechazada":
+      return {
+        tone: hcRejectedFresh(r, now) ? "bad" : "muted",
+        text: r.reject_reason ? HC_REJECT_TEXT[r.reject_reason] : "No pudimos prepararla. Llamanos.",
+      };
     case "cancelada": return { tone: "muted", text: "Cancelaste el pedido" };
     case "enviada":
       return r.documents.length
