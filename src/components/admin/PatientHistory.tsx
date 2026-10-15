@@ -8,6 +8,12 @@ import {
   AUDIT_FIELD_LABEL, AUDIT_HIDDEN_FIELDS, AUDIT_TABLE_LABEL, formatAuditValue,
   type AuditEntry, type ProfessionalOption,
 } from "@/lib/patients";
+import { ROLE_LABEL, type StaffRole } from "@/lib/staff";
+import {
+  AUTONOMY_LABEL, CAREGIVER_ROLE_LABEL, PHONE_KIND_LABEL, type Autonomy, type CaregiverRole, type PhoneKind,
+} from "@/lib/contact";
+
+type StaffEntry = { email: string; full_name: string | null; role: StaffRole };
 
 // Historial de cambios de la ficha (relevamiento, respuesta 15). Lo escribe la
 // base con un trigger (11_roles_equipo_historial.sql); acá solo se lee.
@@ -15,23 +21,43 @@ import {
 
 export function PatientHistory({ patientId, professionals }: { patientId: string; professionals: ProfessionalOption[] }) {
   const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  // Nombre y rol de quien hizo cada cambio (staff_directory, script 31)
+  const [staff, setStaff] = useState<Map<string, StaffEntry>>(new Map());
   const [loading, setLoading] = useState(false);
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase.from("audit_log")
-      .select("id, table_name, record_id, action, changes, changed_by_email, changed_at")
-      .eq("patient_id", patientId)
-      .order("changed_at", { ascending: false })
-      .limit(200);
+    const [{ data, error }, dir] = await Promise.all([
+      supabase.from("audit_log")
+        .select("id, table_name, record_id, action, changes, changed_by_email, changed_at")
+        .eq("patient_id", patientId)
+        .order("changed_at", { ascending: false })
+        .limit(200),
+      supabase.rpc("staff_directory"),
+    ]);
     setLoading(false);
+    setStaff(new Map(((dir.data ?? []) as StaffEntry[]).map((s) => [s.email.toLowerCase(), s])));
     if (error) { toast.error("No se pudo cargar el historial"); return; }
     setEntries((data ?? []) as AuditEntry[]);
   }
 
   const proName = new Map(professionals.map((p) => [p.id, p.name]));
-  const show = (field: string, v: unknown) =>
-    field === "professional_id" && typeof v === "string" ? proName.get(v) ?? "Otro profesional" : formatAuditValue(v);
+  // "Lic. María Rodríguez · Profesional (maria@...)"; sin email = la solicitud online del sitio
+  const who = (email: string | null) => {
+    if (!email) return "Solicitud online del sitio";
+    const s = staff.get(email.toLowerCase());
+    return s ? `${s.full_name ?? email} · ${ROLE_LABEL[s.role] ?? s.role}${s.full_name ? ` (${email})` : ""}` : email;
+  };
+  const show = (field: string, v: unknown) => {
+    if (field === "professional_id" && typeof v === "string") return proName.get(v) ?? "Otro profesional";
+    // Los valores de contacto y semáforo, con su nombre (no el código)
+    if (typeof v === "string") {
+      if (field === "autonomy" && v in AUTONOMY_LABEL) return AUTONOMY_LABEL[v as Autonomy];
+      if ((field === "phone_kind" || field === "guardian_phone_kind") && v in PHONE_KIND_LABEL) return PHONE_KIND_LABEL[v as PhoneKind];
+      if (field === "caregiver_role" && v in CAREGIVER_ROLE_LABEL) return CAREGIVER_ROLE_LABEL[v as CaregiverRole];
+    }
+    return formatAuditValue(v);
+  };
 
   return (
     <Section icon={History} title="Historial de cambios"
@@ -56,7 +82,7 @@ export function PatientHistory({ patientId, professionals }: { patientId: string
                   <span className="font-semibold text-[color:var(--primary-deep)]">
                     {new Date(e.changed_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}
                   </span>
-                  <span className="text-muted-foreground">{e.changed_by_email ?? "Solicitud online del sitio"}</span>
+                  <span className="text-muted-foreground">{who(e.changed_by_email)}</span>
                 </div>
                 <div className="mt-1 font-semibold">
                   {AUDIT_TABLE_LABEL[e.table_name] ?? e.table_name}: {voided ? "anulado" : e.action === "insert" ? "creado" : "modificado"}

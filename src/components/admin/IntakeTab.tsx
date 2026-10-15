@@ -11,6 +11,7 @@ import { CalendarPlus, CheckCircle2, Loader2, Phone, Search, UserPlus, Users, XC
 import { selectClass } from "./fields";
 import { PATIENT_TYPE_LABEL, formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
 import { GUARDIAN_RELATIONSHIP_LABEL, localityWithProvince } from "@/lib/intake";
+import { PHONE_KIND_LABEL } from "@/lib/contact";
 import {
   INTAKE_STATUS_COLOR, INTAKE_STATUS_LABEL, longDate,
   type IntakeRequest, type IntakeStatus, type Workshop,
@@ -94,6 +95,9 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
         referred_by: r.referred_by,
         guardian_name: r.guardian_name,
         guardian_phone: r.guardian_name ? r.phone : null,
+        // Tipo del teléfono que dejaron (para menores es el del adulto responsable)
+        phone_kind: r.phone_kind ?? null,
+        guardian_phone_kind: r.guardian_name ? r.phone_kind ?? null : null,
         // El profesional al que Dirección derivó la solicitud queda como profesional de la ficha
         professional_id: r.assigned_professional_id ?? null,
       }).select().single();
@@ -103,7 +107,7 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
       if (r.guardian_name) {
         await supabase.from("patient_guardians").insert({
           patient_id: patientId, full_name: r.guardian_name, phone: r.phone, is_primary: true,
-          dni: r.guardian_dni ?? null, email: r.email,
+          dni: r.guardian_dni ?? null, email: r.email, phone_kind: r.phone_kind ?? null,
           relationship: r.guardian_relationship ? GUARDIAN_RELATIONSHIP_LABEL[r.guardian_relationship].toLowerCase() : null,
         });
       }
@@ -304,6 +308,7 @@ function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate,
           <Item label="DNI" value={r.dni} />
           <Item label="Edad" value={`${r.age} años (${PATIENT_TYPE_LABEL[r.patient_type]})`} />
           <Item label="Teléfono" value={<a href={`tel:${r.phone.replace(/[^\d+]/g, "")}`} className="font-semibold hover:underline"><Phone className="mr-1 inline h-3.5 w-3.5" />{r.phone}</a>} />
+          {r.phone_kind && <Item label="Tipo de teléfono" value={PHONE_KIND_LABEL[r.phone_kind]} />}
           <Item label="Email" value={r.email ?? "—"} />
           {r.guardian_name && <Item label="Adulto responsable" value={guardianLine(r)} />}
           {r.guardian_name && <Item label="Consentimiento informado" value={consentLine(r)} />}

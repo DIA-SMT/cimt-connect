@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Baby, CalendarDays, CheckCircle2, ClipboardList, ListChecks, Loader2, Phone, UserRound, Users } from "lucide-react";
+import { Baby, CalendarDays, CheckCircle2, ClipboardList, ListChecks, Loader2, Mic, Phone, PhoneCall, UserRound, Users } from "lucide-react";
+import { DictationButton, useDictationSupported } from "@/components/Dictation";
+import { PHONE_KINDS, PHONE_KIND_HINT, PHONE_KIND_LABEL } from "@/lib/contact";
 import { CENTER, HOME_PROVINCE, LOCALITY_OPTIONS, PROVINCES } from "@/lib/center";
 import {
   ADULT_AGE, CONSENT_POINTS, CONSENT_TITLE, GUARDIAN_RELATIONSHIP_LABEL, parseIntake, type IntakeFor,
@@ -35,7 +37,7 @@ export const Route = createFileRoute("/turnos")({
 const FIELDS = [
   "first_name", "last_name", "dni", "age", "patient_type",
   "guardian_first_name", "guardian_last_name", "guardian_dni", "guardian_relationship",
-  "phone", "email", "province", "locality", "address", "preferred_modality", "referred_by", "reason", "consent",
+  "phone", "phone_kind", "email", "province", "locality", "address", "preferred_modality", "referred_by", "reason", "consent",
 ] as const;
 
 type UpcomingWorkshop = { workshop_date: string; start_time: string; place: string };
@@ -133,6 +135,8 @@ function TurnosPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Para quien no puede o no quiere completar el formulario */}
+              <HelpBanner />
               <fieldset>
                 <legend className="font-display text-xl font-bold text-[color:var(--primary-deep)]">¿Para quién es el turno?</legend>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -152,9 +156,9 @@ function TurnosPage() {
                     <>
                       <SectionTitle n={1}>Tus datos (adulto responsable)</SectionTitle>
                       <div className="grid gap-4 sm:grid-cols-2">
-                        <Field label="Nombre" name="guardian_first_name" required maxLength={40} autoComplete="given-name" />
-                        <Field label="Apellido" name="guardian_last_name" required maxLength={39} autoComplete="family-name" />
-                        <Field label="DNI" name="guardian_dni" required inputMode="numeric" maxLength={10} />
+                        <Field label="Nombre" name="guardian_first_name" required maxLength={40} autoComplete="given-name" dictate="text" />
+                        <Field label="Apellido" name="guardian_last_name" required maxLength={39} autoComplete="family-name" dictate="text" />
+                        <Field label="DNI" name="guardian_dni" required inputMode="numeric" maxLength={10} dictate="numeric" />
                         <div className="space-y-1.5">
                           <Label htmlFor="guardian_relationship">Vínculo<span className="text-destructive"> *</span></Label>
                           <select id="guardian_relationship" name="guardian_relationship" required defaultValue="" className={selectClass}>
@@ -162,17 +166,20 @@ function TurnosPage() {
                             {Object.entries(GUARDIAN_RELATIONSHIP_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                           </select>
                         </div>
-                        <Field label="Teléfono" name="phone" required inputMode="tel" autoComplete="tel" />
-                        <Field label="Email (opcional)" name="email" type="email" autoComplete="email" />
+                        <Field label="Teléfono" name="phone" required inputMode="tel" autoComplete="tel" dictate="numeric" />
+                        <PhoneKindField />
+                        <div className="sm:col-span-2">
+                          <Field label="Email (opcional)" name="email" type="email" autoComplete="email" />
+                        </div>
                       </div>
                     </>
                   )}
 
                   <SectionTitle n={minor ? 2 : 1}>{minor ? "Datos de la persona que se va a atender" : "Tus datos"}</SectionTitle>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Nombre" name="first_name" required maxLength={60} autoComplete={minor ? "off" : "given-name"} />
-                    <Field label="Apellido" name="last_name" required maxLength={60} autoComplete={minor ? "off" : "family-name"} />
-                    <Field label="DNI" name="dni" required inputMode="numeric" maxLength={10} />
+                    <Field label="Nombre" name="first_name" required maxLength={60} autoComplete={minor ? "off" : "given-name"} dictate="text" />
+                    <Field label="Apellido" name="last_name" required maxLength={60} autoComplete={minor ? "off" : "family-name"} dictate="text" />
+                    <Field label="DNI" name="dni" required inputMode="numeric" maxLength={10} dictate="numeric" />
                     <Field label="Edad" name="age" required type="number"
                       min={minor ? CENTER.minAge : ADULT_AGE} max={minor ? ADULT_AGE - 1 : 120} />
                     {minor && (
@@ -187,8 +194,11 @@ function TurnosPage() {
                     )}
                     {!minor && (
                       <>
-                        <Field label="Teléfono" name="phone" required inputMode="tel" autoComplete="tel" />
-                        <Field label="Email (opcional)" name="email" type="email" autoComplete="email" />
+                        <Field label="Teléfono" name="phone" required inputMode="tel" autoComplete="tel" dictate="numeric" />
+                        <PhoneKindField />
+                        <div className="sm:col-span-2">
+                          <Field label="Email (opcional)" name="email" type="email" autoComplete="email" />
+                        </div>
                       </>
                     )}
                     <div className="space-y-1.5">
@@ -200,17 +210,23 @@ function TurnosPage() {
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="locality">Localidad<span className="text-destructive"> *</span></Label>
-                      <Input id="locality" name="locality" required maxLength={80} autoComplete="address-level2"
-                        list={province === HOME_PROVINCE ? "locality-options" : undefined}
-                        placeholder={province === HOME_PROVINCE ? "Ej: Yerba Buena" : "Ciudad o pueblo"} />
+                      <div className="relative">
+                        <Input id="locality" name="locality" required maxLength={80} autoComplete="address-level2"
+                          list={province === HOME_PROVINCE ? "locality-options" : undefined} className={dictPad}
+                          placeholder={province === HOME_PROVINCE ? "Ej: Yerba Buena" : "Ciudad o pueblo"} />
+                        <DictationButton targetId="locality" label="Localidad" />
+                      </div>
                       <datalist id="locality-options">
                         {LOCALITY_OPTIONS.map((l) => <option key={l} value={l} />)}
                       </datalist>
                     </div>
                     <div className="space-y-1.5 sm:col-span-2">
                       <Label htmlFor="address">Domicilio<span className="text-destructive"> *</span></Label>
-                      <Input id="address" name="address" required maxLength={150} autoComplete="street-address"
-                        placeholder="Calle y número. Ej: Av. Sarmiento 1250, Barrio Norte" />
+                      <div className="relative">
+                        <Input id="address" name="address" required maxLength={150} autoComplete="street-address" className={dictPad}
+                          placeholder="Calle y número. Ej: Av. Sarmiento 1250, Barrio Norte" />
+                        <DictationButton targetId="address" label="Domicilio" />
+                      </div>
                       <p className="text-xs text-muted-foreground">Si la calle no tiene número, escribí «s/n» y alguna referencia.</p>
                     </div>
                   </div>
@@ -227,14 +243,17 @@ function TurnosPage() {
                         <p className="text-xs text-muted-foreground">Si vivís lejos de Tucumán, podés elegir telemedicina.</p>
                       )}
                     </div>
-                    <Field label="¿Quién lo deriva? (opcional)" name="referred_by" placeholder="Ej: escuela, pediatra" />
+                    <Field label="¿Quién lo deriva? (opcional)" name="referred_by" placeholder="Ej: escuela, pediatra" dictate="text" />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="reason">Motivo de la consulta<span className="text-destructive"> *</span></Label>
-                    <Textarea id="reason" name="reason" required maxLength={800} rows={4}
-                      placeholder={minor
-                        ? "Ej: Mi hijo de 6 años repite sílabas al empezar a hablar desde hace unos meses..."
-                        : "Ej: Tartamudeo desde chico y quiero empezar un tratamiento..."} />
+                    <div className="relative">
+                      <Textarea id="reason" name="reason" required maxLength={800} rows={4} className={dictPad}
+                        placeholder={minor
+                          ? "Ej: Mi hijo de 6 años repite sílabas al empezar a hablar desde hace unos meses..."
+                          : "Ej: Tartamudeo desde chico y quiero empezar un tratamiento..."} />
+                      <DictationButton targetId="reason" label="Motivo de la consulta" />
+                    </div>
                   </div>
 
                   {minor ? (
@@ -328,14 +347,58 @@ function Step({ n, icon: Icon, title, text }: { n: number; icon: typeof Users; t
   );
 }
 
-function Field({ label, name, required, type = "text", ...rest }: {
+// Lugar para el botón de micrófono dentro del campo (solo si el navegador puede dictar)
+const dictPad = "pr-10";
+
+function Field({ label, name, required, type = "text", dictate, ...rest }: {
   label: string; name: string; required?: boolean; type?: string;
   inputMode?: "numeric" | "tel"; min?: number; max?: number; maxLength?: number; placeholder?: string; autoComplete?: string;
+  /** Botón para dictar con la voz; "numeric" deja solo los números (DNI, teléfono) */
+  dictate?: "text" | "numeric";
 }) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={name}>{label}{required && <span className="text-destructive"> *</span>}</Label>
-      <Input id={name} name={name} type={type} required={required} {...rest} />
+      <div className="relative">
+        <Input id={name} name={name} type={type} required={required} className={dictate ? dictPad : undefined} {...rest} />
+        {dictate && <DictationButton targetId={name} label={label} numeric={dictate === "numeric"} />}
+      </div>
+    </div>
+  );
+}
+
+// ¿Recibe WhatsApp? Así el equipo sabe si escribir o llamar
+function PhoneKindField() {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="phone_kind">¿Qué tipo de teléfono es?<span className="text-destructive"> *</span></Label>
+      <select id="phone_kind" name="phone_kind" required defaultValue="" className={selectClass}>
+        <option value="" disabled>Seleccionar...</option>
+        {PHONE_KINDS.map((k) => <option key={k} value={k}>{PHONE_KIND_LABEL[k]} ({PHONE_KIND_HINT[k].toLowerCase()})</option>)}
+      </select>
+    </div>
+  );
+}
+
+// Aviso para quien tiene dificultad para leer, escribir o usar el formulario
+function HelpBanner() {
+  const canDictate = useDictationSupported();
+  return (
+    <div className="flex gap-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 text-amber-950">
+      <PhoneCall className="mt-0.5 h-6 w-6 shrink-0" aria-hidden="true" />
+      <div className="space-y-1.5 text-sm leading-relaxed">
+        <p className="text-base font-bold">¿Te cuesta leer, escribir o completar el formulario?</p>
+        <p>
+          Llamanos al <a href={CENTER.phoneHref} className="font-bold underline">{CENTER.phoneDisplay}</a> ({CENTER.hoursLong.toLowerCase()})
+          y lo completamos juntos por teléfono.
+        </p>
+        {canDictate && (
+          <p className="flex items-start gap-1.5">
+            <Mic className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>También podés tocar el micrófono que está en cada campo y decirlo en voz alta: se escribe solo. No guardamos audios.</span>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

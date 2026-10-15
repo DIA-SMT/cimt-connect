@@ -49,7 +49,7 @@ export function StatsTab({ professionals, canPublish = false }: {
 
   useEffect(() => {
     Promise.all([
-      supabase.from("patients").select("id, created_at, locality, patient_type, case_status, has_health_insurance, therapy_modes, other_conditions, age"),
+      supabase.from("patients").select("id, created_at, admission_date, locality, patient_type, case_status, has_health_insurance, therapy_modes, other_conditions, age"),
       supabase.from("patient_referrals").select("specialty, status, registered, referral_date, voided_at"),
       supabase.from("appointments").select("patient_id, professional_id, appointment_date, status, modality, attendance"),
       supabase.from("intake_requests").select("created_at, status, workshop_id, workshop_attended, patient_id, age, province, locality, preferred_modality, referred_by, first_contact_at"),

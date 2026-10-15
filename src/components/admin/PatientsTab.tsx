@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AUTONOMY_COLOR, AUTONOMY_LABEL } from "@/lib/contact";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -177,6 +178,10 @@ export function PatientsTab({ professionals, version, onOpen, staff }: Props) {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
+                        {p.autonomy && (
+                          <span className={`h-3 w-3 shrink-0 rounded-full ${AUTONOMY_COLOR[p.autonomy].dot}`}
+                            title={`Semáforo ${AUTONOMY_LABEL[p.autonomy].toLowerCase()}`} aria-label={`Semáforo ${AUTONOMY_LABEL[p.autonomy].toLowerCase()}`} />
+                        )}
                         <span className="font-bold text-foreground">{fullName(p)}</span>
                         <CaseBadge status={p.case_status} />
                       </div>

@@ -1,6 +1,8 @@
 // Ficha interna de pacientes: tipos, etiquetas y exportación.
 // Esquema en supabase/sql_para_copiar/7_ficha_pacientes.sql
 
+import type { Autonomy, CaregiverRole, PhoneKind } from "@/lib/contact";
+
 export type PatientType = "niño" | "adolescente" | "adulto";
 export type CaseStatus = "en_evaluacion" | "en_tratamiento" | "derivado" | "alta" | "abandono";
 export type CudStatus = "si" | "no" | "en_tramite";
@@ -57,6 +59,12 @@ export type PatientRecord = {
   discharge_notes: string | null;
   /** Foto de perfil en el bucket patient-files (30_hitos_derivacion_foto.sql) */
   photo_path?: string | null;
+  // 31_ficha_contacto_semaforo.sql
+  admission_date?: string | null;          // fecha de ingreso
+  other_history?: string | null;           // otros antecedentes (además de tartamudez)
+  autonomy?: Autonomy | null;              // semáforo: verde / amarillo / rojo
+  phone_kind?: PhoneKind | null;           // tipo del teléfono del paciente
+  guardian_phone_kind?: PhoneKind | null;  // tipo del teléfono del adulto responsable principal
   created_at: string;
   updated_at: string;
 };
@@ -139,6 +147,9 @@ export const AUDIT_TABLE_LABEL: Record<string, string> = {
 
 // Nombres legibles de los campos que aparecen en el historial
 export const AUDIT_FIELD_LABEL: Record<string, string> = {
+  admission_date: "Fecha de ingreso", other_history: "Otros antecedentes", autonomy: "Semáforo de autonomía",
+  phone_kind: "Tipo de teléfono", guardian_phone_kind: "Tipo de teléfono del tutor", caregiver_role: "Rol en el cuidado",
+  photo_path: "Foto de perfil",
   first_name: "Nombre", last_name: "Apellido", dni: "DNI", age: "Edad", phone: "Teléfono", email: "Email",
   patient_type: "Tipo de paciente", notes: "Notas", case_status: "Estado del caso", professional_id: "Profesional a cargo",
   referred_by: "Derivado por", main_diagnosis: "Diagnóstico", other_conditions: "Otras condiciones",
@@ -279,6 +290,9 @@ export type Guardian = {
   is_primary: boolean;
   notes: string | null;
   active: boolean;
+  // 31_ficha_contacto_semaforo.sql
+  caregiver_role?: CaregiverRole | null;
+  phone_kind?: PhoneKind | null;
 };
 
 export const GUARDIAN_RELATIONSHIPS = ["Madre", "Padre", "Abuela", "Abuelo", "Tía / tío", "Hermana / hermano", "Tutor legal", "Otro"];
@@ -339,7 +353,18 @@ export function normalizePatient(p: PatientRecord): PatientRecord {
     has_health_insurance: p.has_health_insurance ?? null,
     locality: p.locality ?? null,
     consent_signed: !!p.consent_signed,
+    // Fichas anteriores al script 31: el ingreso es el día en que se creó la ficha
+    admission_date: p.admission_date ?? (p.created_at ? localDay(p.created_at) : null),
+    other_history: p.other_history ?? null,
+    autonomy: p.autonomy ?? null,
+    phone_kind: p.phone_kind ?? null,
+    guardian_phone_kind: p.guardian_phone_kind ?? null,
   };
+}
+
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function fullName(p: Pick<PatientRecord, "first_name" | "last_name">): string {

@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { CENTER, HOME_PROVINCE, PROVINCES } from "@/lib/center";
+import { PHONE_KINDS, type PhoneKind } from "@/lib/contact";
 
 export const ADULT_AGE = 18;
 
@@ -48,6 +49,8 @@ const base = {
   last_name: z.string().trim().min(2, "Apellido requerido").max(60),
   dni: z.string().trim().regex(DNI_RE, "DNI inválido"),
   phone: z.string().trim().min(6, "Teléfono requerido").max(25),
+  // Para saber si se le puede escribir por WhatsApp o hay que llamar (script 31)
+  phone_kind: z.enum(PHONE_KINDS as [PhoneKind, ...PhoneKind[]], { errorMap: () => ({ message: "Indicá qué tipo de teléfono es" }) }),
   email: z.string().trim().email("Email inválido").max(120).optional().or(z.literal("")),
   province: z.enum(PROVINCES, { errorMap: () => ({ message: "Elegí la provincia" }) }),
   locality: z.string().trim().min(2, "Indicá la localidad").max(80),
@@ -103,6 +106,7 @@ export type IntakeRpcArgs = {
   p_guardian_relationship: GuardianRelationship | null;
   p_guardian_consent: boolean;
   p_consent_version: string | null;
+  p_phone_kind: PhoneKind;
 };
 
 /** Valida lo que cargó la persona y lo convierte en los argumentos de la RPC */
@@ -125,6 +129,7 @@ export function parseIntake(raw: Record<string, string>): { ok: true; args: Inta
     p_reason: d.reason,
     p_address: d.address,
     p_province: d.province,
+    p_phone_kind: d.phone_kind,
   };
   if (d.for === "yo") {
     return {
@@ -158,6 +163,9 @@ export function intakeGuardianError(a: Partial<Record<keyof IntakeRpcArgs, unkno
   const minor = age < ADULT_AGE || a.p_patient_type !== "adulto";
   if (a.p_province != null && !(PROVINCES as readonly string[]).includes(String(a.p_province))) {
     return "INVALID_PROVINCE: Elegí la provincia";
+  }
+  if (a.p_phone_kind != null && !(PHONE_KINDS as string[]).includes(String(a.p_phone_kind))) {
+    return "INVALID_PHONE: Indicá qué tipo de teléfono es";
   }
   if (!minor) return null;
   if (a.p_patient_type === "adulto") {

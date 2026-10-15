@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { selectClass } from "./fields";
 import { useMine } from "./useMine";
-import { REMINDER_CHANNEL_LABEL, reminderPhone, setReminder, whatsappLink, type ReminderChannel } from "@/lib/reminders";
+import { REMINDER_CHANNEL_LABEL, reminderPhone, reminderPhoneKind, setReminder, whatsappLink, type ReminderChannel } from "@/lib/reminders";
+import { AUTONOMY_COLOR, AUTONOMY_HINT, PHONE_KIND_HINT, PHONE_KIND_LABEL } from "@/lib/contact";
 import { RESOLUTION_LABEL, portalStaffApi } from "@/lib/portalStaff";
 import { REASONS, stampLabel } from "@/lib/portal";
 import type { StaffNotice } from "@/lib/portalRules";
@@ -50,7 +51,7 @@ const HEADER_H = "h-16";
 const STICKY_TOP = "top-0 lg:top-[65px]";
 const UNASSIGNED = "__sin_asignar__";
 
-const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone, guardian_name, patient_type)";
+const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone, guardian_name, patient_type, phone_kind, guardian_phone_kind, autonomy)";
 
 function firstWorkdayFrom(dateKey: string): string {
   return isWeekendKey(dateKey) ? nextWorkday(dateKey) : dateKey;
@@ -674,7 +675,15 @@ function AppointmentDialog({ appt: a, professional, staff, notice, onOpenNotices
           <div><dt className="text-xs text-muted-foreground">Modalidad</dt><dd className="font-medium">{a.modality === "telemedicina" ? "Telemedicina" : "Presencial"}</dd></div>
           {p && (
             <div><dt className="text-xs text-muted-foreground">Teléfono</dt>
-              <dd><a href={`tel:${p.phone.replace(/[^\d+]/g, "")}`} className="font-semibold hover:underline"><Phone className="mr-1 inline h-3.5 w-3.5" />{p.phone}</a></dd></div>
+              <dd><a href={`tel:${p.phone.replace(/[^\d+]/g, "")}`} className="font-semibold hover:underline"><Phone className="mr-1 inline h-3.5 w-3.5" />{p.phone}</a>
+                {p.phone_kind && <span className="block text-xs text-muted-foreground">{PHONE_KIND_LABEL[p.phone_kind]} · {PHONE_KIND_HINT[p.phone_kind].toLowerCase()}</span>}</dd></div>
+          )}
+          {p?.autonomy && (
+            <div className="col-span-2"><dt className="text-xs text-muted-foreground">Semáforo de autonomía</dt>
+              <dd className={`mt-0.5 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${AUTONOMY_COLOR[p.autonomy].chip}`}>
+                <span className={`h-2.5 w-2.5 rounded-full ${AUTONOMY_COLOR[p.autonomy].dot}`} aria-hidden="true" />
+                {AUTONOMY_HINT[p.autonomy]}
+              </dd></div>
           )}
           <div><dt className="text-xs text-muted-foreground">Tipo</dt><dd className="font-medium">{a.consultation_type === "primera_vez" ? "Primera vez" : "Seguimiento"}</dd></div>
         </dl>
@@ -909,6 +918,8 @@ function ReminderRow({ appt: a, notice, professionalName, staffEmail, compact = 
   const [busy, setBusy] = useState(false);
   const phone = reminderPhone(a);
   const wa = whatsappLink(a, professionalName);
+  const phoneKind = reminderPhoneKind(a);
+  const autonomy = a.patients?.autonomy;
 
   async function mark(channel: ReminderChannel | null) {
     setBusy(true);
@@ -954,13 +965,21 @@ function ReminderRow({ appt: a, notice, professionalName, staffEmail, compact = 
       )}
       {compact && <div className="min-w-0 flex-1 basis-40">{sentInfo || <span className="text-xs text-muted-foreground">Recordatorio sin enviar</span>}</div>}
       <div className="flex flex-wrap items-center gap-1.5">
+        {(autonomy === "rojo" || (phoneKind && phoneKind !== "whatsapp")) && (
+          <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-900"
+            title={autonomy === "rojo" ? AUTONOMY_HINT.rojo : PHONE_KIND_HINT[phoneKind!]}>
+            Avisar por llamada
+          </span>
+        )}
         {phone && (
           <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="mr-1 text-xs font-semibold hover:underline">
             <Phone className="mr-1 inline h-3.5 w-3.5" />{phone}
           </a>
         )}
         <Button size="sm" variant="outline" disabled={!wa || busy} onClick={openWhatsApp}
-          title={wa ? "Abrir WhatsApp con el recordatorio" : "El teléfono no tiene un formato válido para WhatsApp"}
+          title={wa ? "Abrir WhatsApp con el recordatorio"
+            : phoneKind && phoneKind !== "whatsapp" ? `${PHONE_KIND_LABEL[phoneKind]}: avisar por llamada`
+            : "El teléfono no tiene un formato válido para WhatsApp"}
           className="h-8 border-[#25D366]/50 text-[#128C7E] hover:bg-[#25D366]/10">
           <MessageCircle className="mr-1 h-3.5 w-3.5" /> WhatsApp
         </Button>

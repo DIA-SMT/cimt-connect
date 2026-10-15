@@ -7,7 +7,7 @@ import {
 } from "../src/lib/intake";
 
 const common = {
-  phone: "381 400-1122", email: "", province: "Tucumán", locality: "Yerba Buena",
+  phone: "381 400-1122", phone_kind: "whatsapp", email: "", province: "Tucumán", locality: "Yerba Buena",
   address: "Av. Aconquija 1200", preferred_modality: "presencial", referred_by: "", reason: "Repite sílabas al hablar",
 };
 const adult = { for: "yo", first_name: "Martín", last_name: "Sosa", dni: "33444555", age: "38", ...common };
@@ -30,6 +30,7 @@ describe("turno para uno mismo (18 o más)", () => {
     expect(r.args).toMatchObject({
       p_first_name: "Martín", p_dni: "33444555", p_age: 38, p_patient_type: "adulto", p_email: null,
       p_province: "Tucumán", p_guardian_name: null, p_guardian_dni: null, p_guardian_consent: false, p_consent_version: null,
+      p_phone_kind: "whatsapp",
     });
   });
   test("con menos de 18 lo manda a pedirlo como menor", () => {
@@ -37,6 +38,12 @@ describe("turno para uno mismo (18 o más)", () => {
   });
   test("sin elegir para quién es, no sigue", () => {
     expect(errorOf({ ...adult, for: "" })).toBe("Elegí para quién es el turno");
+  });
+  test("hay que decir qué tipo de teléfono es (WhatsApp, celular o fijo)", () => {
+    expect(errorOf({ ...adult, phone_kind: "" })).toBe("Indicá qué tipo de teléfono es");
+    expect(errorOf({ ...adult, phone_kind: "fax" })).toBe("Indicá qué tipo de teléfono es");
+    const r = parseIntake({ ...adult, phone_kind: "fijo" });
+    expect(r.ok && r.args.p_phone_kind).toBe("fijo");
   });
   test("provincia fuera de la lista", () => {
     expect(errorOf({ ...adult, province: "Atlántida" })).toBe("Elegí la provincia");
@@ -103,6 +110,10 @@ describe("reglas de la base (las usa el modo demo)", () => {
   });
   test("mismo DNI que el paciente", () => {
     expect(intakeGuardianError({ ...minorArgs, p_guardian_dni: minorArgs.p_dni })).toStartWith("INVALID_GUARDIAN_DNI:");
+  });
+  test("tipo de teléfono inválido (el formulario viejo no lo manda: pasa)", () => {
+    expect(intakeGuardianError({ ...adultArgs, p_phone_kind: "fax" as never })).toStartWith("INVALID_PHONE:");
+    expect(intakeGuardianError({ ...adultArgs, p_phone_kind: undefined })).toBeNull();
   });
   test("provincia inválida", () => {
     expect(intakeGuardianError({ ...adultArgs, p_province: "Narnia" })).toStartWith("INVALID_PROVINCE:");
