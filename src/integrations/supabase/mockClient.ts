@@ -37,6 +37,7 @@ const PATIENT_DEFAULTS: Row = {
   autonomy: null,
   phone_kind: null,
   guardian_phone_kind: null,
+  interests: [],
   case_status: "en_evaluacion",
   professional_id: null,
   referred_by: null,

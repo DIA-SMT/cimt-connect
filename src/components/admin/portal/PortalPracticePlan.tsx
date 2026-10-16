@@ -23,11 +23,12 @@ import {
 } from "@/lib/practiceRules";
 import {
   type Adaptacion, type AiAdaptParams, type AiMinutes, type AiSentDescription, type Contexto, type Dificultad,
-  type ExerciseDraftItem, type Interes, type QuienAcompana,
+  type ExerciseDraftItem, type Formato, type Interes, type QuienAcompana,
   ADAPTATIONS, ADAPTATION_LABEL, AI_ERROR, AGE_BAND_LABEL, AI_CATALOG_MAX, AI_INTERESTS_MAX, AI_MINUTES, CONTEXTS, CONTEXT_LABEL,
-  DIFFICULTIES, DIFFICULTY_LABEL, INTERESTS, INTEREST_LABEL, QUIEN_ACOMPANA, QUIEN_ACOMPANA_LABEL,
-  ageBand, describeSent, draftToExerciseInput,
+  DIFFICULTIES, DIFFICULTY_LABEL, FORMATS, FORMAT_HINT, FORMAT_LABEL, INTERESTS, INTEREST_LABEL, QUIEN_ACOMPANA, QUIEN_ACOMPANA_LABEL,
+  ageBand, describeSent, draftToExerciseInput, formatAllowed,
 } from "@/lib/aiDraftRules";
+import type { Why } from "@/lib/practiceSuggest";
 import {
   type AiDraftRequest, type AiDraftResult, type DraftFlag, type PracticeAction, type StaffExerciseDTO, type StaffPlanDTO,
   type StaffPracticeDTO, portalStaffApi,
@@ -1768,6 +1769,16 @@ function CatalogDialog({ data, catalog, inPlan, room, onAdd, onAdapt, onClose }:
   );
 }
 
+// "Sugerido por la ficha": cada sugerencia con su porqué (solo para el profesional)
+function SuggestedWhy<T extends string>({ items, labels }: { items?: Why<T>[]; labels: Record<T, string> }) {
+  if (!items?.length) return null;
+  return (
+    <ul className="space-y-0.5 text-xs text-emerald-800">
+      {items.map((x) => <li key={x.value}>Sugerido por la ficha · <strong>{labels[x.value]}</strong>: {x.why}</li>)}
+    </ul>
+  );
+}
+
 function ToggleChips<T extends string>({ label, options, labels, value, max, onChange }: {
   label: string; options: readonly T[]; labels: Record<T, string>; value: T[]; max?: number; onChange: (v: T[]) => void;
 }) {
@@ -1804,20 +1815,29 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
 }) {
   const p = data.patient;
   const band = ageBand(p.age);
-  const usable = data.approaches.filter((o) => o.age_ok && catalog.some((c) => c.approach === o.approach));
+  // Lo que sugiere la ficha (diagnóstico, edad, condiciones, semáforo, intereses)
+  const sug = data.suggestions;
+  const rank = (a: Approach) => {
+    const i = sug?.approaches.findIndex((x) => x.value === a) ?? -1;
+    return i < 0 ? 99 : i;
+  };
+  const usable = data.approaches.filter((o) => o.age_ok && catalog.some((c) => c.approach === o.approach))
+    .sort((a, b) => rank(a.approach) - rank(b.approach));
   const first = catalog.find((c) => c.id === initialIds[0]);
-  const startApproach = first?.approach ?? (usable.find((o) => o.suggested) ?? usable[0])?.approach ?? null;
+  const startApproach = first?.approach ?? usable[0]?.approach ?? null;
   const max = Math.min(AI_CATALOG_MAX, room);
   const [approach, setApproachState] = useState<Approach | null>(startApproach);
   const [session, setSession] = useState(false);
   const [ids, setIds] = useState<string[]>(() =>
     initialIds.filter((id) => catalog.find((c) => c.id === id)?.approach === startApproach).slice(0, max));
   const [quien, setQuien] = useState<QuienAcompana>(defaultQuien(p));
-  const [contexto, setContexto] = useState<Contexto[]>(["casa"]);
+  const [contexto, setContexto] = useState<Contexto[]>(() => sug?.contexto.map((x) => x.value) ?? ["casa"]);
   const [minutos, setMinutos] = useState<AiMinutes>(p.age !== null && p.age <= 5 ? 5 : 10);
   const [dificultad, setDificultad] = useState<Dificultad>("igual");
-  const [adaptaciones, setAdaptaciones] = useState<Adaptacion[]>([]);
-  const [intereses, setIntereses] = useState<Interes[]>([]);
+  const [adaptaciones, setAdaptaciones] = useState<Adaptacion[]>(() => sug?.adaptaciones.map((x) => x.value) ?? []);
+  const [intereses, setIntereses] = useState<Interes[]>(() => sug?.intereses ?? []);
+  const [formato, setFormato] = useState<Formato>(() =>
+    sug && startApproach && formatAllowed(sug.formato.value, startApproach) ? sug.formato.value : "ejercicio");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
@@ -1825,6 +1845,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
   const minId = useId();
   const quienName = useId();
   const difName = useId();
+  const formatName = useId();
 
   useEffect(() => {
     alive.current = true;
@@ -1840,7 +1861,9 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
     setIds([]);
     setSession(false);
     setError(null);
+    if (!formatAllowed(formato, a)) setFormato("ejercicio");
   }
+  const approachWhy = approach ? sug?.approaches.find((x) => x.value === approach)?.why : undefined;
 
   const problem = !band ? "Falta la fecha de nacimiento en la ficha."
     : !approach ? "Elegí el enfoque."
@@ -1861,6 +1884,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
     dificultad,
     adaptaciones: ADAPTATIONS.filter((a) => adaptaciones.includes(a)),
     intereses: INTERESTS.filter((i) => intereses.includes(i)),
+    formato,
   } : null;
   const preview = params ? describeSent(params, entries) : null;
 
@@ -1871,6 +1895,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
     const req: AiDraftRequest = {
       patient_id: p.id, catalog_ids: ids, approach, practiced_in_session: session, quien_acompana: quien,
       contexto: params.contexto, minutos, dificultad, adaptaciones: params.adaptaciones, intereses: params.intereses,
+      formato,
     };
     setRunning(true);
     const r = await requestDraft(req);
@@ -1894,6 +1919,13 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <span>{STAFF_PRACTICE_TEXT.ai_banner}</span>
           </p>
+          {sug && (
+            <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">
+              <strong>Armado con la ficha de {p.first_name}:</strong> el diagnóstico decide el enfoque recomendado, y la edad,
+              las otras condiciones, el semáforo, la escuela y los intereses completan el resto. Revisalo y cambiá lo que quieras.
+              La ficha no se manda a la IA: solo lo que elegís acá.
+            </p>
+          )}
 
           <fieldset disabled={running} className="min-w-0 space-y-4">
             <legend className="sr-only">Qué se pide</legend>
@@ -1910,9 +1942,12 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
               ) : (
                 <select id={approachId} className={selectClass} value={approach ?? ""} onChange={(e) => setApproach(e.target.value as Approach)}>
                   {!approach && <option value="">Elegí el enfoque</option>}
-                  {usable.map((o) => <option key={o.approach} value={o.approach}>{o.label}</option>)}
+                  {usable.map((o, i) => (
+                    <option key={o.approach} value={o.approach}>{i === 0 && sug ? `★ ${o.label} (recomendado)` : o.label}</option>
+                  ))}
                 </select>
               )}
+              {approachWhy && <p className="text-xs text-emerald-800">Por qué: {approachWhy}</p>}
               {opt?.needs_session && (
                 <label className="flex items-start gap-2 text-sm">
                   <input type="checkbox" className="mt-0.5" checked={session} onChange={(e) => setSession(e.target.checked)} />
@@ -1957,9 +1992,29 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
               ))}
             </fieldset>
 
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">Formato</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {FORMATS.map((f) => {
+                  const allowed = !approach || formatAllowed(f, approach);
+                  return (
+                    <label key={f} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border-2 p-2.5 text-sm ${formato === f ? "border-primary bg-[color:var(--primary-soft)]" : "border-border"} ${allowed ? "" : "cursor-not-allowed opacity-50"}`}>
+                      <span className="flex items-center gap-2 font-semibold">
+                        <input type="radio" name={formatName} value={f} checked={formato === f} disabled={!allowed} onChange={() => setFormato(f)} />
+                        {FORMAT_LABEL[f]}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{allowed ? FORMAT_HINT[f] : "No va con este enfoque."}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {sug && sug.formato.value === formato && formato !== "ejercicio" && <p className="text-xs text-emerald-800">Por qué: {sug.formato.why}</p>}
+            </fieldset>
+
             <div className="space-y-1.5">
               <p className="text-sm font-medium">Dónde</p>
               <ToggleChips label="Dónde" options={CONTEXTS} labels={CONTEXT_LABEL} value={contexto} onChange={setContexto} />
+              <SuggestedWhy items={sug?.contexto.filter((x) => x.value !== "casa")} labels={CONTEXT_LABEL} />
             </div>
 
             <div className="flex flex-wrap gap-6">
@@ -1985,12 +2040,16 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
             <div className="space-y-1.5">
               <p className="text-sm font-medium">Adaptaciones</p>
               <ToggleChips label="Adaptaciones" options={ADAPTATIONS} labels={ADAPTATION_LABEL} value={adaptaciones} onChange={setAdaptaciones} />
+              <SuggestedWhy items={sug?.adaptaciones} labels={ADAPTATION_LABEL} />
               <p className="text-xs text-muted-foreground">Se manda la necesidad, nunca la condición de la ficha.</p>
             </div>
 
             <div className="space-y-1.5">
               <p className="text-sm font-medium">Intereses <span className="font-normal text-muted-foreground">(hasta {AI_INTERESTS_MAX})</span></p>
               <ToggleChips label="Intereses" options={INTERESTS} labels={INTEREST_LABEL} value={intereses} max={AI_INTERESTS_MAX} onChange={setIntereses} />
+              {sug && sug.intereses.length === 0 && (
+                <p className="text-xs text-muted-foreground">Cargá los intereses en la ficha (Datos personales) y se van a sugerir solos.</p>
+              )}
             </div>
           </fieldset>
 

@@ -34,7 +34,10 @@ import {
 // v5: «ejercicios» es un objeto con una clave por cada id pedido (el esquema
 // se arma por pedido, draftJsonSchema, y el proveedor obliga a traer
 // exactamente esos ids); el ejercicio ya no lleva «catalogo_id».
-export const PROMPT_VERSION = "adapt-2026-10-v5";
+// v6: la IA trabaja como especialista del equipo del centro (principios del
+// abordaje y enfoques más detallados) y puede presentar el ejercicio como
+// minijuego o como poesía o rima («formato»).
+export const PROMPT_VERSION = "adapt-2026-10-v6";
 
 // ── Listas cerradas (lo único que se elige en el panel) ─────────────────────
 
@@ -133,6 +136,31 @@ export const INTEREST_LABEL: Record<Interes, string> = {
   videojuegos: "Videojuegos (como tema, sin pantallas)",
 };
 
+// Cómo se presenta el ejercicio adaptado. La técnica y el objetivo son los
+// del catálogo; cambia la forma: pasos, un juego con reglas o una rima.
+export const FORMATS = ["ejercicio", "minijuego", "poesia"] as const;
+export type Formato = (typeof FORMATS)[number];
+export const FORMAT_LABEL: Record<Formato, string> = {
+  ejercicio: "Ejercicio",
+  minijuego: "Minijuego",
+  poesia: "Poesía o rima",
+};
+export const FORMAT_HINT: Record<Formato, string> = {
+  ejercicio: "Pasos claros para practicar.",
+  minijuego: "Un juego con reglas simples, turnos y un final claro.",
+  poesia: "Una rima corta para decir juntos, despacio y con ritmo.",
+};
+// Desafíos y «tartamudear fácil» no se hacen con rimas (se practican situaciones reales)
+const FORMAT_APPROACHES: Record<Formato, readonly Approach[] | null> = {
+  ejercicio: null,
+  minijuego: null,
+  poesia: ["entorno_familia", "habla_facil", "ritmo_y_claridad", "escuela_y_lectura", "regulacion_y_rutinas"],
+};
+export function formatAllowed(f: Formato, approach: Approach): boolean {
+  const only = FORMAT_APPROACHES[f];
+  return !only || only.includes(approach);
+}
+
 export const AI_CATALOG_MAX = 4; // ejercicios del catálogo por pedido
 export const AI_INTERESTS_MAX = 3;
 
@@ -149,6 +177,7 @@ export type AiAdaptParams = {
   dificultad: Dificultad;
   adaptaciones: Adaptacion[];
   intereses: Interes[];
+  formato: Formato;
 };
 
 // Lo que manda el panel a POST /api/portal-staff/ai-draft. El servidor lee
@@ -165,6 +194,7 @@ export type AiDraftRequest = {
   dificultad: Dificultad;
   adaptaciones: Adaptacion[];
   intereses: Interes[];
+  formato?: Formato; // sin formato: "ejercicio" (panel anterior a v6)
 };
 
 const pick = <T extends string>(list: readonly T[], raw: unknown): T[] => {
@@ -209,6 +239,9 @@ export function buildAdaptParams(
   if (!dificultad) return { ok: false, error: "Elegí la dificultad." };
   const intereses = pick(INTERESTS, b.intereses);
   if (intereses.length > AI_INTERESTS_MAX) return { ok: false, error: `Elegí hasta ${AI_INTERESTS_MAX} intereses.` };
+  const formato = b.formato === undefined || b.formato === null ? "ejercicio" : oneOf(FORMATS, b.formato);
+  if (!formato) return { ok: false, error: "Elegí el formato." };
+  if (!formatAllowed(formato, approach)) return { ok: false, error: "Ese formato no corresponde a ese enfoque." };
   return {
     ok: true,
     entries,
@@ -223,6 +256,7 @@ export function buildAdaptParams(
       dificultad,
       adaptaciones: pick(ADAPTATIONS, b.adaptaciones),
       intereses,
+      formato,
     },
   };
 }
@@ -257,9 +291,11 @@ const quotedList = (xs: readonly string[]) => {
 };
 
 const BASE_RULES = [
-  "Sos una herramienta que adapta BORRADORES de ejercicios para un profesional de un centro municipal de Tucumán (fonoaudiología, psicología, psicopedagogía y terapia ocupacional). Nunca le hablás a la familia: el profesional revisa y corrige todo antes de publicarlo.",
+  "Sos especialista del equipo interdisciplinario de un centro municipal de Tucumán (fonoaudiología, psicología, psicopedagogía y terapia ocupacional). Adaptás BORRADORES de ejercicios para que un profesional del equipo los revise. Nunca le hablás a la familia: el profesional revisa y corrige todo antes de publicarlo.",
+  "Cómo trabaja el centro: se baja la presión al comunicarse; el adulto que acompaña es modelo de habla tranquila y escucha sin apuro; lo que se dice importa más que cómo sale; la familia es parte del tratamiento; la práctica en casa es corta, frecuente y como juego; y en casa solo se practica lo que ya se trabajó o se indicó en sesión.",
   "Respetá el catálogo: conservá el objetivo y la técnica de cada ejercicio de <catalogo> y cambiá solo la redacción, el contexto, los intereses, las adaptaciones y la dificultad pedidos en <pedido>. No inventes ejercicios nuevos.",
   "Nada de presión sobre la fluidez: ninguna meta ni frase sobre cómo tiene que salir el habla. No pidas repetir, respirar hondo ni pensar antes de hablar como corrección cotidiana.",
+  "Nada de trabalenguas, carreras ni desafíos de velocidad al hablar: el ritmo lo marca quien practica.",
   "Si un día no se practica o cuesta, no pasa nada: no se compara con nadie y no hay consecuencias.",
   `No uses las palabras ${quotedList(PROMPT_BANNED_WORDS)}, ni siquiera para negarlas ni para avisar qué no hay que decir: si aparecen, el borrador se descarta. En vez de escribir lo que no se hace, escribí lo que sí se hace.`,
   "Lo que se valora es practicar, animarse y participar, nunca cómo salió el habla.",
@@ -279,19 +315,26 @@ const BASE_RULES = [
 // (lo revisan las pruebas para cada enfoque y franja).
 export const APPROACH_PROMPT: Record<Approach, string> = {
   entorno_familia:
-    "Enfoque «tiempo en familia»: el centro es el adulto. Tiempo especial de juego a solas, el adulto habla con calma y sin apuro, hace pocas preguntas, comenta lo que pasa y escucha hasta el final. A quien practica no se le pide nada sobre su habla.",
+    "Enfoque «tiempo en familia»: el centro es el adulto. Tiempo especial de juego a solas, todos los días un rato corto. El adulto habla con calma y sin apuro, con frases cortas, deja pausas antes de responder, hace pocas preguntas, comenta lo que pasa y escucha hasta el final, mirando a quien habla. A quien practica no se le pide nada sobre su habla.",
   habla_facil:
-    "Enfoque «habla fácil»: inicios y contactos suaves, solo dentro de la práctica y como juego. Dentro del ejercicio se puede decir «más despacio» o «suave». Fuera del ejercicio no se corrige el habla.",
+    "Enfoque «habla fácil»: inicios suaves (la voz arranca despacito, como un globo que se infla) y contactos suaves (los labios y la lengua se tocan apenas), solo dentro de la práctica y como juego. Primero el adulto muestra cómo y lo hacen juntos; después, de palabras sueltas a frases cortas. Dentro del ejercicio se puede decir «más despacio» o «suave». Fuera del ejercicio no se corrige el habla.",
   tartamudear_facil:
-    "Enfoque «tartamudear fácil» (ya practicado en sesión): identificar los momentos de tartamudeo sin juzgarlos y tartamudear a propósito de forma relajada. El objetivo es perderle el miedo, no evitarlo.",
+    "Enfoque «tartamudear fácil» (ya practicado en sesión): identificar los momentos de tartamudeo sin juzgarlos, con curiosidad, y tartamudear a propósito de forma relajada y sin tensión. El objetivo es perderle el miedo y la vergüenza, no evitarlo; se habla de eso con naturalidad.",
   animarse:
-    "Enfoque «animarse» (ya practicado en sesión): desafíos de a poco para hablar en situaciones que dan miedo. El desafío lo elige quien practica y se puede bajar de nivel. Se valora animarse, no cómo salió.",
+    "Enfoque «animarse» (ya practicado en sesión): una escalera de desafíos, de lo más fácil a lo que más cuesta, para hablar en situaciones que dan miedo (pedir algo, llamar por teléfono, levantar la mano). El desafío lo elige quien practica y se puede bajar un escalón. Después se cuenta cómo se sintió. Se valora animarse, no cómo salió.",
   ritmo_y_claridad:
-    "Enfoque «ritmo y claridad»: darse cuenta del propio ritmo al hablar, hacer pausas y ordenar lo que se quiere contar. Acá bajar la velocidad dentro del ejercicio es un objetivo válido.",
+    "Enfoque «ritmo y claridad»: darse cuenta del propio ritmo al hablar, hacer pausas y ordenar lo que se quiere contar (qué pasó primero, qué después). Ayuda grabarse o escucharse solo si lo indica el profesional. Acá bajar la velocidad dentro del ejercicio es un objetivo válido.",
   escuela_y_lectura:
-    "Enfoque «escuela y lectura» (psicopedagogía): lectura compartida, preparar participaciones en clase, apoyos visuales; se valora el contenido más que la forma.",
+    "Enfoque «escuela y lectura» (psicopedagogía): lectura compartida o a coro, preparar y ensayar en casa una participación en clase, apoyos visuales y opciones por escrito. Se valora el contenido más que la forma.",
   regulacion_y_rutinas:
-    "Enfoque «regulación y rutinas» (terapia ocupacional): rutinas previsibles, avisos anticipados y momentos de calma con el cuerpo y el movimiento.",
+    "Enfoque «regulación y rutinas» (terapia ocupacional): rutinas previsibles, avisos anticipados de los cambios, y momentos de calma con el cuerpo y el movimiento (estirarse, apretar y soltar, caminar) antes de las situaciones que cuestan.",
+};
+
+// Cómo presentar el ejercicio (no cambia la técnica ni el objetivo del catálogo)
+export const FORMAT_PROMPT: Record<Formato, string> = {
+  ejercicio: "Formato «ejercicio»: pasos claros y cortos, en orden.",
+  minijuego: "Formato «minijuego»: presentalo como un juego con un nombre divertido, reglas simples, turnos y un final claro. Nadie gana ni pierde por cómo habla: se gana por jugar y participar. El adulto juega también y hace lo mismo que pide.",
+  poesia: "Formato «poesía o rima»: escribí una rima corta y propia (4 versos cortos, todo junto hasta 110 caracteres), con palabras simples y ritmo tranquilo, para decirla juntos y despacio. Va completa dentro de uno de los pasos, entre comillas «». Que no sea un trabalenguas ni tenga sonidos difíciles seguidos.",
 };
 
 export const AGE_PROMPT: Record<AgeBand, string> = {
@@ -334,6 +377,7 @@ export function buildAdaptPrompt(params: AiAdaptParams, entries: CatalogEntry[])
     ...BASE_RULES,
     APPROACH_PROMPT[params.enfoque],
     AGE_PROMPT[params.franja_edad],
+    FORMAT_PROMPT[params.formato ?? "ejercicio"],
     ...OUTPUT_RULES,
   ].join("\n\n");
   const catalog = entries.map((e) => ({
@@ -713,6 +757,7 @@ export function describeSent(params: AiAdaptParams, entries: CatalogEntry[]): Ai
       { label: "Dificultad", value: DIFFICULTY_LABEL[params.dificultad] },
       { label: "Adaptaciones", value: list(params.adaptaciones, ADAPTATION_LABEL) },
       { label: "Intereses", value: list(params.intereses, INTEREST_LABEL) },
+      { label: "Formato", value: FORMAT_LABEL[params.formato ?? "ejercicio"] },
       { label: "Catálogo", value: `versión ${params.catalogo.version}` },
     ],
     catalog: entries.map((e) => ({ id: e.id, title: e.title })),
@@ -789,9 +834,14 @@ export function mockDraft(params: AiAdaptParams, entries: CatalogEntry[]): Exerc
     intro: MOCK_DRAFT_NOTICE,
     ejercicios: entries.map((e) => ({
       catalogo_id: e.id,
-      titulo: e.title,
+      // En el demo, el formato se nota en el título y en un paso (sin IA)
+      titulo: params.formato === "minijuego" ? `Juego: ${e.title}`.slice(0, DRAFT_LIMITS.titulo) : e.title,
       para_que: e.para_que,
-      pasos: [...e.pasos],
+      pasos: params.formato === "poesia"
+        ? [...e.pasos.slice(0, DRAFT_LIMITS.pasos_max - 1), "Digan juntos, despacito: «La luna sale, la luna va, suave y tranquila nos mira al pasar»."]
+        : params.formato === "minijuego"
+          ? [...e.pasos.slice(0, DRAFT_LIMITS.pasos_max - 1), "Jueguen por turnos: cada uno hace una vez y el juego termina cuando los dos jugaron tres veces."]
+          : [...e.pasos],
       minutos: Math.max(DRAFT_LIMITS.minutos_min, params.minutos),
       materiales: e.materiales.split(/,\s*|:\s*/).map((m) => m.trim().replace(/\.$/, "")).filter(Boolean),
       rol_del_adulto: e.with_adult ? e.for_adult : null,

@@ -188,6 +188,7 @@ import {
   planSummary, planTextAlerts, practiceDateProblem, practiceDates, practiceSummaryText, publishProblem, readersLine,
   uncoveredAlerts, validateFeedback, validateGoal, validateNote, validatePlanDraft, weekKey, weekProgress,
 } from "@/lib/practiceRules";
+import { profileFromRow, suggestPractice } from "@/lib/practiceSuggest";
 import { CATALOG_VERSION, catalogEntry, catalogFor } from "@/lib/exerciseCatalog";
 import {
   type AiAdaptParams, type AiDraftRequest, type AiDraftResult, type DraftFlag, type ExerciseDraft,
@@ -4591,6 +4592,7 @@ const PRACTICE_ACTIONS: readonly unknown[] = [
 type PracticePatient = {
   id: string; first_name: string; age: number | null; diagnosis_code: string | null;
   professional_id: string | null; demo: boolean;
+  row: Row | null; // la ficha del panel (para sugerir los ejercicios); null en la demo
 };
 
 async function practicePatient(db: Db, id: string): Promise<PracticePatient | null> {
@@ -4603,6 +4605,7 @@ async function practicePatient(db: Db, id: string): Promise<PracticePatient | nu
     id, first_name: card.first_name, age: card.birth_date ? ageOn(card.birth_date, centerNow().date) : null,
     diagnosis_code: demo ? child?.diagnosis_code ?? null : text(p?.diagnosis_code),
     professional_id: demo ? null : text(p?.professional_id), demo,
+    row: p ?? null,
   };
 }
 
@@ -4879,6 +4882,7 @@ async function staffPractice(staff: Staff, patientId: string, withCatalog = fals
       id: p.id, first_name: p.first_name, self, age: p.age, audience: audienceForAge(p.age), adolescent: isAdolescent(p.age),
     },
     approaches: admin ? [] : approachOptions(p.diagnosis_code, p.age),
+    suggestions: admin ? null : suggestPractice(profileFromRow(p.row, p.age, p.diagnosis_code)),
     practice_enabled: access.data.settings.practice_enabled,
     readers,
     readers_line: readersLine(readers, { first_name: p.first_name, self }),

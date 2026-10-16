@@ -65,6 +65,7 @@ export type PatientRecord = {
   autonomy?: Autonomy | null;              // semáforo: verde / amarillo / rojo
   phone_kind?: PhoneKind | null;           // tipo del teléfono del paciente
   guardian_phone_kind?: PhoneKind | null;  // tipo del teléfono del adulto responsable principal
+  interests?: string[];                    // intereses (32_intereses_paciente.sql)
   created_at: string;
   updated_at: string;
 };
@@ -149,7 +150,7 @@ export const AUDIT_TABLE_LABEL: Record<string, string> = {
 export const AUDIT_FIELD_LABEL: Record<string, string> = {
   admission_date: "Fecha de ingreso", other_history: "Otros antecedentes", autonomy: "Semáforo de autonomía",
   phone_kind: "Tipo de teléfono", guardian_phone_kind: "Tipo de teléfono del tutor", caregiver_role: "Rol en el cuidado",
-  photo_path: "Foto de perfil",
+  photo_path: "Foto de perfil", interests: "Intereses",
   first_name: "Nombre", last_name: "Apellido", dni: "DNI", age: "Edad", phone: "Teléfono", email: "Email",
   patient_type: "Tipo de paciente", notes: "Notas", case_status: "Estado del caso", professional_id: "Profesional a cargo",
   referred_by: "Derivado por", main_diagnosis: "Diagnóstico", other_conditions: "Otras condiciones",
@@ -359,6 +360,7 @@ export function normalizePatient(p: PatientRecord): PatientRecord {
     autonomy: p.autonomy ?? null,
     phone_kind: p.phone_kind ?? null,
     guardian_phone_kind: p.guardian_phone_kind ?? null,
+    interests: p.interests ?? [],
   };
 }
 

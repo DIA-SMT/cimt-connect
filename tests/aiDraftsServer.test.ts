@@ -390,7 +390,7 @@ describe("createAdaptDraft: borrador bien armado", () => {
     // Lo que queda registrado y lo que ve el profesional, tampoco
     expect(JSON.stringify(db.drafts[0].params)).not.toMatch(/farfull|F98/i);
     expect(out.sent.exact).not.toMatch(/farfull|F98/i);
-    expect(db.drafts[0].prompt_version).toBe("adapt-2026-10-v5");
+    expect(db.drafts[0].prompt_version).toBe("adapt-2026-10-v6");
   });
 
   test("lee del paciente solo la fecha de nacimiento y el diagnóstico, con la sesión de quien pide; no se devuelven", async () => {
@@ -680,7 +680,7 @@ describe("createAdaptDraft: reintento, plazo y errores", () => {
       expect(system.content).toContain("ni siquiera para negarlas");
     }
     expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "LINT_BLOCK", prompt_version: PROMPT_VERSION, output: null, flags: [] });
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v5");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v6");
     // El motivo queda en los intentos (las frases que bloquearon), no en los logs
     replies.push(ok(denial));
     replies.push(ok(goodDraft()));
@@ -893,7 +893,7 @@ describe("createAdaptDraft: esquema por pedido (un ejercicio por cada id pedido)
     const e = await failure(createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV }));
     expect([e.status, e.extra.code]).toEqual([502, "AI_FAILED"]);
     expect(calls).toHaveLength(2);
-    expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "CATALOG", output: null, flags: [], prompt_version: "adapt-2026-10-v5" });
+    expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "CATALOG", output: null, flags: [], prompt_version: "adapt-2026-10-v6" });
     // En el log, los códigos de los intentos (nunca el texto)
     expect(logs.join("\n")).toContain("CATALOG/200");
     expect(logs.join("\n")).not.toContain("Tiempo especial");

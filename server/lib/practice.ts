@@ -47,6 +47,7 @@ import {
   readersLine, screenMode, uncoveredAlerts, validateFeedback, validateGoal, validateNote, validatePlanDraft, weekKey,
   weekProgress, FLUENCY_TITLE_MESSAGE,
 } from "../../src/lib/practiceRules";
+import { PROFILE_COLUMNS, profileFromRow, suggestPractice } from "../../src/lib/practiceSuggest";
 import { type Account, type ActiveChild, type Ctx, PortalError, activeChildren, missingTable } from "./portal";
 import { childrenClinical, features, staffClinical } from "./portalClinical";
 
@@ -1041,10 +1042,12 @@ async function requireAuthor(ctx: Ctx, staff: Staff) {
   return author as { professional_id: string | null; label: string; problem: null };
 }
 
-type PatientRow = { id: string; first_name: string; birth_date: string | null; diagnosis_code: string | null };
+type PatientRow = { id: string; first_name: string; birth_date: string | null; diagnosis_code: string | null } & Record<string, unknown>;
 
 async function patientOf(ctx: Ctx, patientId: string): Promise<PatientRow & { age: number | null }> {
-  const { data, error } = await ctx.admin.from("patients").select("id, first_name, birth_date, diagnosis_code").eq("id", patientId).maybeSingle();
+  // Con lo que hace falta para sugerir los ejercicios (practiceSuggest.ts)
+  const { data, error } = await ctx.admin.from("patients")
+    .select(`id, first_name, birth_date, diagnosis_code, ${PROFILE_COLUMNS}`).eq("id", patientId).maybeSingle();
   if (error) throw new PortalError(503, OFFLINE);
   if (!data) throw new PortalError(404, PATIENT_NOT_FOUND);
   const p = data as PatientRow;
@@ -1373,6 +1376,7 @@ export async function staffPractice(ctx: Ctx, staff: Staff, patientId: string, o
       id: patient.id, first_name: patient.first_name, self, age, audience: audienceForAge(age), adolescent: isAdolescent(age),
     },
     approaches: admin ? [] : approachOptions(code, age),
+    suggestions: admin ? null : suggestPractice(profileFromRow(patient, age, code)),
     practice_enabled: access.settings.practice_enabled,
     readers,
     readers_line: readersLine(readers, { first_name: patient.first_name, self }),

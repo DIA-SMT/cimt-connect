@@ -46,7 +46,7 @@ describe("buildAdaptParams (lo que arma el servidor)", () => {
   test("solo listas cerradas y la franja: nada que identifique al paciente", () => {
     const { params, entries } = built();
     expect(Object.keys(params).sort()).toEqual(
-      ["adaptaciones", "area", "catalogo", "contexto", "dificultad", "enfoque", "franja_edad", "intereses", "minutos", "quien_acompana"],
+      ["adaptaciones", "area", "catalogo", "contexto", "dificultad", "enfoque", "formato", "franja_edad", "intereses", "minutos", "quien_acompana"],
     );
     expect(params).toEqual({
       catalogo: { ids: ["hf-tortuga-suave"], version: CATALOG_VERSION },
@@ -59,6 +59,7 @@ describe("buildAdaptParams (lo que arma el servidor)", () => {
       dificultad: "igual",
       adaptaciones: ["consignas_cortas"],
       intereses: ["dinosaurios"],
+      formato: "ejercicio", // sin formato en el pedido (panel anterior a v6)
     });
     expect(entries.map((e) => e.id)).toEqual(["hf-tortuga-suave"]);
     const sent = JSON.stringify(params) + buildAdaptPrompt(params, entries).user;
@@ -102,7 +103,7 @@ describe("buildAdaptPrompt", () => {
     expect(user.startsWith("<catalogo>")).toBe(true);
     expect(user).toContain(`<pedido>${JSON.stringify(params)}</pedido>`);
     expect(user).toContain("La tortuga que habla suave");
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v5");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v6");
   });
   test("la salida: «ejercicios» con una clave por id pedido (como el esquema por pedido), sin «catalogo_id»", () => {
     const { params, entries } = built();
@@ -212,7 +213,7 @@ describe("el prompt no revela el diagnóstico", () => {
     for (const a of APPROACHES) expect([a, diagnosisHits(APPROACH_PROMPT[a])]).toEqual([a, []]);
     for (const b of AGE_BANDS) expect([b, diagnosisHits(AGE_PROMPT[b])]).toEqual([b, []]);
     expect(APPROACH_PROMPT.ritmo_y_claridad).not.toContain("farfulleo");
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v5");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v6");
   });
 
   test("cada enfoque × franja, con un diagnóstico que ofrece el enfoque: nada en el system ni en el user", () => {

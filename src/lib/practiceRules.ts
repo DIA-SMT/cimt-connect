@@ -24,6 +24,7 @@ import { CENTER } from "./center";
 import { ADOLESCENT_FROM, ADULT_FROM } from "./portalClinicalRules";
 import { REVIEW_NOTE_MAX, cleanText, fitText } from "./portalInfoRules";
 import { addDaysKey, centerNow } from "./portalRules";
+import type { PracticeSuggestions } from "./practiceSuggest";
 
 // ── Enfoques ────────────────────────────────────────────────────────────────
 // Lista cerrada y compartida (la base la repite en un CHECK). "emociones" no
@@ -1756,6 +1757,9 @@ export type StaffPracticeDTO = {
     adolescent: boolean; // 13 a 17: "Lo conversé con …"
   };
   approaches: ApproachOption[]; // ([] para Administración)
+  // Lo que la ficha sugiere para armar los ejercicios (practiceSuggest.ts);
+  // null para Administración. Nunca viaja a la IA: solo lo ve el profesional
+  suggestions: PracticeSuggestions | null;
   practice_enabled: boolean; // interruptor del paciente (patient_portal_settings)
   readers: string[]; // quienes hoy ven la práctica: "María López (madre)"
   readers_line: string; // readersLine()
