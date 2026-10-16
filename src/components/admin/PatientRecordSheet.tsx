@@ -24,6 +24,7 @@ import { PortalPatientSection } from "./portal/PortalPatientSection";
 import { VoidButton, VoidedBanner, voidRecord } from "./voiding";
 import { canEditClinical, type Staff } from "@/lib/staff";
 import { LOCALITY_OPTIONS } from "@/lib/center";
+import { INTERESTS, INTEREST_LABEL } from "@/lib/aiDraftRules";
 import {
   AUTONOMIES, AUTONOMY_COLOR, AUTONOMY_HINT, AUTONOMY_LABEL, PHONE_KINDS, PHONE_KIND_HINT, PHONE_KIND_LABEL,
   type Autonomy, type PhoneKind,
@@ -74,6 +75,8 @@ const EDITABLE_FIELDS = [
   "diagnosis_code", "consent_signed", "consent_date", "discharge_date", "discharge_notes",
   // 31_ficha_contacto_semaforo.sql
   "admission_date", "other_history", "autonomy", "phone_kind",
+  // 32_intereses_paciente.sql
+  "interests",
 ] as const satisfies readonly (keyof PatientRecord)[];
 
 
@@ -358,6 +361,24 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
                     onChange={(v) => set("school_grade", v)} placeholder="Ej: 2do grado, sala de 5" />
                   <TextField label="Fecha de ingreso" type="date" value={draft.admission_date ?? ""}
                     onChange={(v) => set("admission_date", v || null)} />
+                </div>
+
+                {/* Intereses: el editor de ejercicios los sugiere solos */}
+                <div className="space-y-2 rounded-2xl border border-border p-4">
+                  <Label className="font-semibold">Intereses</Label>
+                  <p className="text-xs text-muted-foreground">Qué le gusta. Se usan para armar los ejercicios para casa.</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {INTERESTS.map((i) => {
+                      const on = (draft.interests ?? []).includes(i);
+                      return (
+                        <Chip key={i} active={on} onClick={() => set("interests", on
+                          ? (draft.interests ?? []).filter((x) => x !== i)
+                          : [...(draft.interests ?? []), i])}>
+                          {INTEREST_LABEL[i]}
+                        </Chip>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* Semáforo: si quien gestiona los turnos puede hacerlo solo */}
