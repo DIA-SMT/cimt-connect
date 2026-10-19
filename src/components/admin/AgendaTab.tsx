@@ -243,7 +243,7 @@ export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices }
           No hay profesionales activos. Cargalos en la pestaña <strong>Equipo</strong> (lo hace la Dirección).
         </div>
       ) : (
-        <div className="relative overflow-x-auto rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)] lg:overflow-visible">
+        <div data-tour="agenda-grilla" className="relative overflow-x-auto rounded-2xl border border-border/60 bg-card shadow-[var(--shadow-card)] lg:overflow-visible">
           <div className={`flex min-w-full pb-3 ${weekend ? "opacity-60" : ""}`}>
             {/* Eje de horas */}
             <div className="sticky left-0 z-20 w-16 shrink-0 border-r border-border/60 bg-card">

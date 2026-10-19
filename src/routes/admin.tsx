@@ -21,6 +21,7 @@ import { portalStaffApi } from "@/lib/portalStaff";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
 import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
+import { PanelGuide } from "@/components/admin/PanelGuide";
 import { PASSWORD_MIN, PASSWORD_MIN_MESSAGE } from "@/lib/passwords";
 
 type Patient = {
@@ -341,6 +342,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
               <div className="text-sm font-semibold text-foreground">{staff.full_name || staff.email}</div>
               <div className="text-xs text-muted-foreground">{ROLE_LABEL[staff.role]}</div>
             </div>
+            <PanelGuide tab={activeTab} staff={staff} />
             <Button variant="outline" size="sm" onClick={() => setChangingPassword(true)}>
               <KeyRound className="mr-1.5 h-3.5 w-3.5" /> Contraseña
             </Button>
@@ -367,7 +369,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         )}
 
         {/* Tabs */}
-        <div className="mt-6 flex w-fit flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
+        <div data-tour="pestanas" className="mt-6 flex w-fit flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
           <TabButton active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")}
             icon={<CalendarDays className="h-4 w-4" />} label="Agenda" />
           <TabButton active={activeTab === "solicitudes"} onClick={() => setActiveTab("solicitudes")}

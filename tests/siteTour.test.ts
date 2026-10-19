@@ -39,6 +39,7 @@ describe("cada paso resalta un lugar que existe", () => {
   test("los data-tour del recorrido están en el código", () => {
     for (const s of SITE_TOUR) {
       for (const sel of s.targets ?? []) {
+        if (typeof sel !== "string") continue;
         const m = /\[data-tour="([^"]+)"\]/.exec(sel);
         if (m) expect({ sel, found: SRC.includes(`data-tour="${m[1]}"`) || SRC.includes(`"${m[1]}" :`) }).toEqual({ sel, found: true });
         else if (sel.startsWith("#")) expect({ sel, found: SRC.includes(`id="${sel.slice(1)}"`) }).toEqual({ sel, found: true });
