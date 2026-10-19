@@ -1,14 +1,14 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Info, Loader2 } from "lucide-react";
+import { type LucideIcon, Info, Loader2, MessageCircleHeart, Sparkles, Target, Trophy } from "lucide-react";
 import { type FeedbackDTO, type FeedbackItemDTO, type MedalsDTO, capitalize, portalApi } from "@/lib/portal";
 import { PRACTICE_TEXT, breakLine, feedbackNoReply, medalsIntro, medalsTitle } from "@/lib/practiceRules";
-import { BackToHome, FeedbackCard, GoalList, MedalIcon, MedalTile, PracticeGate } from "@/components/portal/PracticeParts";
+import { BackToHome, FeedbackCard, GoalList, MedalNextTile, MedalTile, PracticeGate } from "@/components/portal/PracticeParts";
 import {
   type PracticeFailure, feedbackIsMessage, focusRing, logrosFailure, medalTerms, seenBatches, useFeedbackSeen, whoOf,
 } from "@/components/portal/practiceFormat";
 import { PageTitle } from "@/components/portal/ui";
-import { TONE_CLASS, card, sectionTitle } from "@/components/portal/styles";
+import { TONE_CLASS } from "@/components/portal/styles";
 
 // "Mis logros" / "Medallas de Martín" / "Logros de Fernanda": todo lo que
 // suma en un solo lugar, con un plan publicado o sin él (lo que se ganó y se
@@ -108,10 +108,72 @@ function LogrosPage() {
         <PageTitle>{medalsTitle(w)}</PageTitle>
         <NewFeedbackJump feedback={feedback} />
       </div>
-      <MedalsSection medals={medals} />
-      <GoalsSection medals={medals} />
-      <FeedbackSection feedback={feedback} shown={shown} sectionRef={feedbackRef} />
+      <SummaryBanner medals={medals} feedback={feedback} />
+      {/* En la compu, dos columnas: las medallas a un lado; metas y devoluciones al otro */}
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <MedalsSection medals={medals} />
+        <div className="flex flex-col gap-6">
+          <GoalsSection medals={medals} />
+          <FeedbackSection feedback={feedback} shown={shown} sectionRef={feedbackRef} />
+        </div>
+      </div>
     </div>
+  );
+}
+
+// Resumen de arriba: cuánto se sumó (cuenta lo hecho, nunca lo que falta)
+function SummaryBanner({ medals, feedback }: { medals: MedalsDTO; feedback: FeedbackDTO }) {
+  const t = medalTerms(whoOf(medals.child));
+  const won = medals.earned.reduce((s, m) => s + Math.max(1, m.times), 0);
+  const active = medals.goals.filter((g) => g.status !== "lograda").length;
+  const done = medals.goals.length - active;
+  const message = feedbackIsMessage(whoOf(feedback.child));
+  const stats: { icon: LucideIcon; value: number; label: string }[] = [
+    { icon: Trophy, value: won, label: won === 1 ? t.a.replace(/^un[a]? /, "") : t.many },
+    { icon: Target, value: active, label: active === 1 ? "meta en camino" : "metas en camino" },
+    { icon: Sparkles, value: done, label: done === 1 ? "meta lograda" : "metas logradas" },
+    { icon: MessageCircleHeart, value: feedback.items.length, label: message ? (feedback.items.length === 1 ? "mensaje" : "mensajes") : (feedback.items.length === 1 ? "devolución" : "devoluciones") },
+  ];
+  return (
+    <section aria-label="Resumen" className="overflow-hidden rounded-3xl bg-linear-to-r from-sky-700 via-indigo-700 to-violet-700 p-5 text-white shadow-[var(--shadow-elegant)] sm:p-6">
+      <p className="font-display text-lg font-bold sm:text-xl">Cada práctica suma. ¡A seguir así!</p>
+      <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {stats.map((s) => (
+          <li key={s.label} className="flex items-center gap-3 rounded-2xl bg-white/15 px-3 py-3">
+            <s.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+            <span className="leading-tight">
+              <span className="block font-display text-2xl font-extrabold">{s.value}</span>
+              <span className="text-sm">{s.label}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// Cada parte en su tarjeta, con un ícono de color para ubicarla de un vistazo
+function SectionCard({ id, icon: Icon, tone, title, action, children, sectionRef, titleFocus = false }: {
+  id: string; icon: LucideIcon; tone: string; title: string; action?: React.ReactNode; children: React.ReactNode;
+  sectionRef?: RefObject<HTMLElement | null>; titleFocus?: boolean;
+}) {
+  return (
+    <section ref={sectionRef} aria-labelledby={id} className="flex flex-col gap-4 rounded-3xl border border-border/60 bg-card/95 p-5 shadow-[var(--shadow-card)]">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex items-center gap-3">
+          <span aria-hidden="true" className={`flex h-11 w-11 items-center justify-center rounded-2xl ${tone}`}>
+            <Icon className="h-6 w-6" />
+          </span>
+          {/* El de devoluciones es destino del acceso de arriba: recibe el foco y no queda debajo del encabezado fijo */}
+          <h2 id={id} tabIndex={titleFocus ? -1 : undefined}
+            className="scroll-mt-24 font-display text-xl font-bold text-[color:var(--primary-deep)] outline-none">
+            {title}
+          </h2>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -171,23 +233,18 @@ function FeedbackSection({ feedback, shown, sectionRef }: {
     ? ` · ${restNew} ${message ? (restNew === 1 ? "nuevo" : "nuevos") : (restNew === 1 ? "nueva" : "nuevas")}`
     : "";
   return (
-    <section ref={sectionRef} aria-labelledby="devoluciones-titulo" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-3">
-        {/* Destino del acceso de arriba: recibe el foco y no queda debajo del encabezado fijo */}
-        <h2 id="devoluciones-titulo" tabIndex={-1} className={`${sectionTitle} scroll-mt-24 outline-none`}>
-          {message ? "Mensajes de tu profesional" : "Devoluciones"}
-        </h2>
-        {rest.length > 0 && (
-          <Link to="/portal/devoluciones/$patientId" params={{ patientId: feedback.child.id }}
-            className={`inline-flex min-h-12 items-center rounded-full text-base font-bold text-primary underline-offset-2 hover:underline ${focusRing}`}>
-            {message ? "Ver todos" : "Ver todas"}
-            <span className="sr-only"> {message ? "los mensajes" : "las devoluciones"}</span>
-            {restNewText}&nbsp;→
-          </Link>
-        )}
-      </div>
+    <SectionCard id="devoluciones-titulo" icon={MessageCircleHeart} tone="bg-sky-100 text-sky-800" sectionRef={sectionRef} titleFocus
+      title={message ? "Mensajes de tu profesional" : "Devoluciones"}
+      action={rest.length > 0 && (
+        <Link to="/portal/devoluciones/$patientId" params={{ patientId: feedback.child.id }}
+          className={`inline-flex min-h-12 items-center rounded-full text-base font-bold text-primary underline-offset-2 hover:underline ${focusRing}`}>
+          {message ? "Ver todos" : "Ver todas"}
+          <span className="sr-only"> {message ? "los mensajes" : "las devoluciones"}</span>
+          {restNewText}&nbsp;→
+        </Link>
+      )}>
       {shown.length === 0 ? (
-        <p className={`${card} text-base`}>
+        <p className="rounded-2xl bg-muted/70 px-4 py-3 text-base">
           {message
             ? "Todavía no hay mensajes. Cuando tu profesional escriba uno, lo vas a ver acá."
             : "Todavía no hay devoluciones. Cuando tu profesional escriba una, la vas a ver acá."}
@@ -198,7 +255,7 @@ function FeedbackSection({ feedback, shown, sectionRef }: {
           <p className="text-base text-muted-foreground">{feedbackNoReply(feedback.has_plan)}</p>
         </>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -206,17 +263,16 @@ function FeedbackSection({ feedback, shown, sectionRef }: {
 function GoalsSection({ medals }: { medals: MedalsDTO }) {
   const w = whoOf(medals.child);
   return (
-    <section aria-labelledby="metas-titulo" className="flex flex-col gap-3">
-      <h2 id="metas-titulo" className={sectionTitle}>Metas</h2>
+    <SectionCard id="metas-titulo" icon={Target} tone="bg-emerald-100 text-emerald-800" title="Metas">
       {medals.goals.length === 0 ? (
-        <p className={`${card} text-base`}>Todavía no hay metas. Cuando las acuerden con tu profesional, las vas a ver acá.</p>
+        <p className="rounded-2xl bg-muted/70 px-4 py-3 text-base">Todavía no hay metas. Cuando las acuerden con tu profesional, las vas a ver acá.</p>
       ) : (
         <>
           <GoalList goals={medals.goals} w={w} />
           <p className="text-base text-muted-foreground">{PRACTICE_TEXT.goals_note}</p>
         </>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -226,13 +282,12 @@ function MedalsSection({ medals }: { medals: MedalsDTO }) {
   const t = medalTerms(w);
   const intro = medalsIntro(medals.author_label);
   return (
-    <section aria-labelledby="medallas-titulo" className="-mt-2 flex flex-col gap-3">
-      <h2 id="medallas-titulo" className={sectionTitle}>{capitalize(t.many)}</h2>
+    <SectionCard id="medallas-titulo" icon={Trophy} tone="bg-amber-100 text-amber-800" title={capitalize(t.many)}>
       {medals.earned.length === 0 ? (
-        <p className={`${card} text-base`}>Todavía no hay {t.many}. {intro}</p>
+        <p className="rounded-2xl bg-muted/70 px-4 py-3 text-base">Todavía no hay {t.many}. {intro}</p>
       ) : (
         <>
-          <ul className="grid grid-cols-2 gap-3">
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {medals.earned.map((m) => <MedalTile key={m.id} medal={m} w={w} />)}
           </ul>
           <p className="text-base text-muted-foreground">{intro}</p>
@@ -249,16 +304,11 @@ function MedalsSection({ medals }: { medals: MedalsDTO }) {
       ) : medals.next.length > 0 && (
         <div className="mt-2 flex flex-col gap-3">
           <h3 className="font-display text-lg font-bold">Para seguir sumando</h3>
-          <ul className={`${card} flex flex-col divide-y divide-border/60 py-1`}>
-            {medals.next.map((n) => (
-              <li key={n.code} className="flex items-center gap-3 py-3">
-                <MedalIcon code={n.code} className="h-6 w-6" />
-                <span className="min-w-0 text-base"><b>{n.title}</b> · {n.text}</span>
-              </li>
-            ))}
+          <ul className="flex flex-col gap-2">
+            {medals.next.map((n) => <MedalNextTile key={n.code} code={n.code} title={n.title} text={n.text} />)}
           </ul>
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }
