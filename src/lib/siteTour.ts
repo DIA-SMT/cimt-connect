@@ -6,12 +6,16 @@
 // Cada paso resalta un lugar real de la página («targets»: el primero que se
 // vea, así sirve en la compu y en el celular). Sin target: tarjeta sola.
 
+// Un lugar de la página: un selector CSS o un texto visible (el de un botón o
+// un título; empieza con ese texto), opcionalmente dentro de otro selector
+export type TourTarget = string | { text: string; tag?: string; within?: string };
+
 export type TourStep = {
   id: string;
   title: string;
   text: string;
-  /** Selectores CSS; se usa el primero que esté visible */
-  targets?: string[];
+  /** Se usa el primero que esté visible */
+  targets?: TourTarget[];
 };
 
 export const SITE_TOUR: TourStep[] = [
