@@ -20,6 +20,8 @@
 //
 // Las familias nunca leen las tablas (script 26): todo pasa por el servidor.
 
+import { type ActivitySpec, validateActivity } from "./activitySpec";
+import { activityTexts } from "./activityMechanics";
 import { CENTER } from "./center";
 import { ADOLESCENT_FROM, ADULT_FROM } from "./portalClinicalRules";
 import { REVIEW_NOTE_MAX, cleanText, fitText } from "./portalInfoRules";
@@ -635,12 +637,13 @@ export type ExerciseTexts = {
   materiales: string | null;
   for_adult: string | null;
   si_cuesta: string;
+  activity?: ActivitySpec | null; // sus textos también se revisan (no cuentan para edit_ratio)
 };
 
 // Avisos del texto que escribió el profesional (block y review juntos: en
 // su texto nada bloquea). Vacío: no hace falta "Lo dejo así"
 export function exerciseTextAlerts(t: ExerciseTexts, approach?: Approach): string[] {
-  const parts = [t.title, t.para_que, ...t.pasos, t.materiales ?? "", t.for_adult ?? "", t.si_cuesta];
+  const parts = [t.title, t.para_que, ...t.pasos, t.materiales ?? "", t.for_adult ?? "", t.si_cuesta, ...(t.activity ? activityTexts(t.activity) : [])];
   return uniq(parts.flatMap((p) => {
     const r = lintPracticeText(p, approach);
     return [...r.block, ...r.review];
@@ -1075,6 +1078,9 @@ export type ExerciseInput = {
   reviewed: boolean; // "Lo revisé" (obligatorio para publicar un ejercicio de IA)
   removed: boolean; // "Quitar": no se borra, se marca
   review_note: string | null; // "Lo dejo así": motivo para los avisos del texto
+  // Actividad para jugar en el celular (etapa "activities"; los pasos son la
+  // versión sin pantalla). null: sin actividad
+  activity: ActivitySpec | null;
 };
 
 export function validateExerciseInput(raw: unknown): { ok: true; value: ExerciseInput } | Bad {
@@ -1113,6 +1119,12 @@ export function validateExerciseInput(raw: unknown): { ok: true; value: Exercise
   if (siCuesta.error) return bad("si_cuesta", siCuesta.error);
   const note = optText(b.review_note, L.review_note, "El motivo");
   if (note.error) return bad("review_note", note.error);
+  let activity: ActivitySpec | null = null;
+  if (b.activity !== undefined && b.activity !== null) {
+    const a = validateActivity(b.activity);
+    if (!a.ok) return bad("activity", `Actividad: ${a.error}`);
+    activity = a.value;
+  }
 
   return {
     ok: true,
@@ -1136,6 +1148,7 @@ export function validateExerciseInput(raw: unknown): { ok: true; value: Exercise
       reviewed: b.reviewed === true,
       removed: b.removed === true,
       review_note: note.text,
+      activity,
     },
   };
 }
@@ -1495,6 +1508,7 @@ export type PracticeExerciseDTO = {
     for_adult: string | null;
     si_cuesta: string;
     with_adult: boolean;
+    activity: ActivitySpec | null; // para jugar en el celular (solo con la etapa "activities")
   };
   today: string; // fecha del centro
   days: PracticeDayDTO[]; // hoy primero; sin los días anteriores a la publicación del ejercicio
@@ -1609,6 +1623,7 @@ export type StaffExerciseDTO = {
   lint_overrides: LintOverride[];
   removed_at: string | null;
   first_published_on: string | null; // primer día en que se publicó este exercise_key
+  activity: ActivitySpec | null; // (null con la etapa "activities" apagada)
 };
 
 export type StaffPlanDTO = {
@@ -1766,7 +1781,9 @@ export type StaffPracticePending = {
 };
 
 export type StaffPracticeDTO = {
-  features: { ai: boolean }; // la ayuda de IA está disponible (etapa "ai" y clave)
+  // ai: la ayuda de IA está disponible (etapa "ai" y clave). activities: las
+  // actividades para jugar en el celular (etapa "activities" y script 33)
+  features: { ai: boolean; activities: boolean };
   can_edit: boolean; // profesional o Dirección
   author: { label: string | null; problem: string | null }; // con qué nombre se publica (como StaffInfoDTO)
   patient: {

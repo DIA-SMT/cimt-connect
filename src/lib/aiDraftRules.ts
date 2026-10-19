@@ -796,6 +796,7 @@ export function draftToExerciseInput(
     reviewed: false,
     removed: false,
     review_note: null,
+    activity: null, // la IA todavía no arma actividades (fase 2)
   };
 }
 

@@ -48,6 +48,8 @@ import {
   weekProgress, FLUENCY_TITLE_MESSAGE,
 } from "../../src/lib/practiceRules";
 import { PROFILE_COLUMNS, profileFromRow, suggestPractice } from "../../src/lib/practiceSuggest";
+import { readActivity } from "../../src/lib/activitySpec";
+import { ACTIVITY_MIN_AGE, activityAgeOk } from "../../src/lib/activityMechanics";
 import { type Account, type ActiveChild, type Ctx, PortalError, activeChildren, missingTable } from "./portal";
 import { childrenClinical, features, staffClinical } from "./portalClinical";
 
@@ -69,6 +71,7 @@ const PATIENT_NOT_FOUND = "No encontramos ese paciente.";
 const AI_DRAFT_GONE = "El borrador de la IA no es de este paciente o ya no se puede usar. Volvé a adaptarlo o usá el original del catálogo.";
 const NOT_IN_CATALOG = "Ese ejercicio no está en el catálogo.";
 const PAUSED = "El portal de este paciente está en pausa: no se puede publicar.";
+const ACTIVITY_AGE = `Las actividades para jugar en el celular son desde los ${ACTIVITY_MIN_AGE} años. Quitala: los pasos quedan como siempre.`;
 const NOTHING_TO_REVIEW = "Todavía no hay prácticas para marcar como vistas. Actualizá la sección.";
 const GOAL_HAS_MEDAL = "Esa meta ya tiene su medalla.";
 const GOAL_NOT_DRAFT = "Esa meta ya no está en borrador. Actualizá la sección.";
@@ -127,8 +130,11 @@ type ExRow = {
   materiales: string | null; for_adult: string | null; si_cuesta: string; with_adult: boolean;
   ai_draft_id: string | null; ai_drafted: boolean; reviewed_at: string | null; reviewed_by_email: string | null;
   edit_ratio: number | string | null; lint_overrides: unknown; removed_at: string | null; removed_by_email: string | null;
+  activity?: unknown; // solo con las actividades prendidas (exCols)
 };
 const EX_COLS = "id, plan_id, patient_id, exercise_key, source, catalog_id, catalog_version, position, approach, practiced_in_session, title, para_que, pasos, minutes, materiales, for_adult, si_cuesta, with_adult, ai_draft_id, ai_drafted, reviewed_at, reviewed_by_email, edit_ratio, lint_overrides, removed_at, removed_by_email";
+// Con las actividades prendidas (activitiesOn), también la actividad
+const exCols = (act: boolean) => (act ? `${EX_COLS}, activity` : EX_COLS);
 
 type LogRow = {
   id: string; patient_id: string; plan_id: string; exercise_id: string; exercise_key: string;
@@ -301,9 +307,36 @@ function mergeOverrides(prev: unknown, alerts: string[], note: string | null, em
   return kept;
 }
 
-const exTexts = (e: Pick<ExRow, "title" | "para_que" | "pasos" | "materiales" | "for_adult" | "si_cuesta">) => ({
+const exTexts = (e: Pick<ExRow, "title" | "para_que" | "pasos" | "materiales" | "for_adult" | "si_cuesta" | "activity">) => ({
   title: e.title, para_que: e.para_que, pasos: steps(e.pasos), materiales: e.materiales, for_adult: e.for_adult, si_cuesta: e.si_cuesta,
+  activity: readActivity(e.activity),
 });
+
+// ── Actividades para jugar en el celular (etapa "activities", script 33) ────
+// Prendidas: la etapa "activities" junto con "practice", y la columna
+// patient_exercises.activity ya creada. Se pregunta una vez por proceso; si
+// todavía no estaba, se vuelve a preguntar cada 5 minutos (después de correr
+// el script no hace falta reiniciar). Apagadas, la columna no se lee ni se
+// escribe: lo guardado queda como estaba.
+const ACTIVITY_RECHECK_MS = 5 * 60 * 1000;
+let activityColumn: { ok: boolean; at: number } | null = null;
+
+export async function activitiesOn(ctx: Ctx): Promise<boolean> {
+  const f = features();
+  if (!f.includes("activities") || !f.includes("practice")) return false;
+  if (activityColumn && (activityColumn.ok || Date.now() - activityColumn.at < ACTIVITY_RECHECK_MS)) return activityColumn.ok;
+  const { error } = await ctx.admin.from("patient_exercises").select("activity").limit(1);
+  // Falta la columna: el script no se corrió. Cualquier otro error es de
+  // conexión y no se guarda la respuesta
+  if (error && error.code !== "42703" && error.code !== "PGRST204" && !missingTable(error)) throw new PortalError(503, OFFLINE);
+  activityColumn = { ok: !error, at: Date.now() };
+  return activityColumn.ok;
+}
+
+// Para las pruebas: olvida lo que se averiguó de la columna
+export function resetActivitiesProbe() {
+  activityColumn = null;
+}
 
 const toDay = (l: Pick<LogRow, "practiced_on" | "exercise_key">): PracticeDay => ({ date: l.practiced_on, exercise_key: l.exercise_key });
 
@@ -327,8 +360,8 @@ async function publishedPlan(ctx: Ctx, patientId: string): Promise<PlanRow | nul
 // Los ejercicios de una versión del plan (hasta 8 activos y los quitados del
 // borrador), en orden. Nunca los de todas las versiones juntas: crecen con
 // cada versión que se publica.
-async function exercisesOfPlan(ctx: Ctx, planId: string): Promise<ExRow[]> {
-  return list<ExRow>(await ctx.admin.from("patient_exercises").select(EX_COLS).eq("plan_id", planId)
+async function exercisesOfPlan(ctx: Ctx, planId: string, act = false): Promise<ExRow[]> {
+  return list<ExRow>(await ctx.admin.from("patient_exercises").select(exCols(act)).eq("plan_id", planId)
     .order("position", { ascending: true }).order("created_at", { ascending: true }).limit(LIST_MAX))
     .sort((a, b) => a.position - b.position);
 }
@@ -658,10 +691,10 @@ export async function familyPractice(ctx: Ctx, account: Account, patientId: stri
 }
 
 // El ejercicio de la versión publicada con esa identidad (exercise_key), si sigue en el plan
-async function currentExercise(ctx: Ctx, patientId: string, key: string): Promise<{ plan: PlanRow; ex: ExRow } | null> {
+async function currentExercise(ctx: Ctx, patientId: string, key: string, act = false): Promise<{ plan: PlanRow; ex: ExRow } | null> {
   const plan = await publishedPlan(ctx, patientId);
   if (!plan) return null;
-  const ex = one<ExRow>(await ctx.admin.from("patient_exercises").select(EX_COLS)
+  const ex = one<ExRow>(await ctx.admin.from("patient_exercises").select(exCols(act))
     .eq("plan_id", plan.id).eq("exercise_key", key).is("removed_at", null).maybeSingle());
   return ex ? { plan, ex } : null;
 }
@@ -674,7 +707,7 @@ async function resolveExercise(ctx: Ctx, account: Account, exerciseId: unknown) 
   const row = one<ExRow>(await ctx.admin.from("patient_exercises").select(EX_COLS).eq("id", exerciseId).maybeSingle());
   if (!row) throw new PortalError(404, EXERCISE_NOT_FOUND);
   const who = await familyGate(ctx, account, row.patient_id, EXERCISE_NOT_FOUND);
-  const cur = await currentExercise(ctx, row.patient_id, row.exercise_key);
+  const cur = await currentExercise(ctx, row.patient_id, row.exercise_key, await activitiesOn(ctx));
   if (!cur) throw new PortalError(404, PRACTICE_ERROR.gone);
   return { who, ...cur };
 }
@@ -705,6 +738,8 @@ async function exerciseDto(
     exercise: {
       id: ex.id, title: ex.title, para_que: ex.para_que, pasos: steps(ex.pasos), minutes: ex.minutes,
       materiales: ex.materiales, for_adult: ex.for_adult, si_cuesta: ex.si_cuesta, with_adult: ex.with_adult,
+      // Desde los 6 años (por si se cargó antes de que el servidor lo pidiera)
+      activity: activityAgeOk(who.age) ? readActivity(ex.activity) : null,
     },
     today,
     days,
@@ -1117,6 +1152,7 @@ function staffExercise(e: ExRow, firstPub: Map<string, string>): StaffExerciseDT
     edit_ratio: Number.isFinite(ratio) ? ratio : null, alerts: exerciseTextAlerts(exTexts(e), e.approach),
     lint_overrides: overrides(e.lint_overrides), removed_at: e.removed_at,
     first_published_on: firstPub.get(e.exercise_key) ?? null,
+    activity: readActivity(e.activity),
   };
 }
 
@@ -1187,6 +1223,7 @@ async function notesOfLogs(ctx: Ctx, logIds: string[]): Promise<NoteRow[]> {
 // progreso de las metas los cuenta la base.
 export async function staffPractice(ctx: Ctx, staff: Staff, patientId: string, opts: { catalog?: boolean } = {}): Promise<StaffPracticeDTO> {
   const admin = !staff.clinical;
+  const act = await activitiesOn(ctx);
   const today = centerToday();
   const dates = Array.from({ length: GRID_DAYS }, (_, i) => addDaysKey(today, i - GRID_DAYS + 1));
   const [patient, access, author, plans, gridR, fbs, goals, medals, readsR, linksR, guardiansR] = await Promise.all([
@@ -1225,8 +1262,8 @@ export async function staffPractice(ctx: Ctx, staff: Staff, patientId: string, o
     admin ? Promise.resolve([] as NoteRow[]) : staffNotes(ctx, patientId, lastReviewed),
     admin ? Promise.resolve([] as NoteRow[]) : notesOfLogs(ctx, gridLogs.map((l) => l.id)),
     // Los ejercicios del publicado y del borrador (Administración no ve el borrador)
-    published ? exercisesOfPlan(ctx, published.id) : Promise.resolve([] as ExRow[]),
-    draft && !admin ? exercisesOfPlan(ctx, draft.id) : Promise.resolve([] as ExRow[]),
+    published ? exercisesOfPlan(ctx, published.id, act) : Promise.resolve([] as ExRow[]),
+    draft && !admin ? exercisesOfPlan(ctx, draft.id, act) : Promise.resolve([] as ExRow[]),
   ]);
   const exs = [...publishedExs, ...draftExs];
   const notes = [...new Map([...listed, ...gridNotes].map((n) => [n.id, n])).values()];
@@ -1376,7 +1413,7 @@ export async function staffPractice(ctx: Ctx, staff: Staff, patientId: string, o
     .map((a) => (a.relationship ? `${a.name} (${a.relationship.trim().toLowerCase()})` : a.name));
 
   return {
-    features: { ai: features().includes("ai") && !!draftApiKey(process.env) },
+    features: { ai: features().includes("ai") && !!draftApiKey(process.env), activities: act },
     can_edit: staff.clinical,
     author: { label: author.label, problem: author.problem },
     patient: {
@@ -1420,7 +1457,9 @@ async function saveDraft(ctx: Ctx, staff: Staff, patientId: string, body: Json) 
   const input = v.value;
   const expected = body.expected_updated_at ?? null;
   if (expected !== null && typeof expected !== "string") throw new PortalError(400, INVALID);
-  const patient = await patientOf(ctx, patientId);
+  const [patient, act] = await Promise.all([patientOf(ctx, patientId), activitiesOn(ctx)]);
+  // Con las actividades apagadas, la columna no se toca (lo guardado queda)
+  if (!act) for (const e of input.exercises) e.activity = null;
   // Enfoques que nunca se podrían publicar para este paciente (la casilla de
   // sesión se pide al publicar)
   const offered = new Set(approachesForDiagnosis(patient.diagnosis_code));
@@ -1431,6 +1470,7 @@ async function saveDraft(ctx: Ctx, staff: Staff, patientId: string, body: Json) 
     if (!offered.has(e.approach) || !approachAgeOk(e.approach, patient.age)) {
       throw fail(400, PRACTICE_ERROR.approach, { code: "APPROACH", field: "approach", index: i });
     }
+    if (e.activity && !activityAgeOk(patient.age)) throw fail(400, ACTIVITY_AGE, { code: "INVALID", field: "activity", index: i });
   }
 
   // Los ejercicios del borrador que se edita (se usan después de confirmar
@@ -1500,6 +1540,7 @@ async function saveDraft(ctx: Ctx, staff: Staff, patientId: string, body: Json) 
       removed_at: e.removed ? row?.removed_at ?? now : null,
       removed_by_email: e.removed ? row?.removed_by_email ?? staff.email : null,
       ...(e.ai_draft_id ? { ai_draft_id: e.ai_draft_id } : {}),
+      ...(act ? { activity: e.activity } : {}),
     };
     if (row) {
       touched.add(row.id);
@@ -1553,7 +1594,7 @@ async function publishPlan(ctx: Ctx, staff: Staff, patientId: string, body: Json
     patientOf(ctx, patientId),
     ctx.admin.from("patient_portal_settings").select("paused_at").eq("patient_id", patientId).maybeSingle(),
     plansOf(ctx, patientId),
-    exercisesOfPlan(ctx, body.plan_id),
+    exercisesOfPlan(ctx, body.plan_id, await activitiesOn(ctx)),
   ]);
   if (one<{ paused_at: string | null }>(settingsR)?.paused_at) throw fail(409, PAUSED);
   const draft = plans.find((p) => p.id === body.plan_id);

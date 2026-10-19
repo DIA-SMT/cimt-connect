@@ -20,6 +20,7 @@ import { childrenClinical, requireFeature } from "../server/lib/portalClinical";
 import {
   FEEDBACK_WITHDRAWN_VOID_REASON, centerDayStartIso, familyExercise, familyFeedback, familyFeedbackSeen, familyLog,
   familyMedals, familyMedalsSeen, familyNote, familyPractice, familyUndo, pendingOf, practiceHome, practiceHomeFor,
+  resetActivitiesProbe,
   staffPractice, staffPracticeAction, staffPracticeCounts, staffPracticeInbox,
 } from "../server/lib/practice";
 import {
@@ -48,6 +49,7 @@ const REVIEW_COLS = ["last_reviewed_at", "last_reviewed_by_email", "last_reviewe
 class FakeDb {
   tables: Record<string, Row[]> = {};
   missing = new Set<string>();
+  missingCols = new Set<string>(); // "tabla.columna" que todavía no existe (un script sin correr)
   tick = 0;
   // updated_at distinto en cada cambio (como clock_timestamp() del trigger)
   stamp(): string {
@@ -232,6 +234,9 @@ class FakeQuery implements PromiseLike<Result> {
   private run(): Result {
     const t = this.table;
     if (this.db.missing.has(t)) return dbErr(`relation "public.${t}" does not exist`, "42P01");
+    if (this.cols && this.cols !== "*" && this.cols.split(",").some((c) => this.db.missingCols.has(`${t}.${c.trim()}`))) {
+      return dbErr("column does not exist", "42703");
+    }
     const rows = this.db.t(t);
     let out: Row[];
     if (this.op === "insert") {
@@ -578,6 +583,7 @@ const addMedal = (db: FakeDb, o: Row): Row => {
 const savedFeatures = process.env.PORTAL_CLINICAL_FEATURES;
 beforeEach(() => {
   setSystemTime(NOW);
+  resetActivitiesProbe();
   process.env.PORTAL_CLINICAL_FEATURES = "consent,practice";
 });
 afterAll(() => {
@@ -1150,7 +1156,7 @@ function exInput(o: Partial<ExerciseInput> = {}): ExerciseInput {
   return {
     id: null, exercise_key: null, source: "catalogo", catalog_id: "ef-tiempo-especial", catalog_version: null, ai_draft_id: null,
     approach: "entorno_familia", practiced_in_session: false, title: "Tiempo de juego", ...TEXTS, minutes: 5,
-    with_adult: true, reviewed: false, removed: false, review_note: null, ...o,
+    with_adult: true, reviewed: false, removed: false, review_note: null, activity: null, ...o,
   };
 }
 
@@ -2145,5 +2151,77 @@ describe("bandeja: Prácticas", () => {
     // Las medallas de constancia ven lo más nuevo: la práctica de hoy suma a la semana
     const medals = await familyMedals(ctx, ACCOUNT_A, P);
     expect(medals.next.find((n) => n.code === "semana_cumplida")?.text).toContain("llevás 1 de 3");
+  });
+});
+
+// ── Actividades para jugar en el celular (etapa "activities", script 33) ────
+
+describe("actividades: poesía y rima en el plan", () => {
+  const POEM = {
+    v: 1, mecanica: "poesia", titulo: "Dinosaurios", tema: "selva", esquema: "AABB", rima: "asonante", palmas: false,
+    estrofas: [{ versos: ["Un dinosaurio grande", "camina por el valle", "come hojas del pino", "y saluda al camino"], icono: null }],
+  } as const;
+  const withPoem = (o: Partial<ExerciseInput> = {}) =>
+    planInput({ exercises: [exInput({ exercise_key: K1, activity: POEM as unknown as ExerciseInput["activity"], ...o })] });
+  const on = () => { process.env.PORTAL_CLINICAL_FEATURES = "consent,practice,activities"; };
+
+  test("prendida: se guarda, se publica y la familia la recibe con los pasos de siempre", async () => {
+    on();
+    const db = seed();
+    const ctx = fakeCtx(db);
+    const dto = await save(ctx, PROF, withPoem());
+    expect(dto.features.activities).toBe(true);
+    expect(dto.draft?.exercises[0].activity).toMatchObject({ mecanica: "poesia", titulo: "Dinosaurios", estrofas: [{ icono: null }] });
+    const out = await publish(ctx, PROF, dto);
+    const ex = out.published!.exercises[0];
+    expect(ex.activity?.mecanica).toBe("poesia");
+    const page = await familyExercise(ctx, ACCOUNT_A, ex.id);
+    expect(page.exercise.activity?.titulo).toBe("Dinosaurios");
+    expect(page.exercise.pasos.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("una actividad mal armada no se guarda; sus textos pasan por la revisión", async () => {
+    on();
+    const ctx = fakeCtx(seed());
+    const bad = await failure(save(ctx, PROF, withPoem({ activity: { ...POEM, estrofas: [{ versos: ["uno"], icono: null }] } as unknown as ExerciseInput["activity"] })));
+    expect(bad.status).toBe(400);
+    expect(extra(bad)).toMatchObject({ code: "INVALID", field: "activity", index: 0 });
+    expect(bad.message).toContain("Estrofa 1");
+    const lint = { ...POEM, estrofas: [{ versos: ["Vamos a hablar bien", "y a jugar también", "come hojas del pino", "y saluda al camino"], icono: null }] };
+    const dto = await save(ctx, PROF, withPoem({ activity: lint as unknown as ExerciseInput["activity"] }));
+    expect(dto.draft?.exercises[0].alerts).toContain("hablar bien");
+    expect(dto.draft?.publish_problem).toBe(PRACTICE_ERROR.review);
+  });
+
+  test("hasta los 5 años no hay versión interactiva", async () => {
+    on();
+    const ctx = fakeCtx(seed({ birth: "2021-05-01" }));
+    const e = await failure(save(ctx, PROF, withPoem()));
+    expect(e.status).toBe(400);
+    expect(extra(e)).toMatchObject({ field: "activity", index: 0 });
+    // Sin actividad, el mismo ejercicio se guarda
+    expect((await save(ctx, PROF, planInput())).draft).not.toBeNull();
+  });
+
+  test("apagada: no se lee ni se escribe la columna", async () => {
+    const db = seed();
+    db.missingCols.add("patient_exercises.activity");
+    const ctx = fakeCtx(db);
+    const dto = await save(ctx, PROF, withPoem());
+    expect(dto.features.activities).toBe(false);
+    expect(dto.draft?.exercises[0].activity).toBeNull();
+    expect(db.tables.patient_exercises.every((r) => r.activity === undefined)).toBe(true);
+    expect((await familyExercise(ctx, ACCOUNT_A, EX1)).exercise.activity).toBeNull();
+  });
+
+  test("prendida sin el script 33: queda apagada sin caerse", async () => {
+    on();
+    const db = seed();
+    db.missingCols.add("patient_exercises.activity");
+    const ctx = fakeCtx(db);
+    const dto = await save(ctx, PROF, withPoem());
+    expect(dto.features.activities).toBe(false);
+    expect(dto.draft?.exercises[0].activity).toBeNull();
+    expect((await familyExercise(ctx, ACCOUNT_A, EX1)).exercise.activity).toBeNull();
   });
 });

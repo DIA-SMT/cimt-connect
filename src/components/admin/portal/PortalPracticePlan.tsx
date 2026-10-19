@@ -34,6 +34,8 @@ import {
   type StaffPracticeDTO, portalStaffApi,
 } from "@/lib/portalStaff";
 import { type UnsavedPart, forgetUnsaved, keepUnsaved, peekUnsaved } from "./practiceHandoff";
+import { ActivityEditor } from "./ActivityEditor";
+import type { ActivitySpec } from "@/lib/activitySpec";
 
 // Vista "Plan de práctica" de "Portal del paciente" (etapas practice y ai).
 // El profesional arma el plan con ejercicios del catálogo aprobado, a mano o
@@ -154,6 +156,7 @@ type ExForm = {
   keep: boolean; // "Lo dejo así"
   note: string; // su motivo
   ai: AiExtras | null;
+  activity: ActivitySpec | null; // "Para jugar en el celular" (etapa "activities")
 };
 
 type PlanForm = {
@@ -178,7 +181,10 @@ const aiDrafted = (e: ExForm) => e.source === "ia" || e.ai_locked;
 const noteOk = (keep: boolean, note: string) => keep && cleanText(note).length >= 3;
 
 function exTexts(e: ExForm) {
-  return { title: e.title, para_que: e.para_que, pasos: e.pasos, materiales: e.materiales || null, for_adult: e.for_adult || null, si_cuesta: e.si_cuesta };
+  return {
+    title: e.title, para_que: e.para_que, pasos: e.pasos, materiales: e.materiales || null, for_adult: e.for_adult || null,
+    si_cuesta: e.si_cuesta, activity: e.activity,
+  };
 }
 const exAlerts = (e: ExForm) => exerciseTextAlerts(exTexts(e), e.approach);
 const planAlerts = (f: PlanForm) => planTextAlerts({ title: f.title, goal_text: f.goal_text || null });
@@ -204,6 +210,7 @@ function toExerciseInput(e: ExForm): ExerciseInput {
     reviewed: e.reviewed && aiDrafted(e),
     removed: e.removed,
     review_note: e.keep && exAlerts(e).length ? e.note : null,
+    activity: e.activity,
   };
 }
 
@@ -263,6 +270,7 @@ function fromDto(e: StaffExerciseDTO, keepRow: boolean): ExForm {
     keep: !!last,
     note: last?.reason ?? "",
     ai: null,
+    activity: e.activity,
   };
 }
 
@@ -312,7 +320,7 @@ function carry(next: PlanForm, prev: PlanForm): PlanForm {
 function blankCard(): Omit<ExForm, "source" | "approach" | "title" | "para_que" | "pasos" | "minutes" | "materiales" | "for_adult" | "si_cuesta" | "with_adult"> {
   return {
     uid: newUid(), id: null, exercise_key: null, catalog_id: null, catalog_version: null, ai_draft_id: null, ai_locked: false,
-    practiced_in_session: false, reviewed: false, removed: false, keep: false, note: "", ai: null,
+    practiced_in_session: false, reviewed: false, removed: false, keep: false, note: "", ai: null, activity: null,
   };
 }
 
@@ -1358,6 +1366,7 @@ function ExerciseCard({
         <div className="flex flex-wrap items-center justify-end gap-1.5">
           {aiEx ? <AiPill /> : ex.source === "catalogo" ? <Pill tone="muted">Del catálogo</Pill> : <Pill tone="muted">Escrito a mano</Pill>}
           {ex.removed && <Pill tone="muted">Quitado</Pill>}
+          {!ex.removed && ex.activity && <Pill tone="ai">Para jugar en el celular</Pill>}
           {!ex.removed && isNew && <Pill tone="muted">Nuevo</Pill>}
           {needsReview && <Pill tone="warn">Falta «Lo revisé»</Pill>}
           {!ex.removed && uncovered && <Pill tone="warn">Revisar el texto</Pill>}
@@ -1460,6 +1469,10 @@ function ExerciseCard({
             </Button>
             <FlagLine flags={flagsFor("pasos")} />
           </fieldset>
+          {(data.features.activities || ex.activity) && (
+            <ActivityEditor activity={ex.activity} exerciseTitle={ex.title} age={data.patient.age}
+              screenMode={SCREEN_MODE_BY_AUDIENCE[data.patient.audience]} onChange={(activity) => onChange({ activity })} />
+          )}
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
               <Label htmlFor={ids.min}>Minutos</Label>
