@@ -390,7 +390,7 @@ describe("createAdaptDraft: borrador bien armado", () => {
     // Lo que queda registrado y lo que ve el profesional, tampoco
     expect(JSON.stringify(db.drafts[0].params)).not.toMatch(/farfull|F98/i);
     expect(out.sent.exact).not.toMatch(/farfull|F98/i);
-    expect(db.drafts[0].prompt_version).toBe("adapt-2026-10-v6");
+    expect(db.drafts[0].prompt_version).toBe("adapt-2026-10-v7");
   });
 
   test("lee del paciente solo la fecha de nacimiento y el diagnóstico, con la sesión de quien pide; no se devuelven", async () => {
@@ -680,7 +680,7 @@ describe("createAdaptDraft: reintento, plazo y errores", () => {
       expect(system.content).toContain("ni siquiera para negarlas");
     }
     expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "LINT_BLOCK", prompt_version: PROMPT_VERSION, output: null, flags: [] });
-    expect(PROMPT_VERSION).toBe("adapt-2026-10-v6");
+    expect(PROMPT_VERSION).toBe("adapt-2026-10-v7");
     // El motivo queda en los intentos (las frases que bloquearon), no en los logs
     replies.push(ok(denial));
     replies.push(ok(goodDraft()));
@@ -893,7 +893,7 @@ describe("createAdaptDraft: esquema por pedido (un ejercicio por cada id pedido)
     const e = await failure(createAdaptDraft(fakeCtx(db), STAFF, REQ, { env: ENV }));
     expect([e.status, e.extra.code]).toEqual([502, "AI_FAILED"]);
     expect(calls).toHaveLength(2);
-    expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "CATALOG", output: null, flags: [], prompt_version: "adapt-2026-10-v6" });
+    expect(db.drafts[0]).toMatchObject({ status: "error", error_code: "CATALOG", output: null, flags: [], prompt_version: "adapt-2026-10-v7" });
     // En el log, los códigos de los intentos (nunca el texto)
     expect(logs.join("\n")).toContain("CATALOG/200");
     expect(logs.join("\n")).not.toContain("Tiempo especial");
@@ -1009,7 +1009,7 @@ describe("scripts/ai-eval.ts: no gasta crédito sin confirmación", () => {
     r = evalPreflight(["salida", EVAL_CONFIRM_FLAG, "--n", "12", "--seed", "3"], { ...KEY, OPENROUTER_DRAFT_MODEL: "x/m" });
     expect(r).toEqual({
       ok: true, apiKey: "sk-or-falsa", model: "x/m",
-      args: { path: "salida", n: 12, concurrency: 4, seed: 3, confirmed: true },
+      args: { path: "salida", n: 12, concurrency: 4, seed: 3, confirmed: true, actividades: false },
     });
   });
 
@@ -1053,5 +1053,57 @@ describe("scripts/ai-eval.ts: no gasta crédito sin confirmación", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// ── El juego para el celular (fase 2) ───────────────────────────────────────
+
+describe("createAdaptDraft: el juego para el celular", () => {
+  const GAME_REQ: AiDraftRequest = {
+    ...REQ, catalog_ids: ["hf-tortuga-suave"], approach: "habla_facil", formato: "poesia",
+    actividad: { mecanica: "poesia", idea: "un cohete que viaja a la luna", estrofas: 2, esquema: "AABB" },
+  };
+  const GAME_ENV = { ...ENV, PORTAL_CLINICAL_FEATURES: "consent,practice,ai,activities" };
+  const gameWire = () => goodWire(GAME_REQ);
+  // La misma poesía, con el segundo verso de la primera estrofa sin rimar
+  const offRhyme = () => {
+    const w = gameWire() as Record<string, unknown> & { actividad: { estrofas: { versos: string[] }[] } };
+    w.actividad.estrofas[0].versos[1] = "camina por la calle";
+    return w;
+  };
+
+  test("con la etapa apagada: 400 y no se llama al proveedor", async () => {
+    const e = await failure(createAdaptDraft(fakeCtx(seed()), STAFF, GAME_REQ, { env: ENV }));
+    expect(e.status).toBe(400);
+    expect(e.message).toContain("no están disponibles");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("pide «actividad» en el esquema, con más lugar y soltura; vuelve como actividad jugable", async () => {
+    const db = seed();
+    replies.push(ok(gameWire()));
+    const out = await createAdaptDraft(fakeCtx(db), STAFF, GAME_REQ, { env: GAME_ENV });
+    const body = calls[0].body as { temperature: number; max_tokens: number; response_format: { json_schema: { schema: { required: string[] } } } };
+    expect(body.response_format.json_schema.schema.required).toContain("actividad");
+    expect(body.temperature).toBe(0.7);
+    expect(body.max_tokens).toBe(2400);
+    expect(out.draft.actividad).toMatchObject({ mecanica: "poesia", esquema: "AABB" });
+    expect(out.sent.fields.find((f) => f.label === "Idea")?.value).toBe("un cohete que viaja a la luna");
+    expect((db.drafts[0].output as ExerciseDraft).actividad?.mecanica).toBe("poesia");
+  });
+
+  test("si no rima, se pide de nuevo una vez y vale la que rima", async () => {
+    replies.push(ok(offRhyme()), ok(gameWire()));
+    const out = await createAdaptDraft(fakeCtx(seed()), STAFF, GAME_REQ, { env: GAME_ENV });
+    expect(calls).toHaveLength(2);
+    expect(out.flags.filter((f) => f.field === "actividad")).toEqual([]);
+  });
+
+  test("si vuelve a no rimar, llega igual con los avisos (y en el log solo los códigos)", async () => {
+    replies.push(ok(offRhyme()), ok(offRhyme()));
+    const out = await createAdaptDraft(fakeCtx(seed()), STAFF, GAME_REQ, { env: GAME_ENV });
+    expect(calls).toHaveLength(2);
+    expect(out.flags.some((f) => f.field === "actividad" && f.term.includes("no parecen rimar"))).toBe(true);
+    expect(logs.join("\n")).not.toContain("calle");
   });
 });

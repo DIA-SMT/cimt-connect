@@ -1576,7 +1576,9 @@ async function editRatios(ctx: Ctx, rows: ExRow[]): Promise<Record<string, numbe
     const items = Array.isArray(d?.output?.ejercicios) ? d!.output!.ejercicios : [];
     const item = items.find((x) => x && x.catalogo_id === e.catalog_id);
     if (!d || !item) continue;
-    const before = exerciseFullText(draftToExerciseInput(item, { approach: e.approach, practiced_in_session: e.practiced_in_session, draft_id: d.id }));
+    // El juego que armó la IA cuenta solo si se leyó la actividad (etapa prendida)
+    const act = e.activity === undefined ? null : readActivity(d.output?.actividad ?? null);
+    const before = exerciseFullText(draftToExerciseInput(item, { approach: e.approach, practiced_in_session: e.practiced_in_session, draft_id: d.id }, act));
     out[e.id] = editRatio(before, exerciseFullText(exTexts(e)));
   }
   return out;

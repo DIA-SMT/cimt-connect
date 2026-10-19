@@ -410,6 +410,19 @@ describe("mock: equipo", () => {
     expect(r.draft.ejercicios.length).toBe(1);
   });
 
+  test("con el juego para el celular, la demo arma tarjetas de rima que riman", async () => {
+    await asStaff("direccion@cimt.test");
+    const r = ok(await mock.staffAiDraft({
+      patient_id: MARTIN, catalog_ids: ["ef-turnos-mesa"], approach: "entorno_familia", practiced_in_session: false,
+      quien_acompana: "adulto_con_chico", contexto: ["casa"], minutos: 10, dificultad: "igual", adaptaciones: [],
+      intereses: ["futbol"], formato: "poesia", actividad: { mecanica: "rima", tarjetas: 5, idea: "un partido de fútbol" },
+    } as never, ""));
+    expect(r.draft.actividad).toMatchObject({ mecanica: "rima" });
+    expect(r.draft.actividad?.mecanica === "rima" && r.draft.actividad.tarjetas.length).toBe(5);
+    expect(r.flags.filter((f) => f.field === "actividad")).toEqual([]);
+    expect(r.sent.fields.find((f) => f.label === "Idea")?.value).toBe("un partido de fútbol");
+  });
+
   test("retirar el plan publicado: sus metas activas dejan de verse en el portal", async () => {
     await asStaff("direccion@cimt.test");
     const dto = ok(await staffDo({ action: "get" }));

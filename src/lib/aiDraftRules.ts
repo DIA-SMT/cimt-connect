@@ -17,6 +17,9 @@
 // prompt tampoco nombran diagnósticos (ni en los enfoques ni en las franjas).
 
 import { z } from "zod";
+import { type ActivityRequest, activityFromWire, activityJsonSchema, activityPrompt, buildActivityRequest, describeActivityRequest, mockActivityWire } from "./aiActivityRules";
+import { type ActivitySpec, validateActivity } from "./activitySpec";
+import { ACTIVITY_MIN_AGE, activityAgeOk, activityFullText, activityTexts, activityWarnings } from "./activityMechanics";
 import { CATALOG_VERSION, catalogEntry, catalogFits } from "./exerciseCatalog";
 import {
   APPROACH_ADULT_GUIDE, APPROACH_AREA, APPROACH_LABEL, type Approach, type CatalogEntry, type ExerciseInput,
@@ -37,7 +40,10 @@ import {
 // v6: la IA trabaja como especialista del equipo del centro (principios del
 // abordaje y enfoques más detallados) y puede presentar el ejercicio como
 // minijuego o como poesía o rima («formato»).
-export const PROMPT_VERSION = "adapt-2026-10-v6";
+// v7: con «Poesía o rima» puede pedir además «actividad», el juego para el
+// celular (poesía para leer juntos o tarjetas de rima; aiActivityRules.ts),
+// y los pasos pasan a ser su versión sin pantalla.
+export const PROMPT_VERSION = "adapt-2026-10-v7";
 
 // ── Listas cerradas (lo único que se elige en el panel) ─────────────────────
 
@@ -178,6 +184,9 @@ export type AiAdaptParams = {
   adaptaciones: Adaptacion[];
   intereses: Interes[];
   formato: Formato;
+  // El juego para el celular (fase 2; solo si se pidió): qué juego, su forma
+  // y la idea del profesional (revisada: sin nombres ni números)
+  actividad?: ActivityRequest;
 };
 
 // Lo que manda el panel a POST /api/portal-staff/ai-draft. El servidor lee
@@ -195,6 +204,7 @@ export type AiDraftRequest = {
   adaptaciones: Adaptacion[];
   intereses: Interes[];
   formato?: Formato; // sin formato: "ejercicio" (panel anterior a v6)
+  actividad?: Partial<ActivityRequest> | null; // el juego para el celular (con «Poesía o rima»)
 };
 
 const pick = <T extends string>(list: readonly T[], raw: unknown): T[] => {
@@ -242,6 +252,17 @@ export function buildAdaptParams(
   const formato = b.formato === undefined || b.formato === null ? "ejercicio" : oneOf(FORMATS, b.formato);
   if (!formato) return { ok: false, error: "Elegí el formato." };
   if (!formatAllowed(formato, approach)) return { ok: false, error: "Ese formato no corresponde a ese enfoque." };
+  // El juego para el celular (fase 2): con «Poesía o rima», un solo ejercicio
+  // del catálogo y desde los 6 años. Si la etapa está prendida lo mira el servidor
+  let actividad: ActivityRequest | null = null;
+  if (b.actividad !== undefined && b.actividad !== null) {
+    if (formato !== "poesia") return { ok: false, error: "El juego para el celular va con el formato «Poesía o rima»." };
+    if (ids.length !== 1) return { ok: false, error: "Para armar el juego, elegí un solo ejercicio del catálogo." };
+    if (!activityAgeOk(patient.age)) return { ok: false, error: `Los juegos para el celular son desde los ${ACTIVITY_MIN_AGE} años.` };
+    const a = buildActivityRequest(b.actividad);
+    if (!a.ok) return { ok: false, error: a.error };
+    actividad = a.value;
+  }
   return {
     ok: true,
     entries,
@@ -257,6 +278,7 @@ export function buildAdaptParams(
       adaptaciones: pick(ADAPTATIONS, b.adaptaciones),
       intereses,
       formato,
+      ...(actividad ? { actividad } : {}),
     },
   };
 }
@@ -377,7 +399,8 @@ export function buildAdaptPrompt(params: AiAdaptParams, entries: CatalogEntry[])
     ...BASE_RULES,
     APPROACH_PROMPT[params.enfoque],
     AGE_PROMPT[params.franja_edad],
-    FORMAT_PROMPT[params.formato ?? "ejercicio"],
+    // Con el juego para el celular, la poesía o las rimas van en «actividad»
+    params.actividad ? activityPrompt(params.actividad) : FORMAT_PROMPT[params.formato ?? "ejercicio"],
     ...OUTPUT_RULES,
   ].join("\n\n");
   const catalog = entries.map((e) => ({
@@ -397,6 +420,11 @@ export function buildAdaptPrompt(params: AiAdaptParams, entries: CatalogEntry[])
 // ── Pedido al proveedor (diseño §4.4 y §4.5) ────────────────────────────────
 
 export const AI_REQUEST_OPTIONS = { temperature: 0.4, max_tokens: 1500 } as const;
+// Con el juego para el celular: más lugar para la poesía o las tarjetas, y un
+// poco más de soltura para que el texto no salga siempre igual
+export const AI_ACTIVITY_REQUEST_OPTIONS = { temperature: 0.7, max_tokens: 2400 } as const;
+export const requestOptionsFor = (params: Pick<AiAdaptParams, "actividad">) =>
+  (params.actividad ? AI_ACTIVITY_REQUEST_OPTIONS : AI_REQUEST_OPTIONS);
 // Retención cero y sin uso de los datos para entrenar (hay que verificar que el modelo lo soporte)
 export const AI_PROVIDER_PREFS = { data_collection: "deny", zdr: true, require_parameters: true } as const;
 export const AI_TITLE_HEADER = "CIMT - Borradores";
@@ -490,14 +518,17 @@ export const DRAFT_ITEM_JSON_SCHEMA = {
 // repetir y que sirvan como nombres de propiedad. Si no, tira un error (con
 // buildAdaptParams no pasa: los ids son del catálogo, y las pruebas revisan
 // que todos sirvan).
-export function draftJsonSchema(ids: readonly string[]) {
+// actividad: el juego pedido (si hay), con un solo id: suma «actividad»,
+// obligatoria (5 niveles de anidamiento con las tarjetas, el límite).
+export function draftJsonSchema(ids: readonly string[], actividad?: Pick<ActivityRequest, "mecanica"> | null) {
   if (ids.length < 1 || ids.length > AI_CATALOG_MAX || new Set(ids).size !== ids.length || !ids.every(isDraftId)) {
     throw new Error(`El esquema de la respuesta necesita de 1 a ${AI_CATALOG_MAX} ids del catálogo, sin repetir, con minúsculas, números y guiones.`);
   }
+  if (actividad && ids.length !== 1) throw new Error("El juego para el celular va con un solo ejercicio del catálogo.");
   return {
     type: "object",
     additionalProperties: false,
-    required: ["intro", "ejercicios", "nota_para_profesional", "alertas"],
+    required: ["intro", "ejercicios", ...(actividad ? ["actividad"] : []), "nota_para_profesional", "alertas"],
     properties: {
       intro: { type: "string" },
       ejercicios: {
@@ -506,16 +537,17 @@ export function draftJsonSchema(ids: readonly string[]) {
         required: [...ids],
         properties: Object.fromEntries(ids.map((id) => [id, DRAFT_ITEM_JSON_SCHEMA])),
       },
+      ...(actividad ? { actividad: activityJsonSchema(actividad) } : {}),
       nota_para_profesional: { type: "string" },
       alertas: { type: "array", items: { type: "string" } },
     },
   } as const;
 }
 
-export function draftResponseFormat(ids: readonly string[]) {
+export function draftResponseFormat(ids: readonly string[], actividad?: Pick<ActivityRequest, "mecanica"> | null) {
   return {
     type: "json_schema",
-    json_schema: { name: "borrador_ejercicios", strict: true, schema: draftJsonSchema(ids) },
+    json_schema: { name: "borrador_ejercicios", strict: true, schema: draftJsonSchema(ids, actividad) },
   } as const;
 }
 
@@ -536,6 +568,9 @@ export type ExerciseDraftItem = {
 export type ExerciseDraft = {
   intro: string; // solo para el profesional
   ejercicios: ExerciseDraftItem[];
+  // El juego para el celular, ya como actividad (activitySpec.ts), si se
+  // pidió. Es del primer (y único) ejercicio
+  actividad?: ActivitySpec | null;
   nota_para_profesional: string; // nunca se publica
   alertas: string[]; // lo que la IA sugiere revisar
 };
@@ -602,6 +637,8 @@ const WireItemSchema = ItemSchema.omit({ catalogo_id: true });
 const draftObject = <E extends z.ZodTypeAny>(ejercicios: E) => z.object({
   intro: plain(PRO.intro, 0, false),
   ejercicios,
+  // El juego (si se pidió): lo revisa parseExerciseDraft con su propio contrato
+  actividad: z.unknown().optional(),
   nota_para_profesional: plain(PRO.nota, 0, false),
   alertas: z.preprocess(
     (v) => (Array.isArray(v) ? v.filter((a) => !(typeof a === "string" && !a.trim())) : v),
@@ -616,7 +653,11 @@ const DraftSchema = draftObject(z.array(ItemSchema).min(1).max(AI_CATALOG_MAX));
 const wireDraftSchema = (ids: readonly string[]) =>
   draftObject(z.object(Object.fromEntries(ids.map((id) => [id, WireItemSchema]))).strict());
 
-export type DraftParseError = "INVALID_JSON" | "SCHEMA" | "CATALOG" | "MINUTES" | "LINT_BLOCK";
+// ACTIVITY: el juego no cumple su contrato o la forma pedida
+export type DraftParseError = "INVALID_JSON" | "SCHEMA" | "CATALOG" | "MINUTES" | "LINT_BLOCK" | "ACTIVITY";
+
+// Campo de las alertas del juego (las de la rima y las del lint)
+export const ACTIVITY_FLAG_FIELD = "actividad";
 
 // Los campos que puede ver la familia (los que pasan por el lint)
 const FAMILY_FIELDS = ["titulo", "para_que", "pasos", "materiales", "rol_del_adulto", "si_cuesta", "variantes"] as const;
@@ -641,8 +682,22 @@ export function lintDraft(d: ExerciseDraft, approach?: Approach): { block: strin
     // "Si cuesta…" tiene que decir que se cuenta en la próxima sesión
     if (!/\bsesion\b/.test(normalizeForLint(e.si_cuesta))) flags.push({ exercise: i, field: "si_cuesta", term: "no dice que se cuente en la próxima sesión" });
   });
+  // El juego también lo ve la familia: el mismo lint, y la rima revisada en
+  // el código (los avisos de la rima no bloquean: se reintenta una vez y si
+  // no, llegan como alertas para el profesional)
+  if (d.actividad) {
+    for (const text of activityTexts(d.actividad)) {
+      const r = lintPracticeText(text, approach);
+      for (const t of r.block) if (!block.includes(t)) block.push(t);
+      for (const t of r.review) if (!flags.some((f) => f.field === ACTIVITY_FLAG_FIELD && f.term === t)) flags.push({ exercise: 0, field: ACTIVITY_FLAG_FIELD, term: t });
+    }
+    for (const w of activityWarnings(d.actividad)) flags.push({ exercise: 0, field: ACTIVITY_FLAG_FIELD, term: w.message });
+  }
   return { block, flags };
 }
+
+// ¿El juego del borrador tiene avisos de rima? (se pide de nuevo una vez)
+export const activityRhymeIssues = (d: ExerciseDraft) => (d.actividad ? activityWarnings(d.actividad).length : 0);
 
 // Revisa la respuesta del modelo (texto JSON o un objeto ya parseado), en
 // cualquiera de las dos formas: la del modelo («ejercicios» con una clave
@@ -658,6 +713,7 @@ export function parseExerciseDraft(
   requestedIds: string[],
   requestedMinutes: number,
   approach?: Approach,
+  activity?: ActivityRequest | null, // el juego pedido (params.actividad)
 ): { ok: true; draft: ExerciseDraft; flags: DraftFlag[] } | { ok: false; code: DraftParseError; error: string; terms?: string[] } {
   let value: unknown = raw;
   if (typeof raw === "string") {
@@ -698,6 +754,18 @@ export function parseExerciseDraft(
   }
   if (requestedIds.some((id) => !seen.has(id))) {
     return { ok: false, code: "CATALOG", error: "A la respuesta le falta un ejercicio pedido." };
+  }
+  // El juego: la forma del modelo trae solo el contenido (activityFromWire le
+  // suma lo que pidió el profesional); la de adentro, la actividad entera.
+  // Sin pedido de juego, lo que venga en «actividad» no se usa
+  const rawActivity = isRecord(value) ? value.actividad : undefined;
+  if (activity) {
+    const built = keyed ? activityFromWire(rawActivity, activity) : validateActivity(rawActivity);
+    if (!built.ok) return { ok: false, code: "ACTIVITY", error: `El juego no sirve: ${built.error}` };
+    draft = { ...draft, actividad: "spec" in built ? built.spec : built.value };
+  } else {
+    const { actividad: _ignored, ...rest } = draft;
+    draft = rest;
   }
   const lint = lintDraft(draft, approach);
   if (lint.block.length) return { ok: false, code: "LINT_BLOCK", error: "La respuesta tiene frases que no van en el portal.", terms: lint.block };
@@ -758,6 +826,10 @@ export function describeSent(params: AiAdaptParams, entries: CatalogEntry[]): Ai
       { label: "Adaptaciones", value: list(params.adaptaciones, ADAPTATION_LABEL) },
       { label: "Intereses", value: list(params.intereses, INTEREST_LABEL) },
       { label: "Formato", value: FORMAT_LABEL[params.formato ?? "ejercicio"] },
+      ...(params.actividad ? [
+        { label: "Juego para el celular", value: describeActivityRequest(params.actividad) },
+        { label: "Idea", value: params.actividad.idea ?? "Ninguna" },
+      ] : []),
       { label: "Catálogo", value: `versión ${params.catalogo.version}` },
     ],
     catalog: entries.map((e) => ({ id: e.id, title: e.title })),
@@ -774,6 +846,7 @@ export function describeSent(params: AiAdaptParams, entries: CatalogEntry[]): Ai
 export function draftToExerciseInput(
   item: ExerciseDraftItem,
   ctx: { approach: Approach; practiced_in_session: boolean; draft_id: string },
+  activity: ActivitySpec | null = null, // el juego del borrador (solo para su ejercicio)
 ): ExerciseInput {
   const entry = catalogEntry(item.catalogo_id);
   return {
@@ -796,13 +869,18 @@ export function draftToExerciseInput(
     reviewed: false,
     removed: false,
     review_note: null,
-    activity: null, // la IA todavía no arma actividades (fase 2)
+    activity,
   };
 }
 
 // Texto completo de un ejercicio (para medir cuánto se editó)
-export function exerciseFullText(t: { title: string; para_que: string; pasos: string[]; materiales: string | null; for_adult: string | null; si_cuesta: string }): string {
-  return [t.title, t.para_que, ...t.pasos, t.materiales ?? "", t.for_adult ?? "", t.si_cuesta].join("\n");
+export function exerciseFullText(t: {
+  title: string; para_que: string; pasos: string[]; materiales: string | null; for_adult: string | null; si_cuesta: string;
+  activity?: ActivitySpec | null; // el juego cuenta también (lo que armó la IA y lo que quedó)
+}): string {
+  const parts = [t.title, t.para_que, ...t.pasos, t.materiales ?? "", t.for_adult ?? "", t.si_cuesta];
+  if (t.activity) parts.push(activityFullText(t.activity));
+  return parts.join("\n");
 }
 
 // Proporción editada (0: igual; 1: todo distinto), por palabras. Se guarda
@@ -852,7 +930,14 @@ export function mockDraft(params: AiAdaptParams, entries: CatalogEntry[]): Exerc
         mas_dificil: "Sumar un paso nuevo, elegido por quien practica.",
       },
     })),
+    // El juego del demo: siempre el mismo, con la forma pedida
+    ...(params.actividad ? { actividad: mockActivity(params.actividad) } : {}),
     nota_para_profesional: `${MOCK_DRAFT_NOTICE}: es el texto del catálogo, sin adaptar.`,
     alertas: [],
   };
+}
+
+function mockActivity(r: ActivityRequest): ActivitySpec | null {
+  const built = activityFromWire(mockActivityWire(r), r);
+  return built.ok ? built.spec : null;
 }

@@ -27,9 +27,9 @@
 
 import {
   type AiAdaptParams, type AiDraftResult, type DraftFlag, type ExerciseDraft,
-  AI_ERROR, AI_PROVIDER_PREFS, AI_REQUEST_OPTIONS, AI_RETRY_MIN_MS, AI_TIMEOUT_MS, AI_TITLE_HEADER,
-  PROMPT_VERSION, buildAdaptParams, buildAdaptPrompt, describeSent, draftApiKey, draftCenterKey, draftDailyCap, draftModel,
-  draftRateKey, draftResponseFormat, lintDraft, parseExerciseDraft,
+  AI_ERROR, AI_PROVIDER_PREFS, AI_RETRY_MIN_MS, AI_TIMEOUT_MS, AI_TITLE_HEADER,
+  PROMPT_VERSION, activityRhymeIssues, buildAdaptParams, buildAdaptPrompt, describeSent, draftApiKey, draftCenterKey, draftDailyCap, draftModel,
+  draftRateKey, draftResponseFormat, lintDraft, parseExerciseDraft, requestOptionsFor,
 } from "../../src/lib/aiDraftRules";
 import { parseFeatures } from "../../src/lib/portalClinicalRules";
 import { ageOn, centerNow } from "../../src/lib/portalRules";
@@ -137,7 +137,7 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
   const base = () => ({ model: opts.model, attempts, usage, latency_ms: Math.max(0, now() - start) });
   let responseFormat: ReturnType<typeof draftResponseFormat>;
   try {
-    responseFormat = draftResponseFormat(params.catalogo.ids);
+    responseFormat = draftResponseFormat(params.catalogo.ids, params.actividad ?? null);
   } catch {
     // Ids que no sirven como claves del esquema (con el catálogo no pasa: lo
     // revisan las pruebas). Reintentar no sirve: no se llama al proveedor
@@ -148,6 +148,8 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
   const timer = setTimeout(() => controller.abort(), budget);
   let errorCode = "FAILED";
   let config = false;
+  // Un borrador que sirve pero con avisos de rima (se usa si el reintento no sale mejor)
+  let fallback: { draft: ExerciseDraft; flags: DraftFlag[] } | null = null;
   try {
     for (let i = 0; i < 2; i++) {
       if (i > 0 && budget - (now() - start) < retryMin) break;
@@ -158,8 +160,8 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
         messages: [{ role: "system", content: system }, { role: "user", content: user }],
         response_format: responseFormat,
         provider: AI_PROVIDER_PREFS,
-        temperature: AI_REQUEST_OPTIONS.temperature,
-        max_tokens: AI_REQUEST_OPTIONS.max_tokens,
+        temperature: requestOptionsFor(params).temperature,
+        max_tokens: requestOptionsFor(params).max_tokens,
         title: AI_TITLE_HEADER,
         signal: controller.signal,
       });
@@ -177,7 +179,7 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
         continue;
       }
       config = false;
-      const parsed = parseExerciseDraft(r.content, params.catalogo.ids, params.minutos, params.enfoque);
+      const parsed = parseExerciseDraft(r.content, params.catalogo.ids, params.minutos, params.enfoque, params.actividad ?? null);
       if (!parsed.ok) {
         errorCode = parsed.code;
         attempts.push({ code: parsed.code, status: r.status, ms: now() - t0, ...(parsed.terms ? { terms: parsed.terms } : {}) });
@@ -189,12 +191,27 @@ export async function generateAdaptDraft(params: AiAdaptParams, entries: Catalog
         attempts.push({ code: "CATALOG", status: r.status, ms: now() - t0 });
         continue;
       }
+      // El juego no rima (lo revisa el código): se pide de nuevo una vez si hay
+      // tiempo; si no, o si vuelve a pasar, llega el que tiene menos avisos,
+      // con los avisos para el profesional
+      const issues = activityRhymeIssues(complete.draft);
+      if (issues > 0 && !fallback) {
+        fallback = complete;
+        attempts.push({ code: "RHYME", status: r.status, ms: now() - t0 });
+        if (i === 0 && budget - (now() - start) >= retryMin) continue;
+        break;
+      }
+      if (issues > 0 && fallback && activityRhymeIssues(fallback.draft) <= issues) {
+        attempts.push({ code: "RHYME", status: r.status, ms: now() - t0 });
+        break;
+      }
       attempts.push({ code: null, status: r.status, ms: now() - t0 });
       return { ...base(), ok: true, draft: complete.draft, flags: complete.flags };
     }
   } finally {
     clearTimeout(timer);
   }
+  if (fallback) return { ...base(), ok: true, draft: fallback.draft, flags: fallback.flags };
   if (!config) {
     // Por qué falló cada intento (código, status, tiempo y cuántas frases se
     // bloquearon): nunca el texto del modelo, ni las frases, ni lo que se mandó
@@ -325,6 +342,11 @@ export async function createAdaptDraft(ctx: Ctx, staff: Staff, raw: unknown, opt
   const patientId = body.patient_id;
   const built = buildAdaptParams(body, await patientForDraft(ctx, staff, patientId));
   if (!built.ok) throw new PortalError(400, built.error);
+  // El juego para el celular, solo con su etapa prendida (va junto con "practice")
+  const feats = parseFeatures(env.PORTAL_CLINICAL_FEATURES);
+  if (built.params.actividad && !(feats.includes("activities") && feats.includes("practice"))) {
+    throw new PortalError(400, "Los juegos para el celular no están disponibles.");
+  }
 
   // El límite por persona va antes de la reserva: quien llegó a su límite no
   // gasta lugares del centro
