@@ -315,7 +315,7 @@ function Index() {
               Estamos ubicados en pleno centro de San Miguel de Tucumán. Ingreso libre y gratuito.
               Si vivís en otra ciudad o provincia, también podés pedir atención por telemedicina.
             </p>
-            <ul className="mt-6 space-y-4">
+            <ul data-tour="contacto" className="mt-6 space-y-4">
               <ContactItem icon={MapPin} label="Dirección" value={`${CENTER.address}, ${CENTER.city}`} />
               <ContactItem icon={Clock} label="Horarios" value={CENTER.hoursLong} />
               <ContactItem icon={Phone} label={`Teléfono · ${CENTER.phoneNote.toLowerCase()}`}

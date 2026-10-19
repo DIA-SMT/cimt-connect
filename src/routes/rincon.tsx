@@ -13,11 +13,12 @@ import {
   type CornerCategory, type CornerItem,
 } from "@/lib/corner";
 
-// Rincón social: espacio motivacional. Arriba, "Nuestra comunidad": historias
-// de pacientes del CIMT que se animan a contar su experiencia. Abajo, personas
-// que tartamudean, películas, libros, artistas y deportistas. El contenido lo
-// administra el equipo desde el panel (pestaña "Rincón social"); acá se
-// muestra solo lo publicado.
+// Rincón social: espacio motivacional con personas que tartamudean,
+// películas, libros, artistas y deportistas, y "Nuestra comunidad": historias
+// de pacientes del CIMT que se animan a contar su experiencia (un filtro más,
+// con sus cuatro secciones). El contenido lo administra el equipo desde el
+// panel (pestaña "Rincón social"); acá se muestra solo lo publicado.
+// #comunidad o #experiencias (etc.) abren el filtro ya elegido.
 
 export const Route = createFileRoute("/rincon")({
   head: () => ({
@@ -53,25 +54,45 @@ const COMMUNITY_COLOR: Record<CommunityCategory, { card: string; icon: string }>
   huellas: { card: "border-emerald-300 bg-emerald-50 text-emerald-950", icon: "bg-emerald-700 text-white" },
 };
 
+type Filter = "todo" | "comunidad" | CornerCategory;
+
 function RinconPage() {
   const [items, setItems] = useState<CornerItem[] | null>(null);
-  const [filter, setFilter] = useState<"todo" | CornerCategory>("todo");
+  const [filter, setFilter] = useState<Filter>("todo");
+  // Dentro de "Nuestra comunidad": todas sus secciones o una
+  const [section, setSection] = useState<"todas" | CommunityCategory>("todas");
 
   useEffect(() => {
     supabase.from("social_corner_items").select("*").eq("published", true)
       .then(({ data }: { data: CornerItem[] | null }) => setItems(sortCorner(data ?? [])));
+    // Links viejos y de afuera: #comunidad, #experiencias, #peliculas… (al
+    // abrir la página y si cambia el # sin recargarla)
+    const fromHash = () => {
+      const hash = decodeURIComponent(window.location.hash.slice(1));
+      if (hash === "comunidad") { setFilter("comunidad"); setSection("todas"); }
+      else if ((COMMUNITY_CATEGORIES as readonly string[]).includes(hash)) {
+        setFilter("comunidad");
+        setSection(hash as CommunityCategory);
+      } else if (hash in CORNER_CATEGORY_LABEL) setFilter(hash as CornerCategory);
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
   }, []);
 
-  // Las historias de pacientes van en su sección; el resto, como siempre
   const community = useMemo(() => (items ?? []).filter((i) => isCommunityCategory(i.category)), [items]);
-  const inspiration = useMemo(() => (items ?? []).filter((i) => !isCommunityCategory(i.category)), [items]);
-  const featured = inspiration.filter((i) => i.featured);
-  const rest = useMemo(
-    () => inspiration.filter((i) => !i.featured && (filter === "todo" || i.category === filter)),
-    [inspiration, filter],
-  );
+  const featured = (items ?? []).filter((i) => i.featured && !isCommunityCategory(i.category));
+  const rest = (items ?? []).filter((i) => !featured.includes(i) && (filter === "todo" || i.category === filter));
+  // Filtros: los de las recomendaciones que tienen algo publicado
   const categories = (Object.keys(CORNER_CATEGORY_LABEL) as CornerCategory[])
-    .filter((c) => inspiration.some((i) => !i.featured && i.category === c));
+    .filter((c) => !isCommunityCategory(c) && (items ?? []).some((i) => !i.featured && i.category === c));
+
+  function choose(f: Filter) {
+    setFilter(f);
+    setSection("todas");
+    // La dirección acompaña al filtro (se puede compartir el link)
+    history.replaceState(null, "", f === "todo" ? window.location.pathname : `#${f}`);
+  }
 
   return (
     <Layout>
@@ -90,35 +111,32 @@ function RinconPage() {
         </div>
       </section>
 
-      {items === null ? (
-        <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
-      ) : (
-        <CommunitySection items={community} />
-      )}
-
       <section className="container mx-auto px-4 pb-16 md:px-6">
-        <div className="mx-auto mb-8 max-w-2xl text-center">
-          <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">Personalidades y recomendaciones</h2>
-          <p className="mt-3 text-muted-foreground">Figuras, artistas, deportistas, películas y libros.</p>
-        </div>
-        {items === null ? null : inspiration.length === 0 ? (
-          <p className="py-10 text-center text-muted-foreground">Muy pronto vamos a compartir recomendaciones en este espacio.</p>
+        {items === null ? (
+          <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
         ) : (
           <>
-            {featured.map((item) => <FeaturedCard key={item.id} item={item} />)}
+            {filter === "todo" && featured.map((item) => <FeaturedCard key={item.id} item={item} />)}
 
-            {categories.length > 1 && (
-              <div className="mt-10 flex flex-wrap justify-center gap-1.5">
-                <FilterChip active={filter === "todo"} onClick={() => setFilter("todo")}>Todo</FilterChip>
-                {categories.map((c) => (
-                  <FilterChip key={c} active={filter === c} onClick={() => setFilter(c)}>{CORNER_CATEGORY_LABEL[c]}</FilterChip>
-                ))}
+            <div role="group" aria-label="Filtrar el Rincón social" className="mt-10 flex flex-wrap justify-center gap-1.5">
+              <FilterChip active={filter === "todo"} onClick={() => choose("todo")}>Todo</FilterChip>
+              <FilterChip active={filter === "comunidad"} onClick={() => choose("comunidad")} community>
+                <HeartHandshake className="h-3.5 w-3.5" aria-hidden="true" /> Nuestra comunidad
+              </FilterChip>
+              {categories.map((c) => (
+                <FilterChip key={c} active={filter === c} onClick={() => choose(c)}>{CORNER_CATEGORY_LABEL[c]}</FilterChip>
+              ))}
+            </div>
+
+            {filter === "comunidad" ? (
+              <CommunityView items={community} section={section} onSection={setSection} />
+            ) : rest.length === 0 ? (
+              <p className="py-10 text-center text-muted-foreground">Muy pronto vamos a compartir recomendaciones en este espacio.</p>
+            ) : (
+              <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {rest.map((item) => <ItemCard key={item.id} item={item} />)}
               </div>
             )}
-
-            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {rest.map((item) => <ItemCard key={item.id} item={item} />)}
-            </div>
           </>
         )}
 
@@ -137,69 +155,72 @@ function RinconPage() {
   );
 }
 
-// "Nuestra comunidad": una tarjeta de color por sección (lleva a la sección)
-// y, abajo, las historias publicadas de cada una. "Dejar tu huella" siempre se
-// muestra, con la invitación a contar la propia historia.
-function CommunitySection({ items }: { items: CornerItem[] }) {
-  const byCategory = (c: CommunityCategory) => sortCorner(items.filter((i) => i.category === c));
+// El filtro "Nuestra comunidad": qué es, sus cuatro secciones (cada una con
+// su color y cuántas historias tiene), las historias publicadas y, siempre al
+// final, la invitación a dejar la propia huella.
+function CommunityView({ items, section, onSection }: {
+  items: CornerItem[]; section: "todas" | CommunityCategory; onSection: (s: "todas" | CommunityCategory) => void;
+}) {
+  const count = (c: CommunityCategory) => items.filter((i) => i.category === c).length;
+  const list = sortCorner(items.filter((i) => section === "todas" || i.category === section));
   return (
-    <section id="comunidad" className="container mx-auto px-4 pb-16 md:px-6">
-      <div className="mx-auto max-w-2xl text-center">
-        <h2 className="font-hand text-4xl text-[color:var(--primary-deep)]">Nuestra comunidad</h2>
-        <p className="mt-3 text-muted-foreground">
-          Pacientes del CIMT que se animan a contar su experiencia, para que nadie se sienta solo.
-        </p>
-      </div>
+    <div className="mt-8">
+      <p className="mx-auto max-w-2xl text-center text-lg text-muted-foreground">
+        Pacientes del CIMT que se animan a contar su experiencia, para que nadie se sienta solo.
+      </p>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div role="group" aria-label="Secciones de Nuestra comunidad" className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {COMMUNITY_CATEGORIES.map((c) => {
           const Icon = CATEGORY_ICON[c];
-          const count = byCategory(c).length;
-          const action = c === "huellas" ? "Dejá la tuya"
-            : count === 0 ? "Muy pronto" : count === 1 ? "Ver 1 historia" : `Ver ${count} historias`;
+          const on = section === c;
+          const n = count(c);
           return (
-            <a key={c} href={`#${c}`}
-              className={`group flex flex-col gap-3 rounded-3xl border-2 p-5 transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elegant)] ${COMMUNITY_COLOR[c].card}`}>
-              <span className={`flex h-12 w-12 items-center justify-center rounded-2xl ${COMMUNITY_COLOR[c].icon}`}>
-                <Icon className="h-6 w-6" aria-hidden="true" />
+            <button key={c} type="button" aria-pressed={on} onClick={() => onSection(on ? "todas" : c)}
+              className={`flex flex-col gap-2 rounded-3xl border-2 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${COMMUNITY_COLOR[c].card} ${on ? "ring-4 ring-current/25" : ""}`}>
+              <span className="flex items-center gap-3">
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${COMMUNITY_COLOR[c].icon}`}>
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span className="text-base font-bold leading-tight">{CORNER_CATEGORY_LABEL[c]}</span>
               </span>
-              <span className="text-lg font-bold leading-tight">{CORNER_CATEGORY_LABEL[c]}</span>
               <span className="text-sm leading-relaxed">{COMMUNITY_CATEGORY_TEXT[c]}</span>
-              <span className="mt-auto text-sm font-semibold">
-                {action}
-                <ArrowRight className="ml-1 inline h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              <span className="mt-auto text-xs font-bold uppercase tracking-wider">
+                {n === 0 ? "Pronto" : n === 1 ? "1 historia" : `${n} historias`}{on ? " · elegida" : ""}
               </span>
-            </a>
+            </button>
           );
         })}
       </div>
 
-      {COMMUNITY_CATEGORIES.map((c) => {
-        const list = byCategory(c);
-        if (c !== "huellas" && list.length === 0) return null;
-        return (
-          <div key={c} id={c} className="mt-12 scroll-mt-24">
-            <h3 className="font-display text-2xl font-bold text-[color:var(--primary-deep)]">{CORNER_CATEGORY_LABEL[c]}</h3>
-            {list.length > 0 && (
-              <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {list.map((item) => <ItemCard key={item.id} item={item} />)}
-              </div>
-            )}
-            {c === "huellas" && (
-              <div className={`mt-5 rounded-3xl border-2 p-6 ${COMMUNITY_COLOR.huellas.card}`}>
-                <p className="text-lg font-bold">¿Querés dejar tu huella?</p>
-                <p className="mt-2 leading-relaxed">
-                  Si te atendés en el CIMT y querés contar tu historia o dejar un mensaje para quienes recién
-                  empiezan, hablá con tu profesional o escribinos a{" "}
-                  <a href={`mailto:${CENTER.email}`} className="font-semibold underline">{CENTER.email}</a>.
-                  La publicamos solo con tu autorización (y la de tu adulto responsable, si sos menor).
-                </p>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </section>
+      {list.length > 0 ? (
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((item) => <ItemCard key={item.id} item={item} />)}
+        </div>
+      ) : (
+        <div className="mx-auto mt-8 flex max-w-2xl flex-col items-center gap-2 rounded-3xl border-2 border-dashed border-border bg-card/80 p-8 text-center">
+          <MessagesSquare className="h-8 w-8 text-primary" aria-hidden="true" />
+          <p className="text-lg font-bold text-[color:var(--primary-deep)]">
+            {section === "todas" ? "Las primeras historias están por llegar" : `Todavía no hay historias en «${CORNER_CATEGORY_LABEL[section]}»`}
+          </p>
+          <p className="text-muted-foreground">El equipo las va a ir sumando con la autorización de cada paciente. ¿Querés que la tuya sea una de las primeras?</p>
+        </div>
+      )}
+
+      <div className={`mx-auto mt-8 flex max-w-3xl flex-col gap-3 rounded-3xl border-2 p-6 sm:flex-row sm:items-center ${COMMUNITY_COLOR.huellas.card}`}>
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${COMMUNITY_COLOR.huellas.icon}`}>
+          <Footprints className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-lg font-bold">¿Querés dejar tu huella?</p>
+          <p className="mt-1 leading-relaxed">
+            Si te atendés en el CIMT y querés contar tu historia o dejar un mensaje para quienes recién
+            empiezan, hablá con tu profesional o escribinos a{" "}
+            <a href={`mailto:${CENTER.email}`} className="font-semibold underline">{CENTER.email}</a>.
+            La publicamos solo con tu autorización (y la de tu adulto responsable, si sos menor).
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -237,10 +258,12 @@ function LinkIcon({ url, className }: { url: string; className: string }) {
 
 function ItemCard({ item }: { item: CornerItem }) {
   const Icon = CATEGORY_ICON[item.category];
+  // Las historias de pacientes llevan el color de su sección
+  const tone = isCommunityCategory(item.category) ? COMMUNITY_COLOR[item.category].icon : "bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]";
   return (
     <article className="flex flex-col rounded-3xl border border-border/60 bg-card p-6 shadow-[var(--shadow-card)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elegant)]">
       <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[color:var(--primary-soft)] text-[color:var(--primary-deep)]">
+        <div className={`flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl ${tone}`}>
           {item.image_url ? <img src={item.image_url} alt="" className="h-full w-full object-cover" /> : <Icon className="h-5 w-5" />}
         </div>
         <div className="min-w-0">
@@ -259,11 +282,17 @@ function ItemCard({ item }: { item: CornerItem }) {
   );
 }
 
-function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+// community: el filtro "Nuestra comunidad" se distingue con su color
+function FilterChip({ active, onClick, community = false, children }: {
+  active: boolean; onClick: () => void; community?: boolean; children: React.ReactNode;
+}) {
+  const tone = community
+    ? active ? "bg-emerald-700 text-white" : "border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+    : active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-[color:var(--primary-soft)]";
   return (
-    <button onClick={onClick} className={[
-      "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
-      active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-[color:var(--primary-soft)]",
+    <button type="button" onClick={onClick} aria-pressed={active} className={[
+      "inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition-colors",
+      tone,
     ].join(" ")}>
       {children}
     </button>
