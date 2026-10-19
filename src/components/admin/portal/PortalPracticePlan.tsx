@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, BookOpen, ChevronDown, Loader2, PenLine, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, ChevronDown, Eye, EyeOff, Loader2, PenLine, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +26,7 @@ import {
   type ExerciseDraftItem, type Formato, type Interes, type QuienAcompana,
   ADAPTATIONS, ADAPTATION_LABEL, AI_ERROR, AGE_BAND_LABEL, AI_CATALOG_MAX, AI_INTERESTS_MAX, AI_MINUTES, CONTEXTS, CONTEXT_LABEL,
   DIFFICULTIES, DIFFICULTY_LABEL, FORMATS, FORMAT_HINT, FORMAT_LABEL, INTERESTS, INTEREST_LABEL, QUIEN_ACOMPANA, QUIEN_ACOMPANA_LABEL,
-  ageBand, describeSent, draftToExerciseInput, formatAllowed,
+  ACTIVITY_FLAG_FIELD, MOCK_DRAFT_NOTICE, ageBand, describeSent, draftToExerciseInput, formatAllowed,
 } from "@/lib/aiDraftRules";
 import type { Why } from "@/lib/practiceSuggest";
 import {
@@ -35,6 +35,7 @@ import {
 } from "@/lib/portalStaff";
 import { type UnsavedPart, forgetUnsaved, keepUnsaved, peekUnsaved } from "./practiceHandoff";
 import { ActivityEditor } from "./ActivityEditor";
+import { type PreviewExercise, ExercisePreview } from "./ExercisePreview";
 import {
   type ActivitySpec, type PoemScheme, MECHANICS, MECHANIC_HINT, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL,
 } from "@/lib/activitySpec";
@@ -185,6 +186,17 @@ let uidSeq = 0;
 const newUid = () => `ej-${++uidSeq}`;
 
 const aiDrafted = (e: ExForm) => e.source === "ia" || e.ai_locked;
+// El elemento de la tarjeta (para llevar a la vista lo recién sumado)
+const cardDomId = (uid: string) => `ejercicio-${uid}`;
+
+// Lo que muestra «Así lo ve la familia» (con el texto como está en el editor)
+function previewOf(e: Pick<ExForm, "title" | "para_que" | "pasos" | "minutes" | "materiales" | "for_adult" | "si_cuesta" | "with_adult" | "activity">): PreviewExercise {
+  return {
+    title: e.title, para_que: e.para_que, pasos: e.pasos, minutes: Number(e.minutes) || 0,
+    materiales: e.materiales.trim() || null, for_adult: e.for_adult.trim() || null, si_cuesta: e.si_cuesta,
+    with_adult: e.with_adult, activity: e.activity,
+  };
+}
 const noteOk = (keep: boolean, note: string) => keep && cleanText(note).length >= 3;
 
 function exTexts(e: ExForm) {
@@ -520,6 +532,19 @@ function PlanEditorView({ data, busy, send, reload, onDirty, owner = null }: Pra
     return next;
   });
   const openCard = (uid: string) => setOpenCards((s) => new Set(s).add(uid));
+  // Lo recién sumado: se marca un rato y la vista va a la primera tarjeta nueva
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.getElementById(cardDomId(scrollTo))?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setScrollTo(null);
+  }, [scrollTo]);
+  useEffect(() => {
+    if (!fresh.size) return;
+    const t = window.setTimeout(() => setFresh(new Set()), 8000);
+    return () => window.clearTimeout(t);
+  }, [fresh]);
 
   function move(uid: string, dir: -1 | 1) {
     setForm((f) => {
@@ -561,6 +586,8 @@ function PlanEditorView({ data, busy, send, reload, onDirty, owner = null }: Pra
     setForm(next);
     setFormError(null);
     setOpenCards((s) => new Set([...s, ...cards.map((c) => c.uid)]));
+    setFresh(new Set(cards.map((c) => c.uid)));
+    if (cards[0]) setScrollTo(cards[0].uid);
     return true;
   }
 
@@ -870,6 +897,7 @@ function PlanEditorView({ data, busy, send, reload, onDirty, owner = null }: Pra
                   {form.exercises.map((e, i) => (
                     <ExerciseCard key={e.uid} ex={e} index={i} count={form.exercises.length} data={data} catalog={catalog}
                       open={openCards.has(e.uid)} highlighted={formError?.uid === e.uid}
+                      screenMode={SCREEN_MODE_BY_AUDIENCE[form.audience]} fresh={fresh.has(e.uid)}
                       isNew={!!published && !publishedKeys.has(e.exercise_key ?? "")}
                       canRedo={!!e.ai && batches.some((b) => b.key === e.ai?.batch)}
                       running={aiRunning === e.uid} aiError={aiError?.at === e.uid ? aiError.message : null}
@@ -1320,15 +1348,17 @@ function FlagLine({ flags }: { flags: DraftFlag[] }) {
 // ── Tarjeta de un ejercicio ─────────────────────────────────────────────────
 
 function ExerciseCard({
-  ex, index, count, data, catalog, open, highlighted, isNew, canRedo, running, aiError,
+  ex, index, count, data, catalog, open, highlighted, isNew, canRedo, running, aiError, screenMode, fresh,
   onToggle, onChange, onMove, onRemove, onRedo, onOriginal,
 }: {
   ex: ExForm; index: number; count: number; data: StaffPracticeDTO; catalog: CatalogEntry[] | null; open: boolean;
   highlighted: boolean; isNew: boolean; canRedo: boolean; running: boolean; aiError: string | null;
+  screenMode: ScreenMode; fresh: boolean; // fresh: recién sumado (se marca y se lleva a la vista)
   onToggle: () => void; onChange: (patch: Partial<ExForm>) => void; onMove: (dir: -1 | 1) => void; onRemove: () => void;
   onRedo: () => void; onOriginal: () => void;
 }) {
   const bodyId = useId();
+  const [preview, setPreview] = useState(false);
   const ids = { title: useId(), para: useId(), min: useId(), mat: useId(), adult: useId(), cuesta: useId(), approach: useId() };
   const options = data.approaches;
   const opt = options.find((o) => o.approach === ex.approach);
@@ -1355,9 +1385,10 @@ function ExerciseCard({
   const setStep = (i: number, v: string) => onChange({ pasos: ex.pasos.map((s, j) => (j === i ? v : s)) });
 
   return (
-    <li className={[
-      "rounded-2xl border p-3",
-      highlighted ? "border-[oklch(0.6_0.19_25)] ring-2 ring-[oklch(0.6_0.19_25)]/30" : "border-border/60",
+    <li id={cardDomId(ex.uid)} className={[
+      "scroll-mt-4 rounded-2xl border p-3 transition-shadow",
+      highlighted ? "border-[oklch(0.6_0.19_25)] ring-2 ring-[oklch(0.6_0.19_25)]/30"
+        : fresh ? "border-primary ring-2 ring-primary/30" : "border-border/60",
       ex.removed ? "bg-muted/40" : "",
     ].join(" ")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1378,6 +1409,7 @@ function ExerciseCard({
           {ex.removed && <Pill tone="muted">Quitado</Pill>}
           {!ex.removed && ex.activity && <Pill tone="ai">Para jugar en el celular</Pill>}
           {!ex.removed && isNew && <Pill tone="muted">Nuevo</Pill>}
+          {!ex.removed && fresh && <Pill tone="ai">Recién sumado</Pill>}
           {needsReview && <Pill tone="warn">Falta «Lo revisé»</Pill>}
           {!ex.removed && uncovered && <Pill tone="warn">Revisar el texto</Pill>}
           {!ex.removed && (approachBad || sessionMissing) && <Pill tone="warn">Revisar el enfoque</Pill>}
@@ -1442,6 +1474,13 @@ function ExerciseCard({
           {!aiEx && ex.source === "catalogo" && entry && (
             <p className="text-xs text-muted-foreground">Del catálogo: «{entry.title}». Podés ajustar el texto para {data.patient.first_name}.</p>
           )}
+
+          <Button type="button" size="sm" variant={preview ? "default" : "outline"} className={PILL_BTN} aria-expanded={preview}
+            onClick={() => setPreview((x) => !x)}>
+            {preview ? <EyeOff className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="mr-1 h-3.5 w-3.5" aria-hidden="true" />}
+            {preview ? "Cerrar la vista de la familia" : "Así lo ve la familia"}
+          </Button>
+          {preview && <ExercisePreview ex={previewOf(ex)} screenMode={screenMode} />}
 
           <div className="space-y-1.5">
             <Label htmlFor={ids.title}>Título</Label>
@@ -1866,6 +1905,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
   const [game, setGame] = useState(true);
   const [gameReq, setGameReq] = useState<ActivityRequest>(DEFAULT_ACTIVITY_REQUEST);
   const setGamePart = (patch: Partial<ActivityRequest>) => setGameReq((g) => ({ ...g, ...patch }));
+  const [result, setResult] = useState<{ req: AiDraftRequest; res: AiDraftResult } | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
@@ -1936,23 +1976,36 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
       formato,
       ...(params.actividad ? { actividad: params.actividad } : {}),
     };
+    await run(req);
+  }
+
+  // Pide el borrador y, si sale, lo muestra acá mismo (todavía no se suma al plan)
+  async function run(req: AiDraftRequest) {
+    setError(null);
     setRunning(true);
     const r = await requestDraft(req);
     if (!alive.current) return;
     setRunning(false);
     if (!r.ok) { setError(r.error); return; }
-    onResult(req, r.data);
+    setResult({ req, res: r.data });
   }
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open onOpenChange={(o) => { if (!o && !running) onClose(); }}>
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className={TITLE}>Adaptar con ayuda de IA</DialogTitle>
+          <DialogTitle className={TITLE}>{result ? "Propuesta lista" : "Adaptar con ayuda de IA"}</DialogTitle>
           <DialogDescription>
-            La IA adapta ejercicios del catálogo aprobado: no inventa ejercicios nuevos.
+            {result
+              ? "Así la vería la familia. Si te sirve, sumala al plan: ahí la podés corregir y marcar «Lo revisé»."
+              : "La IA adapta ejercicios del catálogo aprobado: no inventa ejercicios nuevos."}
           </DialogDescription>
         </DialogHeader>
+        {result ? (
+          <AiResultView result={result} screenMode={SCREEN_MODE_BY_AUDIENCE[p.audience]} running={running} error={error}
+            onAdd={() => onResult(result.req, result.res)} onOther={() => void run(result.req)}
+            onBack={() => { setResult(null); setError(null); }} />
+        ) : (
         <form onSubmit={submit} className="space-y-4">
           <p className="flex gap-2 rounded-xl bg-[color:var(--primary-soft)] px-3 py-2 text-sm text-[color:var(--primary-deep)]">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -2186,8 +2239,62 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
             </Button>
           </div>
         </form>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// La propuesta de la IA, antes de sumarla: cada ejercicio como lo vería la
+// familia (con su juego, si hay), lo que la IA pide revisar y qué hacer
+function AiResultView({ result, screenMode, running, error, onAdd, onOther, onBack }: {
+  result: { req: AiDraftRequest; res: AiDraftResult }; screenMode: ScreenMode; running: boolean; error: string | null;
+  onAdd: () => void; onOther: () => void; onBack: () => void;
+}) {
+  const { req, res } = result;
+  const [shown, setShown] = useState(0);
+  const items = res.draft.ejercicios.map((item, i) =>
+    draftToExerciseInput(item, { approach: req.approach, practiced_in_session: req.practiced_in_session, draft_id: res.draft_id },
+      i === 0 ? res.draft.actividad ?? null : null));
+  const ex = items[Math.min(shown, items.length - 1)];
+  const review = [...res.draft.alertas, ...res.flags.filter((f) => f.field === ACTIVITY_FLAG_FIELD).map((f) => f.term)];
+  return (
+    <div className="space-y-4">
+      {res.demo && <p className={WARN_BOX}>{MOCK_DRAFT_NOTICE}</p>}
+      {items.length > 1 && (
+        <div role="group" aria-label="Ejercicios de la propuesta" className="flex flex-wrap gap-1.5">
+          {items.map((it, i) => (
+            <Button key={i} type="button" size="sm" variant={i === shown ? "default" : "outline"} className={PILL_BTN}
+              aria-pressed={i === shown} onClick={() => setShown(i)}>
+              {i + 1}. {it.title}
+            </Button>
+          ))}
+        </div>
+      )}
+      {ex.activity
+        ? <p className="text-sm">Tiene un juego para el celular ({MECHANIC_LABEL[ex.activity.mecanica].toLowerCase()}) y los pasos como versión sin pantalla.</p>
+        : <p className="text-sm text-muted-foreground">Es un ejercicio con pasos (sin juego para el celular): la familia lo ve paso por paso.</p>}
+      <ExercisePreview key={`${res.draft_id}-${shown}`} ex={{ ...ex, activity: ex.activity }} screenMode={screenMode} />
+      {review.length > 0 && (
+        <div className={WARN_BOX}>
+          <p className="font-semibold">La IA sugiere revisar</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">{review.map((a, i) => <li key={i}>{a}</li>)}</ul>
+        </div>
+      )}
+      {running && (
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Preparando otra propuesta… Puede tardar hasta 25 segundos.
+        </p>
+      )}
+      {error && <p role="alert" className={ERROR_BOX}>{error}</p>}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" variant="ghost" disabled={running} onClick={onBack}>Cambiar lo pedido</Button>
+        <Button type="button" variant="outline" className="rounded-full" disabled={running} onClick={onOther}>Otra propuesta</Button>
+        <Button type="button" className="rounded-full" disabled={running} onClick={onAdd}>
+          <Plus className="mr-1 h-4 w-4" aria-hidden="true" /> Sumar al plan
+        </Button>
+      </div>
+    </div>
   );
 }
 
