@@ -189,6 +189,8 @@ import {
   uncoveredAlerts, validateFeedback, validateGoal, validateNote, validatePlanDraft, weekKey, weekProgress,
 } from "@/lib/practiceRules";
 import { profileFromRow, suggestPractice } from "@/lib/practiceSuggest";
+import { type ActivitySpec, readActivity } from "@/lib/activitySpec";
+import { ACTIVITY_MIN_AGE, activityAgeOk } from "@/lib/activityMechanics";
 import { CATALOG_VERSION, catalogEntry, catalogFor } from "@/lib/exerciseCatalog";
 import {
   type AiAdaptParams, type AiDraftRequest, type AiDraftResult, type DraftFlag, type ExerciseDraft,
@@ -273,6 +275,7 @@ type ExerciseRow = {
   ai_draft_id: string | null; ai_drafted: boolean; reviewed_at: string | null; reviewed_by_email: string | null;
   edit_ratio: number | null; lint_overrides: LintOverride[]; removed_at: string | null; removed_by_email: string | null;
   created_at: string; updated_at: string;
+  activity?: ActivitySpec | null; // (etapa "activities"; las filas viejas del navegador no la tienen)
 };
 // "Ya lo hice": uno vigente por ejercicio (exercise_key) y por día
 type PracticeLogRow = {
@@ -402,7 +405,8 @@ const DB_VERSION = 13;
 
 // Etapas de la información de salud prendidas (en el servidor:
 // PORTAL_CLINICAL_FEATURES). La demo muestra las etapas A, B, C, D y E1.
-const FEATURES: ClinicalFeature[] = ["consent", "info", "practice", "ai", "hc_digital"];
+const FEATURES: ClinicalFeature[] = ["consent", "info", "practice", "ai", "hc_digital", "activities"];
+const activitiesOn = () => FEATURES.includes("activities") && FEATURES.includes("practice");
 
 // Copia digital de la historia clínica (E1): solo vale con "consent" también
 // prendida (hace falta que la cuenta haya activado la información de salud)
@@ -714,6 +718,14 @@ const DEMO_PLAN_ID = "7b2e4c1a-3f5d-4a8e-9c61-2d0f8e5b7a14";
 const DEMO_GOAL_ID = "c4d81f2b-6e3a-4b7c-8d95-1a2f3e4b5c6d";
 const DEMO_FEEDBACK_ID = "e9f1a2b3-4c5d-4e6f-8a7b-9c0d1e2f3a4b";
 const DEMO_AI_DRAFT_ID = "3a7c9e1b-5d2f-4c8a-b6e4-0f1d2c3b4a59";
+// La actividad de la demo (una poesía cargada a mano por la profesional)
+const DEMO_POEM: ActivitySpec = {
+  v: 1, mecanica: "poesia", titulo: "La tortuga suave", tema: "campo", esquema: "AABB", rima: "asonante", palmas: true,
+  estrofas: [
+    { versos: ["Una tortuga suave", "camina por la calle,", "saluda a una paloma", "que vuela por la loma."], icono: "tortuga" },
+    { versos: ["La voz sale despacito", "como un globo chiquito,", "y cuando sale el sol", "decimos hola los dos."], icono: "sol" },
+  ],
+};
 // Valentina: logros sin plan publicado (una devolución con medalla y dos metas)
 const DEMO_VALE = {
   feedback: "5c1d7e3a-9b2f-4e6d-8a4c-1f0b3d5e7a92",
@@ -816,6 +828,8 @@ function seedPractice(today: string, authorLabel: string, staffEmail: string): P
       trabas.edit_ratio = editRatio(exerciseFullText(proposed), exerciseFullText(trabas));
     }
   }
+  // La poesía para decir juntos de «habla fácil» (actividades, fase 1)
+  if (arranque) arranque.activity = DEMO_POEM;
   for (const e of [arranque, turnos, trabas]) if (e) out.practice_exercises.push(e);
 
   // Las prácticas que anotó Laura (fecha → ejercicios) y lo que contó
@@ -2595,6 +2609,12 @@ function practicePage(db: Db, f: PracticeFamily, today: string): PracticeDTO {
   };
 }
 
+// Edad de un chico de la demo (para la versión interactiva, desde los 6)
+function childAge(db: Db, patientId: string, today: string): number | null {
+  const birth = db.children.find((c) => c.id === patientId)?.birth_date ?? null;
+  return birth ? ageOn(birth, today) : null;
+}
+
 function exercisePage(db: Db, f: PracticeFamily, plan: PlanRow, ex: ExerciseRow, today: string): PracticeExerciseDTO {
   const days: PracticeDayDTO[] = practiceDates(today, firstPublishedOn(db, ex.patient_id, ex.exercise_key)).map((date) => {
     const log = logOn(db, ex.patient_id, ex.exercise_key, date);
@@ -2615,6 +2635,7 @@ function exercisePage(db: Db, f: PracticeFamily, plan: PlanRow, ex: ExerciseRow,
     exercise: {
       id: ex.id, title: ex.title, para_que: ex.para_que, pasos: [...ex.pasos], minutes: ex.minutes,
       materiales: ex.materiales, for_adult: ex.for_adult, si_cuesta: ex.si_cuesta, with_adult: ex.with_adult,
+      activity: activitiesOn() && activityAgeOk(childAge(db, ex.patient_id, today)) ? readActivity(ex.activity ?? null) : null,
     },
     today,
     days,
@@ -4574,6 +4595,8 @@ const PATIENT_NOT_FOUND = "No encontramos ese paciente.";
 const NOT_IN_CATALOG = "Ese ejercicio no está en el catálogo.";
 const AI_DRAFT_GONE = "El borrador de la IA no es de este paciente o ya no se puede usar. Volvé a adaptarlo o usá el original del catálogo.";
 const PRACTICE_PAUSED = "El portal de este paciente está en pausa: no se puede publicar.";
+// Como en el servidor (server/lib/practice.ts)
+const ACTIVITY_AGE = `Las actividades para jugar en el celular son desde los ${ACTIVITY_MIN_AGE} años. Quitala: los pasos quedan como siempre.`;
 const NOTHING_TO_REVIEW = "Todavía no hay prácticas para marcar como vistas. Actualizá la sección.";
 const GOAL_HAS_MEDAL = "Esa meta ya tiene su medalla.";
 const GOAL_NOT_DRAFT = "Esa meta ya no está en borrador. Actualizá la sección.";
@@ -4629,10 +4652,14 @@ function publishCheckOf(db: Db, plan: PlanRow): PublishCheck {
     exercises: planRows(db, plan.id).map((e) => ({
       title: e.title, para_que: e.para_que, pasos: e.pasos, materiales: e.materiales, for_adult: e.for_adult,
       si_cuesta: e.si_cuesta, approach: e.approach, practiced_in_session: e.practiced_in_session,
+      activity: activitiesOn() ? e.activity ?? null : null,
       ai_drafted: e.ai_drafted, reviewed: !!e.reviewed_at, removed: !!e.removed_at, lint_overrides: e.lint_overrides,
     })),
   };
 }
+
+// Los textos que se revisan: la actividad, solo con la etapa prendida
+const mockTexts = (e: ExerciseRow) => ({ ...e, activity: activitiesOn() ? e.activity ?? null : null });
 
 function staffExercise(db: Db, e: ExerciseRow): StaffExerciseDTO {
   return {
@@ -4641,8 +4668,9 @@ function staffExercise(db: Db, e: ExerciseRow): StaffExerciseDTO {
     title: e.title, para_que: e.para_que, pasos: [...e.pasos], minutes: e.minutes, materiales: e.materiales,
     for_adult: e.for_adult, si_cuesta: e.si_cuesta, with_adult: e.with_adult, ai_drafted: e.ai_drafted,
     ai_draft_id: e.ai_draft_id, reviewed_at: e.reviewed_at, reviewed_by_email: e.reviewed_by_email,
-    edit_ratio: e.edit_ratio, alerts: exerciseTextAlerts(e, e.approach), lint_overrides: e.lint_overrides,
+    edit_ratio: e.edit_ratio, alerts: exerciseTextAlerts(mockTexts(e), e.approach), lint_overrides: e.lint_overrides,
     removed_at: e.removed_at, first_published_on: firstPublishedOn(db, e.patient_id, e.exercise_key),
+    activity: activitiesOn() ? e.activity ?? null : null,
   };
 }
 
@@ -4880,7 +4908,7 @@ async function staffPractice(staff: Staff, patientId: string, withCatalog = fals
 
   return ok({
     // En el mock la ayuda de IA no necesita clave (son plantillas fijas)
-    features: { ai: FEATURES.includes("ai") },
+    features: { ai: FEATURES.includes("ai"), activities: activitiesOn() },
     can_edit: staff.clinical,
     author: { label: author.label, problem: admin ? STAFF_PRACTICE_TEXT.admin_readonly : author.problem },
     patient: {
@@ -5011,6 +5039,8 @@ function applyPracticeAction(
       const v = validatePlanDraft(b.plan);
       if (!v.ok) return fail(400, v.error, { code: v.code });
       const input = v.value;
+      // Con las actividades apagadas, la actividad no se toca
+      if (!activitiesOn()) for (const e of input.exercises) e.activity = null;
       const expected = b.expected_updated_at ?? null;
       if (expected !== null && typeof expected !== "string") return invalid();
       // Enfoques que nunca se podrían publicar para este paciente (la casilla
@@ -5020,6 +5050,7 @@ function applyPracticeAction(
         if (e.source !== "manual" && !catalogEntry(e.catalog_id ?? "")) return fail(400, NOT_IN_CATALOG, { code: "INVALID" });
         if (e.removed) continue;
         if (!offered.has(e.approach) || !approachAgeOk(e.approach, p.age)) return fail(400, PRACTICE_ERROR.approach, { code: "APPROACH" });
+        if (activitiesOn() && e.activity && !activityAgeOk(p.age)) return fail(400, ACTIVITY_AGE, { code: "INVALID" });
       }
       const draft = plans.find((x) => x.status === "borrador") ?? null;
       if (input.id ? !draft || draft.id !== input.id || draft.updated_at !== expected : !!draft) return conflict();
@@ -5082,6 +5113,7 @@ function applyPracticeAction(
           removed_at: e.removed ? row?.removed_at ?? now : null,
           removed_by_email: e.removed ? row?.removed_by_email ?? email : null,
           updated_at: now,
+          ...(activitiesOn() ? { activity: e.activity } : {}),
         };
         // Procedencia de la IA (como el trigger): el borrador queda como
         // usado y el ejercicio, como adaptado con IA para siempre

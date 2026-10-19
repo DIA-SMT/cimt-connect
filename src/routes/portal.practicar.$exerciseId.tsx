@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Check, Frown, Info, Laugh, Loader2, Meh, MessageCircle, RotateCcw, Square, Timer, Volume2 } from "lucide-react";
+import { Check, Frown, Hand, Info, Laugh, Loader2, Meh, MessageCircle, RotateCcw, Smartphone, Square, Timer } from "lucide-react";
 import logoTortuga from "@/assets/logo-tortuga.png";
 import {
   type CelebrationDTO, type PracticeActionResult, type PracticeDayDTO, type PracticeExerciseDTO, type PracticeResult,
@@ -16,7 +16,10 @@ import {
   type PracticeFailure, announcePlanShown, focusRing, practiceFailure, whoOf,
 } from "@/components/portal/practiceFormat";
 import { FormAlert, PageTitle } from "@/components/portal/ui";
-import { TONE_CLASS, card, pillOutline, pillPrimary, sectionTitle, textareaClass } from "@/components/portal/styles";
+import { ListenButton } from "@/components/portal/ListenButton";
+import { type Speech, useSpeech } from "@/components/portal/useSpeech";
+import { TONE_CLASS, card, choiceClass, pillOutline, pillPrimary, sectionTitle, textareaClass } from "@/components/portal/styles";
+import { Activity } from "@/components/activity/Activity";
 
 // Practicar un ejercicio (diseño §2.6). Sin la barra de abajo (la oculta el
 // marco del portal en /portal/practicar/*).
@@ -32,6 +35,9 @@ import { TONE_CLASS, card, pillOutline, pillPrimary, sectionTitle, textareaClass
 //   - "¿Lo hicieron otro día?": ayer o anteayer. Deshacer: solo lo que anotó
 //     esta cuenta, el mismo día.
 //   - Lo que escribe la familia nunca va a la consola ni a un registro.
+//   - Con actividad (etapa "activities"): «Jugar en el celular» o «Sin
+//     pantalla» (los pasos). Terminar el juego no anota nada solo: muestra el
+//     mismo «Ya lo hice / Ya lo hicimos».
 
 export const Route = createFileRoute("/portal/practicar/$exerciseId")({
   component: PracticarPage,
@@ -107,6 +113,8 @@ function Practice({ initial, toLogin }: { initial: PracticeExerciseDTO; toLogin:
   const focusNext = useRef<Focus>(null);
   const flashTimer = useRef<number | null>(null);
   const speech = useSpeech();
+  // Con actividad: jugarla en el celular o hacer los pasos sin pantalla
+  const [way, setWay] = useState<Way>("jugar");
 
   const w = whoOf(data.child);
   const mode = data.mode;
@@ -272,7 +280,11 @@ function Practice({ initial, toLogin }: { initial: PracticeExerciseDTO; toLogin:
         {ex.materiales && <p className="whitespace-pre-line break-words text-base"><b>Materiales:</b> {ex.materiales}</p>}
       </div>
 
-      {mode === "lista" ? (
+      {ex.activity && <PlayWay value={way} onChange={(w) => { speech.stop(); setWay(w); }} />}
+
+      {ex.activity && way === "jugar" ? (
+        <Activity spec={ex.activity} screenMode={mode} speech={speech} storageKey={ex.id} finishArea={doneArea} />
+      ) : mode === "lista" ? (
         <StepList pasos={ex.pasos} title={ex.title} paraQue={ex.para_que} minutes={ex.minutes} speech={speech} doneArea={doneArea} />
       ) : (
         <StepByStep pasos={ex.pasos} mode={mode} speech={speech} doneArea={doneArea} />
@@ -312,6 +324,31 @@ function Practice({ initial, toLogin }: { initial: PracticeExerciseDTO; toLogin:
 
       <BackToExercises patientId={data.child.id} />
     </div>
+  );
+}
+
+// ── Jugar en el celular o sin pantalla ───────────────────────────────────
+
+type Way = "jugar" | "sin_pantalla";
+
+// Dos opciones grandes (radio): la actividad o los pasos de siempre
+function PlayWay({ value, onChange }: { value: Way; onChange: (w: Way) => void }) {
+  const name = useId();
+  const options: { id: Way; label: string; icon: typeof Smartphone }[] = [
+    { id: "jugar", label: "Jugar en el celular", icon: Smartphone },
+    { id: "sin_pantalla", label: "Sin pantalla", icon: Hand },
+  ];
+  return (
+    <fieldset className="grid grid-cols-2 gap-2">
+      <legend className="sr-only">Cómo lo hacen</legend>
+      {options.map(({ id, label, icon: Icon }) => (
+        <label key={id} className={`${choiceClass(value === id, true)} justify-center text-center`}>
+          <input type="radio" name={name} value={id} checked={value === id} onChange={() => onChange(id)} className="sr-only" />
+          <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+          {label}
+        </label>
+      ))}
+    </fieldset>
   );
 }
 
@@ -656,122 +693,5 @@ function StopWatch({ minutes }: { minutes: number }) {
         )}
       </div>
     </section>
-  );
-}
-
-// ── "Escuchar" (voz del propio aparato) ───────────────────────────────────
-
-type Speech = { available: boolean; speaking: boolean; speak: (texts: string[]) => void; stop: () => void };
-
-// Solo voces locales (localService): con una voz "en la nube" el texto saldría
-// del celular. Primero es-AR, después otras de Latinoamérica y cualquier español
-function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
-  const lang = (v: SpeechSynthesisVoice) => String(v.lang ?? "").replace("_", "-").toLowerCase();
-  const local = voices.filter((v) => v.localService && /^es(-|$)/.test(lang(v)));
-  return local.find((v) => lang(v) === "es-ar")
-    ?? local.find((v) => ["es-419", "es-us", "es-mx", "es-uy", "es-cl"].includes(lang(v)))
-    ?? local[0]
-    ?? null;
-}
-
-// La voz del aparato, si se puede usar. Los navegadores viejos (por ejemplo,
-// Safari de iOS 15 o anterior) pueden tener speechSynthesis sin
-// addEventListener: se mira cada pieza antes de usarla y cualquier falla solo
-// esconde "Escuchar" (nunca rompe la pantalla de práctica)
-function speechEngine(): SpeechSynthesis | null {
-  try {
-    if (typeof window === "undefined" || !("speechSynthesis" in window) || typeof window.SpeechSynthesisUtterance !== "function") {
-      return null;
-    }
-    const synth = window.speechSynthesis;
-    return synth && typeof synth.getVoices === "function" && typeof synth.speak === "function" ? synth : null;
-  } catch {
-    return null;
-  }
-}
-
-function useSpeech(): Speech {
-  const [voice, setVoice] = useState<SpeechSynthesisVoice | null>(null);
-  const [speaking, setSpeaking] = useState(false);
-  // Cada lectura tiene su número: el fin de una lectura cortada no apaga la nueva
-  const run = useRef(0);
-
-  useEffect(() => {
-    const synth = speechEngine();
-    if (!synth) return;
-    const counter = run;
-    const pick = () => {
-      try {
-        setVoice(pickVoice(Array.from(synth.getVoices() ?? [])));
-      } catch {
-        setVoice(null);
-      }
-    };
-    pick();
-    // Las voces pueden llegar después ("voiceschanged"). Sin addEventListener,
-    // la propiedad onvoiceschanged; sin ninguna de las dos, queda lo de ahora
-    let detach = () => {};
-    try {
-      if (typeof synth.addEventListener === "function") {
-        synth.addEventListener("voiceschanged", pick);
-        detach = () => synth.removeEventListener("voiceschanged", pick);
-      } else {
-        synth.onvoiceschanged = pick;
-        detach = () => { if (synth.onvoiceschanged === pick) synth.onvoiceschanged = null; };
-      }
-    } catch { /* sin aviso de voces nuevas */ }
-    return () => {
-      try { detach(); } catch { /* nada que soltar */ }
-      counter.current++;
-      try { synth.cancel(); } catch { /* nada que cortar */ }
-    };
-  }, []);
-
-  const stop = useCallback(() => {
-    run.current++;
-    setSpeaking(false);
-    try { speechEngine()?.cancel(); } catch { /* nada que cortar */ }
-  }, []);
-
-  const speak = useCallback((texts: string[]) => {
-    const synth = speechEngine();
-    if (!voice || !synth) return;
-    const n = ++run.current;
-    const list = texts.map((t) => t.trim()).filter(Boolean);
-    try {
-      synth.cancel();
-      list.forEach((t, i) => {
-        const u = new SpeechSynthesisUtterance(t);
-        u.voice = voice;
-        u.lang = voice.lang;
-        u.rate = 0.9;
-        if (i === list.length - 1) {
-          const end = () => { if (run.current === n) setSpeaking(false); };
-          u.onend = end;
-          u.onerror = end;
-        }
-        synth.speak(u);
-      });
-      setSpeaking(list.length > 0);
-    } catch {
-      // La voz no anduvo: se esconde "Escuchar"
-      run.current++;
-      setSpeaking(false);
-      setVoice(null);
-      try { synth.cancel(); } catch { /* nada que cortar */ }
-    }
-  }, [voice]);
-
-  return { available: !!voice, speaking, speak, stop };
-}
-
-function ListenButton({ speech, texts }: { speech: Speech; texts: string[] }) {
-  if (!speech.available) return null;
-  return (
-    <button type="button" onClick={() => (speech.speaking ? speech.stop() : speech.speak(texts))}
-      className={`${pillOutline} ${focusRing} gap-2 self-center`}>
-      {speech.speaking ? <Square className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-5 w-5" aria-hidden="true" />}
-      {speech.speaking ? "Detener" : "Escuchar"}
-    </button>
   );
 }
