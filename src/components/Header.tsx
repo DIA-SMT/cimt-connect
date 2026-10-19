@@ -5,6 +5,7 @@ import logoTortuga from "../assets/logo-tortuga.png";
 import migueAvatar from "@/assets/migue-avatar.jpg";
 import { PORTAL_ENABLED } from "@/lib/portal";
 import { CENTER } from "@/lib/center";
+import { TourButton } from "./SiteTour";
 
 // Menú del sitio: cada sección con su ícono y su color, para reconocerla de un
 // vistazo. Las clases van completas (Tailwind no ve clases armadas por partes).
@@ -67,10 +68,14 @@ export function Header() {
 
         {/* Escritorio: ícono arriba y nombre abajo */}
         <nav className="hidden items-center gap-0.5 lg:flex xl:gap-1.5">
-          {NAV.map((item) => <DesktopLink key={item.to} item={item} />)}
+          <div data-tour="menu" className="flex items-center gap-0.5 xl:gap-1.5">
+            {NAV.map((item) => <DesktopLink key={item.to} item={item} />)}
+          </div>
+          <span className="ml-1"><TourButton /></span>
           <Link
             to="/turnos"
-            className="ml-2 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-card)] transition-all hover:bg-[color:var(--primary-deep)] hover:shadow-[var(--shadow-elegant)]"
+            data-tour="turno"
+            className="ml-1 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-card)] transition-all hover:bg-[color:var(--primary-deep)] hover:shadow-[var(--shadow-elegant)]"
           >
             Solicitar turno
           </Link>
@@ -87,7 +92,7 @@ export function Header() {
 
         {/* Celular y tablet */}
         <div className="flex items-center gap-2 lg:hidden">
-          <Link to="/turnos" onClick={() => setOpen(false)}
+          <Link to="/turnos" onClick={() => setOpen(false)} data-tour="turno-celular"
             className="rounded-full bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-card)]">
             Solicitar turno
           </Link>
@@ -97,7 +102,7 @@ export function Header() {
             <UserRound className="h-5 w-5" aria-hidden="true" />
             <span className="hidden sm:inline">Ingresar</span>
           </Link>
-          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="mobile-nav"
+          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="mobile-nav" data-tour="menu-celular"
             aria-label={open ? "Cerrar menú" : "Abrir menú"}
             className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-[color:var(--primary-deep)]">
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -119,6 +124,7 @@ export function Header() {
               </span>
               {PORTAL_ENABLED ? "Ingresar (familias con cuenta y equipo)" : "Ingresar (equipo del CIMT)"}
             </Link>
+            <TourButton variant="menu" onDone={() => setOpen(false)} />
           </div>
         </nav>
       )}
@@ -140,6 +146,7 @@ function DesktopLink({ item }: { item: NavItem }) {
     <Link
       to={item.to}
       activeOptions={{ exact: item.to === "/" }}
+      data-tour={item.to === "/explora" ? "explora" : undefined}
       className={`group flex min-w-[4.5rem] flex-col items-center gap-1 rounded-2xl px-2 py-1.5 text-[13px] font-semibold text-foreground/85 transition-colors xl:min-w-[5.25rem] ${item.item}`}
     >
       <span className={`flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl transition-colors ${item.bubble} ${item.bubbleActive}`}>

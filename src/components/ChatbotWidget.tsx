@@ -228,6 +228,7 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
       {!isOpen && (
         <button
           id="migue-chatbot-toggle"
+          data-tour="migue"
           onClick={handleOpen}
           aria-label="Abrir chat con Migue"
           title="Chateá con Migue"
