@@ -9,5 +9,9 @@ import { nitro } from "nitro/vite";
 
 export default defineConfig({
   cloudflare: false,
-  plugins: [nitro({ serverDir: "server" })],
+  // Las funciones de Vercel corren en São Paulo (gru1), al lado de la base de
+  // Supabase (sa-east-1): cada pedido del portal hace varias consultas
+  // seguidas y desde Washington (la región por defecto) cada una cruzaba el
+  // continente
+  plugins: [nitro({ serverDir: "server", vercel: { functions: { regions: ["gru1"] } } })],
 });
