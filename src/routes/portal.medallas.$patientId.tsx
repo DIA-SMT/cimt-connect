@@ -1,6 +1,6 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { type LucideIcon, Info, Loader2, MessageCircleHeart, Sparkles, Trophy } from "lucide-react";
+import { type LucideIcon, Info, Loader2, MessageCircleHeart, Route as RouteIcon, Trophy } from "lucide-react";
 import { FinishFlag } from "@/components/portal/icons";
 import { type FeedbackDTO, type FeedbackItemDTO, type MedalsDTO, capitalize, portalApi } from "@/lib/portal";
 import { PRACTICE_TEXT, breakLine, feedbackNoReply, medalsIntro, medalsTitle } from "@/lib/practiceRules";
@@ -141,8 +141,8 @@ function SummaryBanner({ medals, feedback, view, onView }: {
   const freshFb = feedback.items.some((f) => f.is_new);
   const stats: { view: View; icon: LucideIcon; value: number; label: string; fresh?: boolean }[] = [
     { view: "logros", icon: Trophy, value: won, label: won === 1 ? t.a.replace(/^un[a]? /, "") : t.many },
-    { view: "en_camino", icon: FinishFlag, value: active, label: active === 1 ? "meta en camino" : "metas en camino" },
-    { view: "logradas", icon: Sparkles, value: done, label: done === 1 ? "meta lograda" : "metas logradas" },
+    { view: "en_camino", icon: RouteIcon, value: active, label: active === 1 ? "meta en camino" : "metas en camino" },
+    { view: "logradas", icon: FinishFlag, value: done, label: done === 1 ? "meta lograda" : "metas logradas" },
     { view: "devoluciones", icon: MessageCircleHeart, value: feedback.items.length, fresh: freshFb,
       label: message ? (feedback.items.length === 1 ? "mensaje" : "mensajes") : (feedback.items.length === 1 ? "devolución" : "devoluciones") },
   ];
@@ -306,7 +306,7 @@ function GoalsSection({ medals, which }: { medals: MedalsDTO; which: "activa" | 
     : active ? "Ahora no hay metas en camino. Las nuevas que acuerden con tu profesional van a aparecer acá."
     : "Las metas que se vayan cumpliendo van a quedar guardadas acá.";
   return (
-    <SectionCard id="metas-titulo" icon={active ? FinishFlag : Sparkles}
+    <SectionCard id="metas-titulo" icon={active ? RouteIcon : FinishFlag}
       tone={active ? "bg-sky-100 text-sky-800" : "bg-emerald-100 text-emerald-800"}
       title={active ? "Metas en camino" : "Metas logradas"}>
       {goals.length === 0 ? (

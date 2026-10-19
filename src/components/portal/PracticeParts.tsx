@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  type LucideIcon, Award, CalendarCheck, CalendarHeart, Check, ChevronDown, ChevronLeft, Footprints, Medal, RefreshCcw, Star,
+  type LucideIcon, Award, CalendarCheck, CalendarHeart, Check, ChevronDown, ChevronLeft, Footprints, Medal, RefreshCcw, Route, Star,
   Trophy,
 } from "lucide-react";
 import { CENTER } from "@/lib/center";
@@ -148,7 +148,7 @@ export function GoalList({ goals, w }: { goals: GoalDTO[]; w: PracticeWho }) {
             done ? "border-emerald-200 bg-emerald-50" : "border-sky-200 bg-white"}`}>
             <span aria-hidden="true" className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
               done ? "bg-emerald-600 text-white" : "bg-sky-100 text-sky-800"}`}>
-              {done ? <Check className="h-5 w-5" strokeWidth={3} /> : <FinishFlag className="h-5 w-5" />}
+              {done ? <FinishFlag className="h-5 w-5" /> : <Route className="h-5 w-5" />}
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
