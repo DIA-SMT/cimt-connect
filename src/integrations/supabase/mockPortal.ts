@@ -184,7 +184,7 @@ import {
   PRACTICE_LIMITS, PRACTICE_TEXT, RECENT_MEDALS, REVIEW_STALE_DAYS, SCREEN_MODE_BY_AUDIENCE,
   FLUENCY_TITLE_MESSAGE, STAFF_PRACTICE_TEXT,
   approachAgeOk, approachOptions, approachesForDiagnosis, audienceForAge, blockForTitles, constancyAwards, constancyNext,
-  dayIndex, daysBetween, exerciseTextAlerts, goalProgress, goalRuleText, isAdolescent, isDateKey as validDateKey, onBreak,
+  dayIndex, daysBetween, exerciseTextAlerts, familyGoalExtras, goalProgress, goalRuleText, isAdolescent, isDateKey as validDateKey, onBreak,
   planSummary, planTextAlerts, practiceDateProblem, practiceDates, practiceSummaryText, publishProblem, readersLine,
   uncoveredAlerts, validateFeedback, validateGoal, validateNote, validatePlanDraft, weekKey, weekProgress,
 } from "@/lib/practiceRules";
@@ -2454,17 +2454,22 @@ function feedbackItem(db: Db, f: FeedbackRow, seen: Set<string>): FeedbackItemDT
 // Metas que ve la familia: las activas y las logradas (nunca borradores ni
 // cambiadas). Una lograda lleva la medalla que de verdad se dio por ella
 // (vigente), no la acordada; sin ninguna, null (como el servidor)
-function familyGoals(db: Db, patientId: string): GoalDTO[] {
+// withProgress: en la página de logros, "En camino desde" y el avance de las
+// metas de práctica (como el servidor)
+function familyGoals(db: Db, patientId: string, withProgress = false): GoalDTO[] {
   const rows = db.practice_goals.filter((g) => g.patient_id === patientId && (g.status === "activa" || g.status === "lograda"));
   const active = rows.filter((g) => g.status === "activa").sort((x, y) => (x.published_at ?? "").localeCompare(y.published_at ?? ""));
   const done = rows.filter((g) => g.status === "lograda").sort(newestFirst((g) => g.achieved_at ?? ""));
   const medals = liveMedals(db, patientId);
+  const days = withProgress ? asDays(liveLogs(db, patientId)) : [];
+  const today = centerNow().date;
   return [...active, ...done].map((g) => {
     const lograda = g.status === "lograda";
     const given = lograda ? medals.find((m) => m.kind === "profesional" && m.goal_id === g.id) : undefined;
     return {
       id: g.id, kind: g.kind, title: g.title, status: lograda ? "lograda" : "activa",
       achieved_at: lograda ? g.achieved_at : null, medal_title: lograda ? given?.title ?? null : g.medal_title,
+      ...(withProgress ? familyGoalExtras(g, days, today) : {}),
     };
   });
 }
@@ -2870,7 +2875,7 @@ export async function practiceMedals(patientId: string): Promise<ApiResult<Medal
     : [];
   return ok({
     child: gate.who, author_label: plan?.author_label ?? null, auto_medals: autoMedals, earned, next,
-    goals: familyGoals(w, pid),
+    goals: familyGoals(w, pid, true),
     // La pausa de vacaciones vigente (como en la página de ejercicios): la
     // página la muestra en lugar de "Para seguir sumando"
     on_break_until: breakUntil(plan, today),

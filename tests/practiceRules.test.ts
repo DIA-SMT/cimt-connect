@@ -8,7 +8,7 @@ import {
   PRO_MEDAL_SUGGESTIONS, type PublishCheck, type PublishCheckExercise,
   approachAllowed, approachOptions, approachesForDiagnosis, audienceForAge, blockForTitles, breakLine, celebrationNames,
   centerToday, constancyAwards, constancyNext, dayIndex, daysBetween, diagnosisGroup, exerciseTextAlerts, exercisesTitle,
-  feedbackHeader, feedbackNoReply, feedbackTitle, goalProgress, howDidItGo, lintPracticeText, medalsTitle, onBreak, planSummary, practiceConfirmation,
+  familyGoalExtras, feedbackHeader, feedbackNoReply, feedbackTitle, goalProgress, howDidItGo, lintPracticeText, medalsTitle, onBreak, planSummary, practiceConfirmation,
   practiceDateProblem, practiceDates, practiceSummaryText, publishProblem, readersLine, riskFlag, screenMode,
   uncoveredAlerts, validateExerciseInput, validateFeedback, validateGoal, validateNote, validatePlanDraft,
   weekDates, weekKey, weekLine, weekProgress,
@@ -187,6 +187,20 @@ describe("goalProgress (metas de práctica)", () => {
   });
   test("las terapéuticas no tienen progreso automático", () => {
     expect(goalProgress({ kind: "terapeutica", rule: null, start: "2026-10-01" }, [day("2026-10-01")], "2026-10-02")).toBeNull();
+  });
+});
+
+describe("familyGoalExtras (página de logros)", () => {
+  const base = { kind: "practica" as const, status: "activa", rule: { dias: 2, semanas: 1 }, published_at: "2026-10-01T15:00:00Z" };
+  const logs = [day("2026-10-01"), day("2026-10-02"), day("2026-10-03")];
+  test("desde cuándo (día del centro) y el avance, sin pasarse de lo que pide", () => {
+    expect(familyGoalExtras(base, logs, "2026-10-03")).toEqual({ since: "2026-10-01", progress: { days: 2, target: 2, weeks: 1 } });
+    expect(familyGoalExtras(base, [], "2026-10-03").progress).toEqual({ days: 0, target: 2, weeks: 1 });
+  });
+  test("sin barrita en las terapéuticas, las logradas o sin publicar", () => {
+    expect(familyGoalExtras({ ...base, kind: "terapeutica", rule: null }, logs, "2026-10-03")).toEqual({ since: "2026-10-01", progress: null });
+    expect(familyGoalExtras({ ...base, status: "lograda" }, logs, "2026-10-03").progress).toBeNull();
+    expect(familyGoalExtras({ ...base, published_at: null }, logs, "2026-10-03")).toEqual({ since: null, progress: null });
   });
 });
 

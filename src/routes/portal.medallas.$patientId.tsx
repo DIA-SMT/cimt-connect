@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { type LucideIcon, Info, Loader2, MessageCircleHeart, Sparkles, Target, Trophy } from "lucide-react";
+import { type LucideIcon, Info, Loader2, MessageCircleHeart, Sparkles, Trophy } from "lucide-react";
+import { FinishFlag } from "@/components/portal/icons";
 import { type FeedbackDTO, type FeedbackItemDTO, type MedalsDTO, capitalize, portalApi } from "@/lib/portal";
 import { PRACTICE_TEXT, breakLine, feedbackNoReply, medalsIntro, medalsTitle } from "@/lib/practiceRules";
 import { BackToHome, FeedbackCard, GoalList, MedalNextTile, MedalTile, PracticeGate } from "@/components/portal/PracticeParts";
@@ -36,6 +37,10 @@ export const Route = createFileRoute("/portal/medallas/$patientId")({
 // Devoluciones que se muestran enteras (las demás, en "Ver todas")
 const FEEDBACK_SHOWN = 2;
 
+// Lo que se ve abajo: el resumen de arriba funciona como selector. Arranca en
+// los logros o, si hay un mensaje nuevo del profesional, en las devoluciones
+type View = "logros" | "en_camino" | "logradas" | "devoluciones";
+
 type LogrosData = { medals: MedalsDTO; feedback: FeedbackDTO };
 
 function LogrosPage() {
@@ -45,6 +50,7 @@ function LogrosPage() {
   const [failure, setFailure] = useState<PracticeFailure | null>(null);
   // Respuesta de la última carga (si se cambia de persona, lo viejo no pisa lo nuevo)
   const seq = useRef(0);
+  const [view, setView] = useState<View | null>(null);
 
   const load = useCallback(async () => {
     const n = ++seq.current;
@@ -76,7 +82,9 @@ function LogrosPage() {
   // (al final de la página) aparece en pantalla
   const shown = useMemo(() => (data ? data.feedback.items.slice(0, FEEDBACK_SHOWN) : null), [data]);
   const feedbackRef = useRef<HTMLElement>(null);
-  useFeedbackSeen(useOnScreen(feedbackRef, shown));
+  const current: View = view ?? (data?.feedback.items.some((f) => f.is_new) ? "devoluciones" : "logros");
+  // Las devoluciones quedan vistas solo cuando se eligió verlas
+  useFeedbackSeen(useOnScreen(feedbackRef, current === "devoluciones" ? shown : null));
 
   if (failure || !data || !shown) {
     return (
@@ -106,48 +114,73 @@ function LogrosPage() {
       <div className="flex flex-col gap-4">
         <BackToHome />
         <PageTitle>{medalsTitle(w)}</PageTitle>
-        <NewFeedbackJump feedback={feedback} />
+        {current !== "devoluciones" && <NewFeedbackJump feedback={feedback} onGo={() => setView("devoluciones")} />}
       </div>
-      <SummaryBanner medals={medals} feedback={feedback} />
-      {/* En la compu, dos columnas: las medallas a un lado; metas y devoluciones al otro */}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <MedalsSection medals={medals} />
-        <div className="flex flex-col gap-6">
-          <GoalsSection medals={medals} />
-          <FeedbackSection feedback={feedback} shown={shown} sectionRef={feedbackRef} />
-        </div>
+      <SummaryBanner medals={medals} feedback={feedback} view={current} onView={setView} />
+      <div role="tabpanel" id="logros-detalle" aria-labelledby={`resumen-${current}`}>
+        {current === "logros" && <MedalsSection medals={medals} />}
+        {current === "en_camino" && <GoalsSection medals={medals} which="activa" />}
+        {current === "logradas" && <GoalsSection medals={medals} which="lograda" />}
+        {current === "devoluciones" && <FeedbackSection feedback={feedback} shown={shown} sectionRef={feedbackRef} />}
       </div>
     </div>
   );
 }
 
-// Resumen de arriba: cuánto se sumó (cuenta lo hecho, nunca lo que falta)
-function SummaryBanner({ medals, feedback }: { medals: MedalsDTO; feedback: FeedbackDTO }) {
+// Resumen de arriba: cuánto se sumó (cuenta lo hecho, nunca lo que falta).
+// Cada cuadrito es una pestaña: muestra abajo lo que se elige. Con teclado,
+// las flechas pasan de una a otra
+function SummaryBanner({ medals, feedback, view, onView }: {
+  medals: MedalsDTO; feedback: FeedbackDTO; view: View; onView: (v: View) => void;
+}) {
   const t = medalTerms(whoOf(medals.child));
   const won = medals.earned.reduce((s, m) => s + Math.max(1, m.times), 0);
   const active = medals.goals.filter((g) => g.status !== "lograda").length;
   const done = medals.goals.length - active;
   const message = feedbackIsMessage(whoOf(feedback.child));
-  const stats: { icon: LucideIcon; value: number; label: string }[] = [
-    { icon: Trophy, value: won, label: won === 1 ? t.a.replace(/^un[a]? /, "") : t.many },
-    { icon: Target, value: active, label: active === 1 ? "meta en camino" : "metas en camino" },
-    { icon: Sparkles, value: done, label: done === 1 ? "meta lograda" : "metas logradas" },
-    { icon: MessageCircleHeart, value: feedback.items.length, label: message ? (feedback.items.length === 1 ? "mensaje" : "mensajes") : (feedback.items.length === 1 ? "devolución" : "devoluciones") },
+  const freshFb = feedback.items.some((f) => f.is_new);
+  const stats: { view: View; icon: LucideIcon; value: number; label: string; fresh?: boolean }[] = [
+    { view: "logros", icon: Trophy, value: won, label: won === 1 ? t.a.replace(/^un[a]? /, "") : t.many },
+    { view: "en_camino", icon: FinishFlag, value: active, label: active === 1 ? "meta en camino" : "metas en camino" },
+    { view: "logradas", icon: Sparkles, value: done, label: done === 1 ? "meta lograda" : "metas logradas" },
+    { view: "devoluciones", icon: MessageCircleHeart, value: feedback.items.length, fresh: freshFb,
+      label: message ? (feedback.items.length === 1 ? "mensaje" : "mensajes") : (feedback.items.length === 1 ? "devolución" : "devoluciones") },
   ];
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  function onKey(e: React.KeyboardEvent, i: number) {
+    const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    const next = (i + dir + stats.length) % stats.length;
+    onView(stats[next].view);
+    refs.current[next]?.focus();
+  }
   return (
     <section aria-label="Resumen" className="overflow-hidden rounded-3xl bg-linear-to-r from-sky-700 via-indigo-700 to-violet-700 p-5 text-white shadow-[var(--shadow-elegant)] sm:p-6">
       <p className="font-display text-lg font-bold sm:text-xl">Cada práctica suma. ¡A seguir así!</p>
-      <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {stats.map((s) => (
-          <li key={s.label} className="flex items-center gap-3 rounded-2xl bg-white/15 px-3 py-3">
-            <s.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
-            <span className="leading-tight">
-              <span className="block font-display text-2xl font-extrabold">{s.value}</span>
-              <span className="text-sm">{s.label}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
+      <p className="mt-1 text-sm text-white/90">Tocá una opción para ver el detalle.</p>
+      <div role="tablist" aria-label="Qué querés ver" className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {stats.map((s, i) => {
+          const on = view === s.view;
+          return (
+            <button key={s.view} ref={(el) => { refs.current[i] = el; }} type="button" role="tab" id={`resumen-${s.view}`}
+              aria-selected={on} aria-controls="logros-detalle" tabIndex={on ? 0 : -1}
+              onClick={() => onView(s.view)} onKeyDown={(e) => onKey(e, i)}
+              className={[
+                "relative flex min-h-16 items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all",
+                "focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-300",
+                on ? "bg-white text-indigo-900 shadow-lg ring-2 ring-white" : "bg-white/15 hover:bg-white/25",
+              ].join(" ")}>
+              <s.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+              <span className="leading-tight">
+                <span className="block font-display text-2xl font-extrabold">{s.value}</span>
+                <span className="text-sm font-semibold">{s.label}</span>
+              </span>
+              {s.fresh && <span className="absolute right-2 top-2 rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-amber-950">Nuevo</span>}
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -201,17 +234,21 @@ function useOnScreen(ref: RefObject<HTMLElement | null>, shown: FeedbackItemDTO[
 
 // Las devoluciones van al final: si hay alguna nueva, un acceso arriba lleva
 // hasta ellas ("Hay un mensaje nuevo ↓"; sin el número)
-function NewFeedbackJump({ feedback }: { feedback: FeedbackDTO }) {
+function NewFeedbackJump({ feedback, onGo }: { feedback: FeedbackDTO; onGo: () => void }) {
   const fresh = feedback.items.filter((f) => f.is_new).length;
   if (fresh === 0) return null;
   const message = feedbackIsMessage(whoOf(feedback.child));
   const text = message
     ? (fresh === 1 ? "Hay un mensaje nuevo" : "Hay mensajes nuevos")
     : (fresh === 1 ? "Hay una devolución nueva" : "Hay devoluciones nuevas");
+  // Abre la pestaña de devoluciones y lleva el foco a su título
   function go() {
-    const title = document.getElementById("devoluciones-titulo");
-    title?.scrollIntoView({ block: "start" });
-    title?.focus({ preventScroll: true });
+    onGo();
+    requestAnimationFrame(() => {
+      const title = document.getElementById("devoluciones-titulo");
+      title?.scrollIntoView({ block: "start" });
+      title?.focus({ preventScroll: true });
+    });
   }
   return (
     <button type="button" onClick={go}
@@ -259,16 +296,24 @@ function FeedbackSection({ feedback, shown, sectionRef }: {
   );
 }
 
-// 2. Metas: activas y logradas
-function GoalsSection({ medals }: { medals: MedalsDTO }) {
+// 2. Metas: las que están en camino (con su avance) o las ya logradas
+function GoalsSection({ medals, which }: { medals: MedalsDTO; which: "activa" | "lograda" }) {
   const w = whoOf(medals.child);
+  const goals = medals.goals.filter((g) => g.status === which);
+  const active = which === "activa";
+  const empty = medals.goals.length === 0
+    ? "Todavía no hay metas. Cuando las acuerden con tu profesional, las vas a ver acá."
+    : active ? "Ahora no hay metas en camino. Las nuevas que acuerden con tu profesional van a aparecer acá."
+    : "Las metas que se vayan cumpliendo van a quedar guardadas acá.";
   return (
-    <SectionCard id="metas-titulo" icon={Target} tone="bg-emerald-100 text-emerald-800" title="Metas">
-      {medals.goals.length === 0 ? (
-        <p className="rounded-2xl bg-muted/70 px-4 py-3 text-base">Todavía no hay metas. Cuando las acuerden con tu profesional, las vas a ver acá.</p>
+    <SectionCard id="metas-titulo" icon={active ? FinishFlag : Sparkles}
+      tone={active ? "bg-sky-100 text-sky-800" : "bg-emerald-100 text-emerald-800"}
+      title={active ? "Metas en camino" : "Metas logradas"}>
+      {goals.length === 0 ? (
+        <p className="rounded-2xl bg-muted/70 px-4 py-3 text-base">{empty}</p>
       ) : (
         <>
-          <GoalList goals={medals.goals} w={w} />
+          <GoalList goals={goals} w={w} />
           <p className="text-base text-muted-foreground">{PRACTICE_TEXT.goals_note}</p>
         </>
       )}
