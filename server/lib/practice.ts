@@ -42,7 +42,7 @@ import {
   PRACTICE_BACKDAYS, PRACTICE_DAILY_MAX, PRACTICE_ERROR, PRACTICE_LIMITS, PRACTICE_TEXT, RECENT_MEDALS,
   REVIEW_STALE_DAYS, SCREEN_MODE_BY_AUDIENCE, STAFF_PRACTICE_TEXT,
   approachAgeOk, approachOptions, approachesForDiagnosis, audienceForAge, blockForTitles, centerToday,
-  constancyAwards, constancyNext, daysBetween, exerciseTextAlerts, goalProgress, isAdolescent, isDateKey, isUuid,
+  constancyAwards, constancyNext, daysBetween, exerciseTextAlerts, familyGoalExtras, goalProgress, isAdolescent, isDateKey, isUuid,
   onBreak, planSummary, planTextAlerts, practiceDateProblem, practiceDates, practiceSummaryText, publishProblem,
   readersLine, screenMode, uncoveredAlerts, validateFeedback, validateGoal, validateNote, validatePlanDraft, weekKey,
   weekProgress, FLUENCY_TITLE_MESSAGE,
@@ -490,12 +490,15 @@ async function familyGate(ctx: Ctx, account: Account, patientId: string, notFoun
 
 // medals: las vigentes del paciente. Una lograda lleva la medalla que de
 // verdad se dio por ella (no la que se había acordado); sin ninguna, null
-function goalDto(g: GoalRow, medals: MedalRow[]): GoalDTO {
+// progress: en la página de logros, los días practicados y hoy (para
+// "En camino desde" y la barrita de las metas de práctica)
+function goalDto(g: GoalRow, medals: MedalRow[], progress?: { days: PracticeDay[]; today: string }): GoalDTO {
   const done = g.status === "lograda";
   const given = done ? medals.find((m) => m.kind === "profesional" && m.goal_id === g.id && !m.voided_at) ?? null : null;
   return {
     id: g.id, kind: g.kind, title: g.title, status: done ? "lograda" : "activa",
     achieved_at: done ? g.achieved_at : null, medal_title: done ? given?.title ?? null : g.medal_title,
+    ...(progress ? familyGoalExtras(g, progress.days, progress.today) : {}),
   };
 }
 
@@ -503,12 +506,12 @@ function goalDto(g: GoalRow, medals: MedalRow[]): GoalDTO {
 // nueva) y después las logradas (la última primero). Nunca borradores ni
 // "cambiada": al finalizar o retirar un plan, sus metas activas pasan a
 // "cambiada" (las logradas quedan con su devolución)
-function familyGoals(goals: GoalRow[], medals: MedalRow[]): GoalDTO[] {
+function familyGoals(goals: GoalRow[], medals: MedalRow[], progress?: { days: PracticeDay[]; today: string }): GoalDTO[] {
   const active = goals.filter((g) => g.status === "activa")
     .sort((a, b) => oldestFirst(a.published_at ?? a.created_at, b.published_at ?? b.created_at));
   const done = goals.filter((g) => g.status === "lograda")
     .sort((a, b) => newestFirst(a.achieved_at ?? a.created_at, b.achieved_at ?? b.created_at));
-  return [...active, ...done].map((g) => goalDto(g, medals));
+  return [...active, ...done].map((g) => goalDto(g, medals, progress));
 }
 
 function feedbackItem(f: FbRow, medals: MedalRow[], goals: GoalRow[], seen: Set<string>): FeedbackItemDTO {
@@ -886,10 +889,14 @@ export async function familyMedals(ctx: Ctx, account: Account, patientId: string
     feedbackRows(ctx, [patientId]),
   ]);
   const autoMedals = !!plan && plan.auto_medals;
-  const [seen, logs, given] = await Promise.all([
+  // Avance de las metas de práctica activas: los días desde la más vieja
+  const goalFrom = goals.filter((g) => g.status === "activa" && g.kind === "practica" && g.rule && g.published_at)
+    .map((g) => centerDateOf(g.published_at!)).sort()[0] ?? null;
+  const [seen, logs, given, goalDays] = await Promise.all([
     seenBy(ctx, account.id, PRACTICE_ACCESS_ACTIONS.medal, medals.map((m) => m.id)),
     autoMedals ? recentDays(ctx, patientId) : Promise.resolve([] as PracticeDay[]),
     autoMedals ? constancyGiven(ctx, patientId) : Promise.resolve([]),
+    goalFrom ? practiceDays(ctx, [patientId], goalFrom) : Promise.resolve(new Map<string, DaysRow>()),
   ]);
   return {
     child: who.dto,
@@ -901,7 +908,7 @@ export async function familyMedals(ctx: Ctx, account: Account, patientId: string
       logs, days_per_week: plan.days_per_week, awarded: given, today, auto_medals: true,
       on_break_until: plan.on_break_until,
     }) : [],
-    goals: familyGoals(goals, medals),
+    goals: familyGoals(goals, medals, { days: asDays(goalDays.get(patientId)), today }),
     // Pausa de vacaciones vigente (la página muestra la vuelta en lugar de "Para seguir sumando")
     on_break_until: plan && onBreak(plan.on_break_until, today) ? plan.on_break_until : null,
   };

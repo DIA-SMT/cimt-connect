@@ -23,7 +23,7 @@
 import { CENTER } from "./center";
 import { ADOLESCENT_FROM, ADULT_FROM } from "./portalClinicalRules";
 import { REVIEW_NOTE_MAX, cleanText, fitText } from "./portalInfoRules";
-import { addDaysKey, centerNow } from "./portalRules";
+import { addDaysKey, centerDateOf, centerNow } from "./portalRules";
 import type { PracticeSuggestions } from "./practiceSuggest";
 
 // ── Enfoques ────────────────────────────────────────────────────────────────
@@ -1389,7 +1389,28 @@ export type GoalDTO = {
   // Activa: la medalla al cumplirla (la que se acordó). Lograda: la medalla
   // que de verdad se dio por ella (vigente), o null si no se dio ninguna
   medal_title: string | null;
+  // Desde cuándo está en camino (fecha del centro en que se publicó). Solo
+  // en la página de logros; optativo para no romper otras vistas
+  since?: string | null;
+  // Metas de práctica activas: cuántos días se practicó de los que pide
+  // (la mejor ventana: nunca baja ni se vence). null en las terapéuticas
+  progress?: GoalProgressDTO | null;
 };
+
+export type GoalProgressDTO = { days: number; target: number; weeks: number };
+
+// Lo que la página de logros suma a cada meta: desde cuándo y, si es de
+// práctica y está activa, el avance (goalProgress). Lo usan el servidor y el mock
+export function familyGoalExtras(
+  g: { kind: GoalKind; status: string; rule: GoalRule | null; published_at: string | null },
+  days: PracticeDay[],
+  today: string,
+): { since: string | null; progress: GoalProgressDTO | null } {
+  const since = g.published_at ? centerDateOf(g.published_at) : null;
+  if (g.status !== "activa" || g.kind !== "practica" || !g.rule || !since) return { since, progress: null };
+  const p = goalProgress({ kind: g.kind, rule: g.rule, start: since }, days, today);
+  return { since, progress: p ? { days: Math.min(p.days, p.target), target: p.target, weeks: p.weeks } : null };
+}
 
 // Una medalla (o un grupo: las que se repiten muestran "Ganada 4 veces")
 export type MedalDTO = {

@@ -2,12 +2,13 @@ import { useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   type LucideIcon, Award, CalendarCheck, CalendarHeart, Check, ChevronDown, ChevronLeft, Footprints, Medal, RefreshCcw, Star,
-  Target, Trophy,
+  Trophy,
 } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { type FeedbackItemDTO, type GoalDTO, type MedalDTO, type WeekDTO, capitalize } from "@/lib/portal";
-import { type PracticeWho, WEEKDAY_NAME, WEEKDAY_SHORT, authorName, feedbackTitle } from "@/lib/practiceRules";
+import { type PracticeWho, WEEKDAY_NAME, WEEKDAY_SHORT, authorName, ddmm, feedbackTitle } from "@/lib/practiceRules";
 import { TONE_CLASS, card, newChip, pillOutline, pillPrimary } from "./styles";
+import { FinishFlag } from "./icons";
 import {
   type PracticeFailure, backToMedalsLabel, feedbackIsMessage, focusRing, isoDdmm, isoLongDay, medalTerms,
 } from "./practiceFormat";
@@ -147,7 +148,7 @@ export function GoalList({ goals, w }: { goals: GoalDTO[]; w: PracticeWho }) {
             done ? "border-emerald-200 bg-emerald-50" : "border-sky-200 bg-white"}`}>
             <span aria-hidden="true" className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
               done ? "bg-emerald-600 text-white" : "bg-sky-100 text-sky-800"}`}>
-              {done ? <Check className="h-5 w-5" strokeWidth={3} /> : <Target className="h-5 w-5" />}
+              {done ? <Check className="h-5 w-5" strokeWidth={3} /> : <FinishFlag className="h-5 w-5" />}
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -156,12 +157,36 @@ export function GoalList({ goals, w }: { goals: GoalDTO[]; w: PracticeWho }) {
                   {done ? `¡Lograda!${g.achieved_at ? ` · ${isoDdmm(g.achieved_at)}` : ""}` : "En camino"}
                 </span>
               </div>
+              {!done && g.since && <span className="text-sm text-muted-foreground">En camino desde el {ddmm(g.since)}</span>}
+              {!done && g.progress && <GoalProgressBar progress={g.progress} />}
               {medal && <span className="break-words text-sm text-muted-foreground">{medal}</span>}
             </div>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+// Avance de una meta de práctica: cuenta los días hechos (la mejor ventana,
+// nunca baja). Si ya están todos, lo celebra; la meta la cierra el profesional
+function GoalProgressBar({ progress }: { progress: NonNullable<GoalDTO["progress"]> }) {
+  const { days, target, weeks } = progress;
+  const full = days >= target;
+  const pct = target > 0 ? Math.round((days / target) * 100) : 0;
+  const span = weeks === 1 ? "en una semana" : `en ${weeks} semanas`;
+  return (
+    <div className="mt-1 flex flex-col gap-1.5">
+      <div role="progressbar" aria-valuemin={0} aria-valuemax={target} aria-valuenow={days}
+        aria-label={`${days} de ${target} días de práctica`}
+        className="h-3 w-full overflow-hidden rounded-full bg-sky-100">
+        <div className={`h-full rounded-full ${full ? "bg-emerald-500" : "bg-linear-to-r from-sky-500 to-indigo-500"}`}
+          style={{ width: `${Math.max(pct, days > 0 ? 6 : 0)}%` }} />
+      </div>
+      <span className="text-sm font-semibold">
+        {full ? `¡Ya están los ${target} días! Tu profesional la va a revisar.` : `${days} de ${target} días de práctica (${span})`}
+      </span>
+    </div>
   );
 }
 
