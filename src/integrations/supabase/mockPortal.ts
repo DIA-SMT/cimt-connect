@@ -4990,8 +4990,8 @@ function aiEditRatio(db: Db, e: ExerciseRow): number | null {
   const d = e.ai_draft_id ? db.ai_drafts.find((x) => x.id === e.ai_draft_id) : undefined;
   const item = d?.output?.ejercicios.find((x) => x.catalogo_id === e.catalog_id);
   if (!d || !item) return e.edit_ratio;
-  const proposed = draftToExerciseInput(item, { approach: e.approach, practiced_in_session: e.practiced_in_session, draft_id: d.id });
-  return editRatio(exerciseFullText(proposed), exerciseFullText(e));
+  const proposed = draftToExerciseInput(item, { approach: e.approach, practiced_in_session: e.practiced_in_session, draft_id: d.id }, readActivity(d.output?.actividad ?? null));
+  return editRatio(exerciseFullText(proposed), exerciseFullText(mockTexts(e)));
 }
 
 // Procedencia de la IA (como el trigger del script 26): un borrador de este
@@ -5520,6 +5520,7 @@ export async function staffAiDraft(req: AiDraftRequest, issuedBy: string): Promi
   // La edad y el diagnóstico se leen acá y no viajan: solo la franja y el enfoque
   const built = buildAdaptParams(b, { age: p.age, diagnosis_code: p.diagnosis_code });
   if (!built.ok) return fail(400, built.error);
+  if (built.params.actividad && !activitiesOn()) return fail(400, "Los juegos para el celular no están disponibles.");
 
   // Tope del centro por día y límite por persona (cuentan también los que
   // salieron con error)
@@ -5537,6 +5538,7 @@ export async function staffAiDraft(req: AiDraftRequest, issuedBy: string): Promi
   await wait(1500 + Math.floor(Math.random() * 700));
   const parsed = parseExerciseDraft(
     mockDraft(built.params, built.entries), built.params.catalogo.ids, built.params.minutos, built.params.enfoque,
+    built.params.actividad ?? null,
   );
 
   // Se registra el pedido antes de devolver el borrador (con la base recién leída)

@@ -40,6 +40,10 @@
 //   --n               cantidad de pedidos (300 por defecto; menos de 300 no cumple §4.6)
 //   --concurrency     pedidos a la vez (4 por defecto)
 //   --seed            semilla de las combinaciones (1 por defecto: mismo banco cada vez)
+//   --actividades     banco de juegos para el celular (fase 2): solo «Poesía o rima»
+//                     con un ejercicio, desde los 6 años; poesías y tarjetas de rima
+//                     con ideas de ejemplo. El informe suma cuántos no rimaron
+//                     al primer intento y cuántos llegaron con avisos de rima.
 //
 // Condición automática para lanzar (§4.6): todos con un borrador válido
 // (esquema) y cero frases bloqueadas por el lint en cualquier intento,
@@ -53,8 +57,11 @@ import { dirname, resolve } from "node:path";
 import {
   ADAPTATIONS, AGE_BANDS, AI_CATALOG_MAX, AI_INTERESTS_MAX, AI_MINUTES, CONTEXTS, DIFFICULTIES, INTERESTS, PROMPT_VERSION,
   type Adaptacion, type AgeBand, type AiDraftRequest, type Contexto, type Interes, type QuienAcompana,
-  buildAdaptParams, draftApiKey, draftModel, draftResponseFormat, draftToWire, lintDraft, parseExerciseDraft,
+  activityRhymeIssues, buildAdaptParams, draftApiKey, draftModel, draftResponseFormat, draftToWire, formatAllowed, lintDraft,
+  parseExerciseDraft,
 } from "../src/lib/aiDraftRules";
+import { type ActivityRequest, SOUNDS } from "../src/lib/aiActivityRules";
+import { POEM_SCHEMES } from "../src/lib/activitySpec";
 import { CATALOG_VERSION, catalogFor } from "../src/lib/exerciseCatalog";
 import { APPROACHES, type Approach, type CatalogEntry, approachAllowed } from "../src/lib/practiceRules";
 import { type AdaptGeneration, generateAdaptDraft } from "../server/lib/aiDrafts";
@@ -190,13 +197,53 @@ export function buildEvalCases(n = 300, seed = 1): EvalCase[] {
   return cases;
 }
 
+// Ideas de ejemplo (como las escribiría un profesional, sin nombres ni datos)
+export const EVAL_IDEAS: readonly (string | null)[] = [
+  "un astronauta que recorre tres planetas y junta las piezas de su nave",
+  "dinosaurios",
+  "un pirata que arma historias en una isla",
+  "animales de la granja",
+  "un partido de fútbol en el barrio",
+  "la lluvia y los charcos",
+  "cocinar una torta en familia",
+  "un viaje en tren",
+  "el mar y los peces",
+  "situaciones de todos los días: el kiosco, la escuela, la plaza",
+  null,
+];
+
+// Banco de juegos para el celular (--actividades): enfoques que admiten
+// «Poesía o rima», franjas desde los 6 años, un ejercicio por pedido, y la
+// mecánica, la forma, los sonidos y la idea rotando
+export function buildActivityEvalCases(n = 300, seed = 1): EvalCase[] {
+  const base = buildEvalCases(n * 3, seed).filter((c) => c.band !== "2-5" && formatAllowed("poesia", c.approach));
+  const rand = rng(seed + 7);
+  const pickOne = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)];
+  return base.slice(0, n).map((c, i) => {
+    const mecanica = i % 2 === 0 ? "poesia" : "rima";
+    const sonidos = i % 3 === 0 ? [pickOne(SOUNDS)] : [];
+    const actividad: Partial<ActivityRequest> = mecanica === "poesia"
+      ? { mecanica, idea: EVAL_IDEAS[i % EVAL_IDEAS.length], sonidos, estrofas: 1 + (i % 3), esquema: POEM_SCHEMES[i % POEM_SCHEMES.length], rima: i % 4 === 1 ? "consonante" : "asonante" }
+      : { mecanica, idea: EVAL_IDEAS[i % EVAL_IDEAS.length], sonidos, tarjetas: 3 + (i % 4) };
+    return {
+      ...c,
+      id: `a${String(i + 1).padStart(3, "0")}`,
+      request: { ...c.request, catalog_ids: c.request.catalog_ids.slice(0, 1), formato: "poesia", actividad },
+    };
+  });
+}
+
 // Lo que viaja en un caso, como lo arma el servidor, y el esquema de la
 // respuesta de ese pedido (sin red: lo usan también las pruebas). Tira si el
 // caso no sirve: el banco se corta antes de gastar.
 export function prepareEvalCase(c: EvalCase) {
   const built = buildAdaptParams(c.request, { age: c.age, diagnosis_code: c.diagnosis_code });
   if (!built.ok) throw new Error(`Caso ${c.id} inválido: ${built.error}`);
-  return { params: built.params, entries: built.entries, response_format: draftResponseFormat(built.params.catalogo.ids) };
+  return {
+    params: built.params,
+    entries: built.entries,
+    response_format: draftResponseFormat(built.params.catalogo.ids, built.params.actividad ?? null),
+  };
 }
 
 // Muestra estratificada para la revisión humana: rota por los estratos
@@ -251,10 +298,10 @@ type CaseResult = {
 // Sin esta opción el banco no arranca (gasta crédito real)
 export const EVAL_CONFIRM_FLAG = "--confirmo-gasto";
 
-export type EvalArgs = { path: string | null; n: number; concurrency: number; seed: number; confirmed: boolean };
+export type EvalArgs = { path: string | null; n: number; concurrency: number; seed: number; confirmed: boolean; actividades: boolean };
 
 export function parseArgs(argv: string[]): EvalArgs {
-  const out: EvalArgs = { path: null, n: 300, concurrency: 4, seed: 1, confirmed: false };
+  const out: EvalArgs = { path: null, n: 300, concurrency: 4, seed: 1, confirmed: false, actividades: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => Number(argv[++i]);
@@ -262,6 +309,7 @@ export function parseArgs(argv: string[]): EvalArgs {
     else if (a === "--concurrency") out.concurrency = next();
     else if (a === "--seed") out.seed = next();
     else if (a === EVAL_CONFIRM_FLAG) out.confirmed = true;
+    else if (a === "--actividades") out.actividades = true;
     else if (!a.startsWith("--") && !out.path) out.path = a;
   }
   if (!Number.isInteger(out.n) || out.n < 1) out.n = 300;
@@ -270,7 +318,7 @@ export function parseArgs(argv: string[]): EvalArgs {
   return out;
 }
 
-const USAGE = `Uso: bun scripts/ai-eval.ts <salida> ${EVAL_CONFIRM_FLAG} [--n 300] [--concurrency 4] [--seed 1]`;
+const USAGE = `Uso: bun scripts/ai-eval.ts <salida> ${EVAL_CONFIRM_FLAG} [--n 300] [--concurrency 4] [--seed 1] [--actividades]`;
 
 // Antes de tocar la red: la confirmación, la salida y la clave, en ese orden
 // (sin la confirmación no se mira ni la clave). Puro: lo usan las pruebas.
@@ -321,7 +369,7 @@ async function main() {
   const base = resolve(args.path).replace(/\.(json|csv)$/i, "");
   if (args.n < 300) console.warn(`[ai-eval] Aviso: ${args.n} pedidos (el diseño pide 300 o más para lanzar).`);
 
-  const cases = buildEvalCases(args.n, args.seed);
+  const cases = args.actividades ? buildActivityEvalCases(args.n, args.seed) : buildEvalCases(args.n, args.seed);
   // Antes de gastar: todos los casos arman lo que viaja y su esquema por pedido
   const prepared = cases.map(prepareEvalCase);
   const sampleIds = new Set(reviewSample(cases));
@@ -354,7 +402,9 @@ async function main() {
       let errorCode = gen.ok ? null : gen.error_code;
       let reviewFlags: string[] = [];
       if (gen.ok) {
-        const again = parseExerciseDraft(draftToWire(gen.draft), built.params.catalogo.ids, built.params.minutos, built.params.enfoque);
+        const again = parseExerciseDraft(
+          draftToWire(gen.draft), built.params.catalogo.ids, built.params.minutos, built.params.enfoque, built.params.actividad ?? null,
+        );
         if (!again.ok) {
           ok = false;
           errorCode = `RECHECK_${again.code}`;
@@ -418,6 +468,12 @@ async function main() {
     lint_block_attempts: blockAttempts.length,
     lint_block_terms: countBy(blockAttempts.flatMap((a) => a.terms ?? [])),
     review_flag_terms: countBy(results.flatMap((r) => r.review_flags.map((f) => f.split(":").slice(2).join(":")))),
+    // Juegos (--actividades): cuántos no rimaron al primer intento y cuántos llegaron con avisos de rima
+    activity: args.actividades ? {
+      rhyme_retries: results.filter((r) => r.attempts.some((a) => a.code === "RHYME")).length,
+      with_rhyme_warnings: results.filter((r) => r.draft && activityRhymeIssues(r.draft) > 0).length,
+      by_mechanic: countBy(results.map((r) => r.sent.actividad?.mecanica ?? "-")),
+    } : null,
     latency_ms: { p50: percentile(latencies, 50), p95: percentile(latencies, 95), max: Math.max(0, ...latencies) },
     tokens_in: sum(results.map((r) => r.tokens_in)),
     tokens_out: sum(results.map((r) => r.tokens_out)),

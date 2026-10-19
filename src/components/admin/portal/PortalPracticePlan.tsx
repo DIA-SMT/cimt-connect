@@ -35,7 +35,14 @@ import {
 } from "@/lib/portalStaff";
 import { type UnsavedPart, forgetUnsaved, keepUnsaved, peekUnsaved } from "./practiceHandoff";
 import { ActivityEditor } from "./ActivityEditor";
-import type { ActivitySpec } from "@/lib/activitySpec";
+import {
+  type ActivitySpec, type PoemScheme, MECHANICS, MECHANIC_HINT, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL,
+} from "@/lib/activitySpec";
+import { activityAgeOk } from "@/lib/activityMechanics";
+import {
+  type ActivityRequest, AI_ACTIVITY_LIMITS, DEFAULT_ACTIVITY_REQUEST, SOUNDS, SOUND_LABEL, buildActivityRequest, ideaProblem,
+} from "@/lib/aiActivityRules";
+import { RHYME_KINDS, type RhymeKind } from "@/lib/rhymeEs";
 
 // Vista "Plan de práctica" de "Portal del paciente" (etapas practice y ai).
 // El profesional arma el plan con ejercicios del catálogo aprobado, a mano o
@@ -366,9 +373,12 @@ function manualCard(data: StaffPracticeDTO): ExForm {
 }
 
 function aiCard(item: ExerciseDraftItem, index: number, req: AiDraftRequest, res: AiDraftResult, batch: string): ExForm {
-  const input = draftToExerciseInput(item, { approach: req.approach, practiced_in_session: req.practiced_in_session, draft_id: res.draft_id });
+  // El juego del borrador va con su (único) ejercicio
+  const game = index === 0 ? res.draft.actividad ?? null : null;
+  const input = draftToExerciseInput(item, { approach: req.approach, practiced_in_session: req.practiced_in_session, draft_id: res.draft_id }, game);
   return {
     ...blankCard(),
+    activity: input.activity,
     source: input.source,
     catalog_id: input.catalog_id,
     catalog_version: input.catalog_version,
@@ -1851,10 +1861,17 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
   const [intereses, setIntereses] = useState<Interes[]>(() => sug?.intereses ?? []);
   const [formato, setFormato] = useState<Formato>(() =>
     sug && startApproach && formatAllowed(sug.formato.value, startApproach) ? sug.formato.value : "ejercicio");
+  // El juego para el celular (con «Poesía o rima», etapa "activities", desde los 6 años)
+  const gameAvailable = data.features.activities && activityAgeOk(p.age);
+  const [game, setGame] = useState(true);
+  const [gameReq, setGameReq] = useState<ActivityRequest>(DEFAULT_ACTIVITY_REQUEST);
+  const setGamePart = (patch: Partial<ActivityRequest>) => setGameReq((g) => ({ ...g, ...patch }));
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const approachId = useId();
+  const ideaId = useId();
+  const gameName = useId();
   const minId = useId();
   const quienName = useId();
   const difName = useId();
@@ -1878,11 +1895,18 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
   }
   const approachWhy = approach ? sug?.approaches.find((x) => x.value === approach)?.why : undefined;
 
+  const withGame = gameAvailable && formato === "poesia" && game;
+  // Lo que se manda del juego, con las mismas reglas que el servidor
+  const builtGame = withGame ? buildActivityRequest(gameReq) : null;
+  const ideaError = withGame ? ideaProblem(gameReq.idea) : null;
+
   const problem = !band ? "Falta la fecha de nacimiento en la ficha."
     : !approach ? "Elegí el enfoque."
     : max === 0 ? PRACTICE_ERROR.exercises
     : !entries.length ? `Elegí de 1 a ${max} ejercicios del catálogo.`
     : opt?.needs_session && !session ? PRACTICE_ERROR.approach_session
+    : withGame && entries.length > 1 ? "Para armar el juego, elegí un solo ejercicio del catálogo."
+    : builtGame && !builtGame.ok ? builtGame.error
     : null;
 
   // Lo que se manda, armado con las mismas reglas que el servidor (buildAdaptParams)
@@ -1898,6 +1922,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
     adaptaciones: ADAPTATIONS.filter((a) => adaptaciones.includes(a)),
     intereses: INTERESTS.filter((i) => intereses.includes(i)),
     formato,
+    ...(builtGame?.ok ? { actividad: builtGame.value } : {}),
   } : null;
   const preview = params ? describeSent(params, entries) : null;
 
@@ -1909,6 +1934,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
       patient_id: p.id, catalog_ids: ids, approach, practiced_in_session: session, quien_acompana: quien,
       contexto: params.contexto, minutos, dificultad, adaptaciones: params.adaptaciones, intereses: params.intereses,
       formato,
+      ...(params.actividad ? { actividad: params.actividad } : {}),
     };
     setRunning(true);
     const r = await requestDraft(req);
@@ -2023,6 +2049,82 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
               </div>
               {sug && sug.formato.value === formato && formato !== "ejercicio" && <p className="text-xs text-emerald-800">Por qué: {sug.formato.why}</p>}
             </fieldset>
+
+            {gameAvailable && formato === "poesia" && (
+              <fieldset className="space-y-3 rounded-xl border border-primary/30 bg-[color:var(--primary-soft)]/30 p-3">
+                <legend className="px-1 text-sm font-medium">Juego para el celular</legend>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5" checked={game} onChange={(e) => setGame(e.target.checked)} />
+                  <span>
+                    Armar también el juego para jugar en el celular
+                    <span className="block text-xs text-muted-foreground">Los pasos quedan como la versión sin pantalla. El juego llega al editor para revisarlo antes de publicar.</span>
+                  </span>
+                </label>
+                {game && (
+                  <>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {MECHANICS.map((m) => (
+                        <label key={m} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border-2 bg-background p-2.5 text-sm ${gameReq.mecanica === m ? "border-primary" : "border-border"}`}>
+                          <span className="flex items-center gap-2 font-semibold">
+                            <input type="radio" name={gameName} value={m} checked={gameReq.mecanica === m} onChange={() => setGamePart({ mecanica: m })} />
+                            {MECHANIC_LABEL[m]}
+                          </span>
+                          <span className="text-xs text-muted-foreground">{MECHANIC_HINT[m]}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={ideaId}>La idea <span className="font-normal text-muted-foreground">(opcional)</span></Label>
+                      <Textarea id={ideaId} rows={2} maxLength={AI_ACTIVITY_LIMITS.idea} value={gameReq.idea ?? ""}
+                        placeholder="Un astronauta que recorre tres planetas y junta las piezas de su nave"
+                        aria-invalid={!!ideaError} onChange={(e) => setGamePart({ idea: e.target.value })} />
+                      <p className="text-xs text-muted-foreground">Va a la IA tal cual: sin nombres ni datos de la persona, solo la idea.</p>
+                      {ideaError && <p className={`text-xs font-semibold ${ERROR_TEXT}`}>{ideaError}</p>}
+                    </div>
+                    {gameReq.mecanica === "poesia" ? (
+                      <div className="flex flex-wrap items-end gap-3">
+                        <label className="space-y-1 text-sm">
+                          <span className="block font-medium">Estrofas</span>
+                          <select className={`${selectClass} w-24`} value={gameReq.estrofas} onChange={(e) => setGamePart({ estrofas: Number(e.target.value) })}>
+                            {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </label>
+                        <label className="space-y-1 text-sm">
+                          <span className="block font-medium">Rima</span>
+                          <select className={`${selectClass} w-auto`} value={gameReq.esquema} onChange={(e) => setGamePart({ esquema: e.target.value as PoemScheme })}>
+                            {POEM_SCHEMES.map((s) => <option key={s} value={s}>{SCHEME_LABEL[s]}</option>)}
+                          </select>
+                        </label>
+                        {gameReq.esquema !== "libre" && (
+                          <label className="space-y-1 text-sm">
+                            <span className="block font-medium">Tipo de rima</span>
+                            <select className={`${selectClass} w-auto`} value={gameReq.rima} onChange={(e) => setGamePart({ rima: e.target.value as RhymeKind })}>
+                              {RHYME_KINDS.map((k) => <option key={k} value={k}>{k === "asonante" ? "Asonante (más fácil)" : "Consonante"}</option>)}
+                            </select>
+                          </label>
+                        )}
+                        <label className="flex items-center gap-2 pb-2 text-sm">
+                          <input type="checkbox" checked={gameReq.palmas} onChange={(e) => setGamePart({ palmas: e.target.checked })} />
+                          Marcar el ritmo con palmas
+                        </label>
+                      </div>
+                    ) : (
+                      <label className="space-y-1 text-sm">
+                        <span className="block font-medium">Tarjetas</span>
+                        <select className={`${selectClass} w-24`} value={gameReq.tarjetas} onChange={(e) => setGamePart({ tarjetas: Number(e.target.value) })}>
+                          {[3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-medium">Sonidos para que aparezcan <span className="font-normal text-muted-foreground">(opcional, hasta {AI_ACTIVITY_LIMITS.sonidos_max})</span></p>
+                      <ToggleChips label="Sonidos" options={SOUNDS} labels={SOUND_LABEL} value={gameReq.sonidos}
+                        max={AI_ACTIVITY_LIMITS.sonidos_max} onChange={(sonidos) => setGamePart({ sonidos })} />
+                    </div>
+                  </>
+                )}
+              </fieldset>
+            )}
 
             <div className="space-y-1.5">
               <p className="text-sm font-medium">Dónde</p>
