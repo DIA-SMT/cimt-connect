@@ -41,6 +41,9 @@ const PRACTICE_AREA = ["/portal/ejercicios"];
 const inPracticeArea = (pathname: string) => PRACTICE_AREA.some((p) => pathname.startsWith(p));
 // Mientras se practica, la barra de abajo se oculta
 const isPracticing = (pathname: string) => pathname.startsWith("/portal/practicar");
+// "Mis logros" usa más ancho en la compu (medallas a un lado, metas y
+// devoluciones al otro); en el celular es igual que el resto
+const isWide = (pathname: string) => pathname.startsWith("/portal/medallas/");
 
 function PortalLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -96,7 +99,7 @@ function PortalLayout() {
       </a>
       {/* Al imprimir un informe no salen el encabezado ni la barra de abajo */}
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur-md print:hidden">
-        <div className="mx-auto flex h-16 max-w-2xl items-center justify-between gap-3 px-4">
+        <div className={`mx-auto flex h-16 ${isWide(pathname) ? "max-w-5xl" : "max-w-2xl"} items-center justify-between gap-3 px-4`}>
           <Link to="/portal" className="flex shrink-0 items-center gap-2.5">
             <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-border/40 bg-white shadow-[var(--shadow-card)]">
               <img src={logoTortuga} alt="" className="h-9 w-9 object-contain" />
@@ -124,7 +127,7 @@ function PortalLayout() {
       </header>
 
       <main id="contenido" className="bg-notebook flex-1">
-        <div className={`mx-auto w-full max-w-2xl px-4 pt-6 ${showNav ? "pb-28" : "pb-12"}`}>
+        <div className={`mx-auto w-full ${isWide(pathname) ? "max-w-5xl" : "max-w-2xl"} px-4 pt-6 ${showNav ? "pb-28" : "pb-12"}`}>
           {!PORTAL_ENABLED ? (
             <Unavailable />
           ) : waiting ? (
