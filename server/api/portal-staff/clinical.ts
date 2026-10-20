@@ -2,6 +2,7 @@ import { defineEventHandler, readBody } from "nitro/h3";
 import { centerNow, isValidDni, normalizeDni } from "../../../src/lib/portalRules";
 import { closeApptRequestsOnBlock } from "../../lib/apptRequests";
 import { PortalError, handle, setup } from "../../lib/portal";
+import { assertPatient } from "../../lib/staffScope";
 import {
   effectiveFeatures, features, recordConsent, requireClinical, requireFeature, requireStaffRole, staffClinical,
 } from "../../lib/portalClinical";
@@ -42,6 +43,7 @@ export default defineEventHandler((event) => handle(event, async () => {
   if (!features().length) throw new PortalError(404, "No disponible.");
   if (!isUuid(body?.patient_id)) throw new PortalError(400, "Pedido inválido");
   const patientId = body.patient_id;
+  await assertPatient(ctx, staff, patientId); // un profesional, solo sus pacientes
   const today = centerNow().date;
   const now = new Date().toISOString();
 

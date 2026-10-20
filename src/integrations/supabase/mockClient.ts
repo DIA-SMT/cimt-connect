@@ -348,6 +348,43 @@ function currentEmail(): string | null {
   return session?.user.email ?? null;
 }
 
+// ─── Qué ve cada rol (script 34) ─────────────────────────────────────────────
+// Dirección y Administración: todo. Profesional: sus pacientes (a cargo, con
+// turnos con él o de solicitudes que le derivaron), sus turnos y las
+// solicitudes derivadas a él.
+const PATIENT_CHILD_TABLES = new Set([
+  "patient_guardians", "patient_files", "patient_followups", "patient_referrals",
+  "patient_reports", "clinical_forms", "audit_log",
+]);
+
+function myProfessionalId(): unknown {
+  return store.professionals.find((p) => p.user_id === session?.user.id)?.id ?? null;
+}
+
+function isMyPatient(patientId: unknown): boolean {
+  if (staffRole() !== "profesional") return true;
+  const mine = myProfessionalId();
+  if (!mine || !patientId) return false;
+  return store.patients.some((p) => p.id === patientId && p.professional_id === mine)
+    || store.appointments.some((a) => a.patient_id === patientId && a.professional_id === mine && a.status !== "cancelado")
+    || store.intake_requests.some((q) => q.patient_id === patientId && q.assigned_professional_id === mine);
+}
+
+/** Para el portal demo (mockPortal): la bandeja del profesional, solo sus pacientes */
+export function mockIsMyPatient(patientId: unknown): boolean {
+  return isMyPatient(patientId);
+}
+
+function rowVisible(table: string, row: Row): boolean {
+  if (staffRole() !== "profesional") return true;
+  const mine = myProfessionalId();
+  if (table === "patients") return isMyPatient(row.id);
+  if (table === "appointments") return row.professional_id === mine || isMyPatient(row.patient_id);
+  if (table === "intake_requests") return !!mine && row.assigned_professional_id === mine;
+  if (PATIENT_CHILD_TABLES.has(table)) return isMyPatient(row.patient_id);
+  return true;
+}
+
 // ─── Query builder ───────────────────────────────────────────────────────────
 
 class MockQueryBuilder {
@@ -444,6 +481,13 @@ class MockQueryBuilder {
       if (this._table === "patients" && this._store.some((p) => p.dni === this._insertPayload!.dni)) {
         return { data: null, error: { message: "duplicate key", code: "23505" } };
       }
+      // Una ficha que crea un profesional queda a su cargo (trigger del script 34)
+      if (this._table === "patients" && staffRole() === "profesional" && !this._insertPayload.professional_id) {
+        this._insertPayload = { ...this._insertPayload, professional_id: myProfessionalId() };
+      }
+      if (PATIENT_CHILD_TABLES.has(this._table) && !isMyPatient(this._insertPayload.patient_id)) {
+        return { data: null, error: { message: "new row violates row-level security policy", code: "42501" } };
+      }
       const newRow: Row = {
         id: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         created_at: now,
@@ -467,8 +511,14 @@ class MockQueryBuilder {
 
     // UPDATE
     if (this._updatePayload !== null) {
-      const targets = this._store.filter((row) => this._filters.every((f) => f(row)));
+      const targets = this._store.filter((row) => this._filters.every((f) => f(row)) && rowVisible(this._table, row));
       const payload = this._updatePayload;
+      // Derivar: Dirección o Administración (trigger intake_requests_guard, script 34)
+      if (this._table === "intake_requests" && "assigned_professional_id" in payload
+          && !["direccion", "administracion"].includes(staffRole() ?? "")
+          && targets.some((row) => row.assigned_professional_id !== payload.assigned_professional_id)) {
+        return { data: null, error: { message: "NOT_ALLOWED: Solo Administración puede derivar solicitudes" } };
+      }
 
       if (this._table === "patients" && staffRole() === "administracion") {
         const touchesClinical = targets.some((row) => CLINICAL_PATIENT_FIELDS.some(
@@ -504,7 +554,7 @@ class MockQueryBuilder {
         if (this._table === "appointments" && payload.attendance === "presente" && !row.practice_number) {
           Object.assign(payload, { practice_number: practiceSeq++, practice_registered_at: now });
         }
-        // Lo que hace el trigger intake_requests_guard (script 30): derivación y primer contacto
+        // Lo que hace el trigger intake_requests_guard (scripts 30 y 34): derivación y primer contacto
         if (this._table === "intake_requests") {
           if ("assigned_professional_id" in payload && payload.assigned_professional_id !== row.assigned_professional_id) {
             Object.assign(payload, payload.assigned_professional_id
@@ -525,7 +575,7 @@ class MockQueryBuilder {
     }
 
     // SELECT
-    let rows = this._store.filter((r) => this._filters.every((f) => f(r))).map((r) => ({ ...r }));
+    let rows = this._store.filter((r) => this._filters.every((f) => f(r)) && rowVisible(this._table, r)).map((r) => ({ ...r }));
 
     // Ordering: el primer order() es la clave principal
     rows.sort((a, b) => {

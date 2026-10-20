@@ -20,7 +20,7 @@ import { usePortalInboxCount } from "@/components/admin/portal/usePortalInboxCou
 import { portalStaffApi } from "@/lib/portalStaff";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { ProfessionalOption } from "@/lib/patients";
-import { ROLE_LABEL, isDirector, type Staff } from "@/lib/staff";
+import { ROLE_LABEL, isDirector, seesAllPatients, type Staff } from "@/lib/staff";
 import { PanelGuide } from "@/components/admin/PanelGuide";
 import { PASSWORD_MIN, PASSWORD_MIN_MESSAGE } from "@/lib/passwords";
 
@@ -381,10 +381,15 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
           )}
           <TabButton active={activeTab === "pacientes"} onClick={() => setActiveTab("pacientes")}
             icon={<Users className="h-4 w-4" />} label="Pacientes" />
-          <TabButton active={activeTab === "estadisticas"} onClick={() => setActiveTab("estadisticas")}
-            icon={<BarChart3 className="h-4 w-4" />} label="Estadísticas" />
-          <TabButton active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")}
-            icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
+          {/* El profesional ve solo lo suyo: sin números de todo el centro */}
+          {seesAllPatients(staff.role) && (
+            <>
+              <TabButton active={activeTab === "estadisticas"} onClick={() => setActiveTab("estadisticas")}
+                icon={<BarChart3 className="h-4 w-4" />} label="Estadísticas" />
+              <TabButton active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")}
+                icon={<LayoutDashboard className="h-4 w-4" />} label="Dashboard" />
+            </>
+          )}
           <TabButton active={activeTab === "rincon"} onClick={() => setActiveTab("rincon")}
             icon={<Sparkles className="h-4 w-4" />} label="Rincón social" />
           {isDirector(staff.role) && (
@@ -398,22 +403,23 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             onOpenNotices={portalStaffApi.enabled ? openNotices : undefined} />
         ) : activeTab === "solicitudes" ? (
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
-            onCountChange={setNewRequests} professionals={professionals} canAssign={isDirector(staff.role)} />
+            onCountChange={setNewRequests} professionals={professionals} canAssign={seesAllPatients(staff.role)}
+            scoped={!seesAllPatients(staff.role)} />
         ) : activeTab === "portal" && portalStaffApi.enabled ? (
           <PortalInboxTab key={portalView ?? "auto"} initialView={portalView} onOpenPatient={setOpenPatientId} onCountChange={setPortalCounts} />
         ) : activeTab === "pacientes" ? (
           <PatientsTab professionals={professionals} version={patientsVersion} onOpen={setOpenPatientId} staff={staff} />
-        ) : activeTab === "estadisticas" ? (
+        ) : activeTab === "estadisticas" && seesAllPatients(staff.role) ? (
           <StatsTab key={patientsVersion} professionals={professionals} canPublish={isDirector(staff.role)} />
         ) : activeTab === "rincon" ? (
           <SocialCornerTab />
         ) : activeTab === "equipo" && isDirector(staff.role) ? (
           <TeamTab currentEmail={staff.email} onProfessionalsChanged={loadProfessionals} />
-        ) : (
+        ) : activeTab === "dashboard" && seesAllPatients(staff.role) ? (
           <div className="mt-6">
             <AdminDashboard appts={appts} professionals={professionals} />
           </div>
-        )}
+        ) : null}
       </section>
 
       <ChangePasswordDialog open={changingPassword} onClose={() => setChangingPassword(false)} />

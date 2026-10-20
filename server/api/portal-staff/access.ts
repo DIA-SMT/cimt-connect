@@ -2,9 +2,11 @@ import { defineEventHandler, readBody } from "nitro/h3";
 import { isValidDni, normalizeDni, samePhone } from "../../../src/lib/portalRules";
 import { type GuardianKind, type InviteChild, type Invitation, INVITATION_MAX_FAILS, codeHash, validChildren } from "../../lib/invitations";
 import { type Ctx, PortalError, accountLinks, blockedPatients, formatCode, handle, newCode, requireStaff, setup } from "../../lib/portal";
+import { assertPatient } from "../../lib/staffScope";
 
 // POST /api/portal-staff/access — acciones del equipo sobre el portal.
-// Cualquier persona activa del panel (todos los roles) puede usarlas.
+// Cualquier persona activa del panel (todos los roles) puede usarlas; un
+// profesional, solo con sus pacientes (lib/staffScope).
 //
 //   { action: "status", patient_id, guardian_id? } → estado del acceso para
 //     ese chico: del adulto responsable (guardian_id) o, sin guardian_id, del
@@ -38,6 +40,13 @@ export default defineEventHandler((event) => handle(event, async () => {
   const ctx = setup();
   const staff = await requireStaff(ctx, event);
   const body = (await readBody(event)) as InviteBody | InviteSelfBody | StatusBody | null;
+
+  // Un profesional solo invita o consulta a sus pacientes
+  if (body?.action === "invite") {
+    for (const c of Array.isArray(body.children) ? body.children : []) await assertPatient(ctx, staff, c?.id);
+  } else if (body?.action === "invite_self" || body?.action === "status") {
+    await assertPatient(ctx, staff, body.patient_id);
+  }
 
   if (body?.action === "status") return status(ctx, body);
   if (body?.action !== "invite" && body?.action !== "invite_self") throw new PortalError(400, "Acción inválida");

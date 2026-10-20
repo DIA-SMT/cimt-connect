@@ -16,6 +16,7 @@ const btn = (label: string): TourTarget => ({ text: label, tag: "button" });
 
 const CLINICAL: StaffRole[] = ["direccion", "profesional"];
 const DIRECTOR: StaffRole[] = ["direccion"];
+const ALL_PATIENTS: StaffRole[] = ["direccion", "administracion"];
 
 // Primera vez en el panel: cómo está organizado
 export const PANEL_WELCOME: PanelStep[] = [
@@ -34,8 +35,13 @@ export const PANEL_WELCOME: PanelStep[] = [
     targets: [tab("Agenda")],
   },
   {
-    id: "solicitudes", title: "Solicitudes",
+    id: "solicitudes", title: "Solicitudes", roles: ALL_PATIENTS,
     text: "Los pedidos de turno que llegan del sitio. Se contactan, se anotan al taller, se derivan y se admiten.",
+    targets: [tab("Solicitudes")],
+  },
+  {
+    id: "solicitudes-mias", title: "Solicitudes", roles: ["profesional"],
+    text: "Las solicitudes que Administración te derivó, con todos los datos que dejó la familia.",
     targets: [tab("Solicitudes")],
   },
   {
@@ -45,11 +51,11 @@ export const PANEL_WELCOME: PanelStep[] = [
   },
   {
     id: "pacientes", title: "Pacientes",
-    text: "Las fichas de los pacientes. Cada ficha se abre a pantalla completa, con pestañas.",
+    text: "Las fichas de los pacientes. Cada ficha se abre a pantalla completa, con pestañas. Un profesional ve solo los suyos.",
     targets: [tab("Pacientes")],
   },
   {
-    id: "estadisticas", title: "Estadísticas",
+    id: "estadisticas", title: "Estadísticas", roles: ALL_PATIENTS,
     text: "Los números del centro, por período, y el informe semanal.",
     targets: [tab("Estadísticas")],
   },
@@ -73,9 +79,8 @@ export const PANEL_GUIDES: Record<PanelTab, PanelStep[]> = {
       targets: ['input[aria-label="Fecha de la agenda"]'],
     },
     {
-      id: "mis", title: "Solo tus turnos", roles: ["profesional"],
-      text: "Con «Mis turnos» ves solo los tuyos, en la semana. «Todo el equipo» muestra a todos.",
-      targets: [btn("Mis turnos")],
+      id: "mis", title: "Tu semana", roles: ["profesional"],
+      text: "Ves tus turnos de lunes a viernes, una columna por día. Con las flechas pasás de semana.",
     },
     {
       id: "nuevo", title: "Dar un turno",
@@ -122,12 +127,12 @@ export const PANEL_GUIDES: Record<PanelTab, PanelStep[]> = {
       text: "Llamá a la familia y tocá «Marcar como contactada». Después anotala en el próximo taller informativo.",
     },
     {
-      id: "derivar", title: "Derivar a un profesional", roles: DIRECTOR,
+      id: "derivar", title: "Derivar a un profesional", roles: ALL_PATIENTS,
       text: "En el recuadro «Derivación», elegí qué profesional la va a atender. Queda registrado quién derivó y cuándo.",
     },
     {
-      id: "derivada", title: "La derivación", roles: ["profesional", "administracion"],
-      text: "Dirección elige qué profesional atiende cada solicitud. Lo ves en la lista y en el recuadro «Derivación».",
+      id: "derivada", title: "Tus solicitudes", roles: ["profesional"],
+      text: "Administración te deriva las solicitudes que vas a atender. Acá ves solo esas, con todos sus datos.",
     },
     {
       id: "admitir", title: "Admitir",
@@ -266,7 +271,7 @@ export const PANEL_GUIDES: Record<PanelTab, PanelStep[]> = {
     },
     {
       id: "roles", title: "Los roles", roles: DIRECTOR,
-      text: "Dirección hace todo. Profesional suma lo clínico. Administración maneja turnos, contacto y asistencia.",
+      text: "Dirección controla todo. Administración recibe y deriva las solicitudes y ve a todos. Profesional ve solo sus pacientes.",
     },
     {
       id: "profesional", title: "Profesionales", roles: DIRECTOR,

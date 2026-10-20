@@ -1,5 +1,6 @@
 import { defineEventHandler, readBody } from "nitro/h3";
 import { handle, setup } from "../../lib/portal";
+import { assertPatient } from "../../lib/staffScope";
 import { requireFeature, requireStaffRole } from "../../lib/portalClinical";
 import { staffPracticeAction } from "../../lib/practice";
 
@@ -36,5 +37,6 @@ export default defineEventHandler((event) => handle(event, async () => {
   const ctx = setup();
   const staff = await requireStaffRole(ctx, event);
   const body = ((await readBody(event)) ?? {}) as Record<string, unknown>;
+  await assertPatient(ctx, staff, body.patient_id); // un profesional, solo sus pacientes
   return staffPracticeAction(ctx, staff, body);
 }));

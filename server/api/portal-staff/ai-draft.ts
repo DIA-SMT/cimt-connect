@@ -1,6 +1,7 @@
 import { defineEventHandler, readBody } from "nitro/h3";
 import { createAdaptDraft } from "../../lib/aiDrafts";
 import { handle, setup } from "../../lib/portal";
+import { assertPatient } from "../../lib/staffScope";
 import { requireClinical, requireStaffRole } from "../../lib/portalClinical";
 
 // POST /api/portal-staff/ai-draft — "Adaptar con ayuda de IA" (etapa "ai").
@@ -26,5 +27,6 @@ export default defineEventHandler((event) => handle(event, async () => {
   const staff = await requireStaffRole(ctx, event);
   requireClinical(staff);
   const body: unknown = await readBody(event).catch(() => null);
+  await assertPatient(ctx, staff, (body as { patient_id?: unknown } | null)?.patient_id); // solo sus pacientes
   return createAdaptDraft(ctx, staff, body);
 }));
