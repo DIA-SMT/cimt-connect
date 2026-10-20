@@ -2,9 +2,11 @@ import { useState } from "react";
 import type { Staff } from "@/lib/staff";
 
 // "Solo lo mío": filtro de la agenda y de pacientes para quien tiene el usuario
-// vinculado a un profesional (lo vincula la Dirección en Equipo). Todos siguen
-// pudiendo ver todo (relevamiento 13); esto es solo una vista. Para el rol
-// Profesional arranca activado; la elección se recuerda en este navegador.
+// vinculado a un profesional (lo vincula la Dirección en Equipo).
+//   - Profesional: siempre activado y sin selector (la base ya le muestra
+//     solo sus pacientes; script 34).
+//   - Dirección o Administración con profesional vinculado: es una vista que
+//     se puede apagar; la elección se recuerda en este navegador.
 
 export function useMine(scope: "agenda" | "pacientes", staff: Staff) {
   const professionalId = staff.professional_id;
@@ -29,11 +31,12 @@ export function useMine(scope: "agenda" | "pacientes", staff: Staff) {
     }
   }
 
+  const forced = staff.role === "profesional";
   return {
-    /** El usuario tiene un profesional vinculado */
-    available: !!professionalId,
+    /** Se muestra el selector (tiene profesional vinculado y puede ver todo) */
+    available: !!professionalId && !forced,
     /** El filtro está activo */
-    on: !!professionalId && on,
+    on: !!professionalId && (forced || on),
     setOn,
     professionalId,
     /** Profesional sin usuario vinculado: conviene avisarle */

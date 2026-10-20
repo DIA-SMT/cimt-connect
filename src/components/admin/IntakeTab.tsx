@@ -28,13 +28,15 @@ type Props = {
   onCountChange: (nuevas: number) => void;
   /** Para derivar cada solicitud al profesional que la va a atender */
   professionals: ProfessionalOption[];
-  /** Solo Dirección deriva (la base también lo controla) */
+  /** Derivan Dirección y Administración (la base también lo controla) */
   canAssign: boolean;
+  /** Profesional: la base le muestra solo las solicitudes que le derivaron */
+  scoped?: boolean;
 };
 
 const OPEN_STATUSES: IntakeStatus[] = ["nueva", "contactada", "taller"];
 
-export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssign }: Props) {
+export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssign, scoped = false }: Props) {
   const [requests, setRequests] = useState<IntakeRequest[]>([]);
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
   async function update(id: string, patch: Partial<IntakeRequest>, okMessage?: string) {
     const { error } = await supabase.from("intake_requests").update(patch).eq("id", id);
     if (error) {
-      toast.error(error.message?.startsWith("NOT_ALLOWED") ? "Solo Dirección puede derivar solicitudes" : "No se pudo actualizar la solicitud");
+      toast.error(error.message?.startsWith("NOT_ALLOWED") ? "Solo Administración puede derivar solicitudes" : "No se pudo actualizar la solicitud");
       return false;
     }
     patchLocal(id, patch);
@@ -98,10 +100,16 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
         // Tipo del teléfono que dejaron (para menores es el del adulto responsable)
         phone_kind: r.phone_kind ?? null,
         guardian_phone_kind: r.guardian_name ? r.phone_kind ?? null : null,
-        // El profesional al que Dirección derivó la solicitud queda como profesional de la ficha
+        // El profesional al que se derivó la solicitud queda como profesional de la ficha
         professional_id: r.assigned_professional_id ?? null,
       }).select().single();
-      if (error || !data) { toast.error("No se pudo crear la ficha del paciente"); return; }
+      if (error || !data) {
+        // Un profesional no ve fichas ajenas: si el DNI ya tiene ficha, la admite Administración
+        toast.error(scoped && error?.code === "23505"
+          ? "Ese DNI ya tiene ficha en el centro. Pedile a Administración que admita la solicitud."
+          : "No se pudo crear la ficha del paciente");
+        return;
+      }
       patientId = (data as { id: string }).id;
       // El adulto responsable de la solicitud pasa a la ficha como contacto principal
       if (r.guardian_name) {
@@ -537,7 +545,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-// Derivación: Dirección elige el profesional que va a atender la solicitud.
+// Derivación: Administración (o Dirección) elige el profesional que va a atender la solicitud.
 // Al admitir, ese profesional queda en la ficha.
 function AssignBox({ request: r, professionals, canAssign, busy, onAssign }: {
   request: IntakeRequest;
@@ -570,7 +578,7 @@ function AssignBox({ request: r, professionals, canAssign, busy, onAssign }: {
           </Button>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">La derivación la hace Dirección.</p>
+        <p className="text-xs text-muted-foreground">La derivación la hace Administración.</p>
       )}
     </div>
   );

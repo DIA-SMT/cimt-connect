@@ -37,12 +37,14 @@ describe("cada rol ve lo suyo", () => {
       }
     }
   });
-  test("derivar lo explica a Dirección; al resto le cuenta quién deriva", () => {
+  test("derivar lo explica a Dirección y Administración; al profesional le cuenta quién deriva", () => {
     const ids = (role: StaffRole) => stepsFor(PANEL_GUIDES.solicitudes, role).map((s) => s.id);
     expect(ids("direccion")).toContain("derivar");
     expect(ids("direccion")).not.toContain("derivada");
-    expect(ids("administracion")).toContain("derivada");
-    expect(ids("administracion")).not.toContain("derivar");
+    expect(ids("administracion")).toContain("derivar");
+    expect(ids("administracion")).not.toContain("derivada");
+    expect(ids("profesional")).toContain("derivada");
+    expect(ids("profesional")).not.toContain("derivar");
   });
   test("la bienvenida solo nombra Equipo para Dirección", () => {
     expect(stepsFor(PANEL_WELCOME, "profesional").map((s) => s.id)).not.toContain("equipo");
