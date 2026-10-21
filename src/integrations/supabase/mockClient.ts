@@ -622,6 +622,17 @@ function setSession(next: MockSession, event: string) {
 // ─── RPCs ────────────────────────────────────────────────────────────────────
 
 function rpc(fn: string, args: Row = {}) {
+  if (fn === "update_my_professional_profile") {
+    // Script 35: cada profesional cambia solo su foto, descripción y días
+    const pro = store.professionals.find((p) => p.user_id === session?.user.id);
+    if (!pro) return Promise.resolve({ data: null, error: { message: "NOT_LINKED: Tu usuario no está vinculado a un profesional. Pedile a la Dirección que lo vincule en Equipo." } });
+    if (String(args.p_description ?? "").length > 600) {
+      return Promise.resolve({ data: null, error: { message: "INVALID_DESCRIPTION: La descripción puede tener hasta 600 caracteres" } });
+    }
+    Object.assign(pro, { photo_url: args.p_photo_url ?? null, description: args.p_description ?? null, days: args.p_days ?? null });
+    return Promise.resolve({ data: null, error: null });
+  }
+
   if (fn === "current_staff") {
     const row = store.admins.find((a) => a.user_id === session?.user.id && a.active);
     if (!row) return Promise.resolve({ data: null, error: null });

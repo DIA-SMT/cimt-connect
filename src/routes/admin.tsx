@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen, BellRing } from "lucide-react";
+import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen, BellRing, UserRound } from "lucide-react";
+import { MyProfileDialog } from "@/components/admin/MyProfileDialog";
 import { toast } from "sonner";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
@@ -125,7 +126,7 @@ function AdminPage() {
 
   if (auth.kind === "loading") {
     return (
-      <Layout plain>
+      <Layout panel>
         <div className="flex justify-center py-32">
           <Loader2 className="h-7 w-7 animate-spin text-primary" />
         </div>
@@ -147,7 +148,7 @@ function ToIngresar({ salir }: { salir?: boolean }) {
     navigate({ to: "/ingresar", search: salir ? { salir: 1 } : {}, replace: true });
   }, [navigate, salir]);
   return (
-    <Layout plain>
+    <Layout panel>
       <div className="flex justify-center py-32">
         <Loader2 className="h-7 w-7 animate-spin text-primary" />
       </div>
@@ -244,7 +245,7 @@ function AuthCard({ title, subtitle, onSubmit, children }: {
     </>
   );
   return (
-    <Layout plain>
+    <Layout panel>
       <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
         {onSubmit ? (
           <form onSubmit={onSubmit} className={className}>{content}</form>
@@ -258,7 +259,7 @@ function AuthCard({ title, subtitle, onSubmit, children }: {
 
 function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   return (
-    <Layout plain>
+    <Layout panel>
       <section className="container mx-auto flex justify-center px-4 py-16 md:py-24">
         <div className="w-full max-w-sm rounded-3xl border border-border/60 bg-card p-8 text-center shadow-[var(--shadow-card)]">
           <ShieldAlert className="mx-auto h-10 w-10 text-[color:var(--status-occupied)]" />
@@ -282,6 +283,8 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   const [openPatientId, setOpenPatientId] = useState<string | null>(null);
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const closeProfile = useCallback(() => setEditingProfile(false), []);
   const [newRequests, setNewRequests] = useState(0);
   const [portalView, setPortalView] = useState<"hc" | "notices" | undefined>(undefined);
   const openNotices = useCallback(() => { setPortalView("notices"); setActiveTab("portal"); }, []);
@@ -325,7 +328,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   }
 
   return (
-    <Layout plain staff={staff}>
+    <Layout panel staff={staff}>
       <section className="container mx-auto px-4 py-10 md:px-6 md:py-14">
         {/* Header */}
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
@@ -343,6 +346,12 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
               <div className="text-xs text-muted-foreground">{ROLE_LABEL[staff.role]}</div>
             </div>
             <PanelGuide tab={activeTab} staff={staff} />
+            {/* Quien tiene su usuario vinculado a un profesional edita su foto y descripción */}
+            {staff.professional_id && (
+              <Button variant="outline" size="sm" onClick={() => setEditingProfile(true)}>
+                <UserRound className="mr-1.5 h-3.5 w-3.5" /> Mi perfil
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => setChangingPassword(true)}>
               <KeyRound className="mr-1.5 h-3.5 w-3.5" /> Contraseña
             </Button>
@@ -423,6 +432,9 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
       </section>
 
       <ChangePasswordDialog open={changingPassword} onClose={() => setChangingPassword(false)} />
+      {staff.professional_id && (
+        <MyProfileDialog open={editingProfile} onClose={closeProfile} professionalId={staff.professional_id} />
+      )}
 
       <PatientRecordSheet
         patientId={openPatientId}

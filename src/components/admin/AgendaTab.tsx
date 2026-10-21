@@ -48,7 +48,7 @@ const HEADER_H = "h-16";
 // En computadora la grilla usa el scroll de la página: la fila de profesionales
 // queda fija debajo de la barra del sitio (h-16 + borde). En celular la grilla
 // se desplaza de costado y la columna de horas queda fija.
-const STICKY_TOP = "top-0 lg:top-[65px]";
+const STICKY_TOP = "top-0 lg:top-[57px]"; // debajo de PanelHeader
 const UNASSIGNED = "__sin_asignar__";
 
 const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone, guardian_name, patient_type, phone_kind, guardian_phone_kind, autonomy)";

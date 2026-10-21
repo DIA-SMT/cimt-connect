@@ -558,7 +558,7 @@ function SetPasswordDialog({ user, onClose }: { user: PanelUser; onClose: () => 
 
 // ─── Piezas ──────────────────────────────────────────────────────────────────
 
-function Avatar({ url, name, size = "md" }: { url: string | null; name: string; size?: "md" | "lg" }) {
+export function Avatar({ url, name, size = "md" }: { url: string | null; name: string; size?: "md" | "lg" }) {
   const cls = size === "lg" ? "h-16 w-16" : "h-11 w-11";
   return url ? (
     <img src={url} alt={name} className={`${cls} shrink-0 rounded-full object-cover ring-2 ring-border/60`} />
