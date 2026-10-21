@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowRight, BellRing, CalendarCheck, CalendarClock, CheckCircle2, ClipboardList, FileText, HeartPulse,
+  ArrowRight, BellRing, CalendarCheck, CalendarClock, CheckCircle2, ChevronDown, ClipboardList, FileText, HeartPulse,
   History, Inbox, Loader2, MailOpen, Users,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -30,6 +30,9 @@ type RequestLite = { id: string; first_name: string; last_name: string; created_
 type Directory = Map<string, { name: string; role: StaffRole }>;
 
 const PAGE = 40;
+// «Lo último que se hizo»: cada día es un desplegable (abierto solo el más
+// nuevo) y, abierto, muestra los primeros DAY_SHOWN movimientos
+const DAY_SHOWN = 5;
 // "miércoles, 21 de octubre" → "Miércoles, 21 de octubre"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const REFRESH_MS = 60_000;
@@ -58,6 +61,15 @@ export function SummaryTab({ staff, professionals, portalCounts, onOpenTab, onOp
   const [workshop, setWorkshop] = useState<Workshop | null>(null);
   const [log, setLog] = useState<AuditRow[]>([]);
   const [limit, setLimit] = useState(PAGE);
+  // Días abiertos y días con todos sus movimientos a la vista (por su etiqueta).
+  // null: todavía no se tocó nada (queda abierto el más nuevo)
+  const [openDays, setOpenDays] = useState<Set<string> | null>(null);
+  const [fullDays, setFullDays] = useState<Set<string>>(new Set());
+  const toggle = (set: Set<string>, key: string) => {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  };
   const [moreLoading, setMoreLoading] = useState(false);
   const [names, setNames] = useState<{ patients: Map<string, string>; requests: Map<string, string>; staff: Directory }>({
     patients: new Map(), requests: new Map(), staff: new Map(),
@@ -269,12 +281,27 @@ export function SummaryTab({ staff, professionals, portalCounts, onOpenTab, onOp
         {groups.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">Todavía no hay movimientos para mostrar.</p>
         ) : (
-          <div className="mt-4 space-y-5">
-            {groups.map((g) => (
-              <div key={g.label}>
-                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground first-letter:uppercase">{g.label}</p>
+          <div className="mt-4 space-y-2">
+            {groups.map((g, gi) => {
+              const open = openDays ? openDays.has(g.label) : gi === 0;
+              const full = fullDays.has(g.label);
+              const items = full ? g.items : g.items.slice(0, DAY_SHOWN);
+              const panelId = `actividad-${gi}`;
+              return (
+              <div key={g.label} className="rounded-2xl border border-border/60">
+                <button type="button" aria-expanded={open} aria-controls={panelId}
+                  onClick={() => setOpenDays(toggle(openDays ?? new Set(groups[0] ? [groups[0].label] : []), g.label))}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-left hover:bg-[color:var(--primary-soft)]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground first-letter:uppercase">{g.label}</span>
+                  <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                    {g.items.length} {plural(g.items.length, "movimiento", "movimientos")}
+                    <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+                  </span>
+                </button>
+                {open && (
+                <div id={panelId} className="px-4 pb-3">
                 <ol className="space-y-2.5 border-l-2 border-border/70 pl-4">
-                  {g.items.map((it) => {
+                  {items.map((it) => {
                     const Icon = KIND_ICON[it.kind];
                     return (
                       <li key={String(it.row.id)} className="relative text-sm">
@@ -290,8 +317,17 @@ export function SummaryTab({ staff, professionals, portalCounts, onOpenTab, onOp
                     );
                   })}
                 </ol>
+                {g.items.length > DAY_SHOWN && (
+                  <Button variant="link" size="sm" className="mt-1 h-auto px-0 text-xs"
+                    onClick={() => setFullDays(toggle(fullDays, g.label))}>
+                    {full ? "Ver menos" : `Ver ${plural(g.items.length - DAY_SHOWN, "1 más", `los ${g.items.length - DAY_SHOWN} restantes`)}`}
+                  </Button>
+                )}
+                </div>
+                )}
               </div>
-            ))}
+              );
+            })}
             {log.length >= limit && (
               <Button variant="outline" size="sm" disabled={moreLoading}
                 onClick={async () => { setMoreLoading(true); setLimit((n) => n + PAGE); setMoreLoading(false); }}>
