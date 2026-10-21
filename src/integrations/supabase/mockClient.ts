@@ -86,6 +86,10 @@ const store: Record<string, Row[]> = {
   professionals: MOCK_PROFESSIONALS.map((p, i) => ({
     ...p, license: String(1000 + i * 137), active: true, show_on_site: false, user_id: null,
     session_minutes: p.specialty.toLowerCase().startsWith("psicolog") ? 40 : 30,
+    // Horario de atención de ejemplo (script 36): se ve en gris en la agenda
+    weekly_hours: i % 2 === 0
+      ? { lun: [{ start: "08:00", end: "12:00" }, { start: "14:00", end: "17:00" }], mie: [{ start: "08:00", end: "12:00" }], vie: [{ start: "08:00", end: "13:00" }] }
+      : { mar: [{ start: "08:00", end: "13:00" }], mie: [{ start: "09:00", end: "13:00" }, { start: "14:00", end: "18:00" }], jue: [{ start: "08:00", end: "13:00" }] },
   })) as unknown as Row[],
   patients: [...patientsByDni.values()],
   appointments: MOCK_APPOINTMENTS.map((a) => ({
@@ -622,6 +626,19 @@ function setSession(next: MockSession, event: string) {
 // ─── RPCs ────────────────────────────────────────────────────────────────────
 
 function rpc(fn: string, args: Row = {}) {
+  if (fn === "set_professional_hours") {
+    // Script 36: el propio profesional, Administración o Dirección
+    const role = staffRole();
+    const mine = store.professionals.find((p) => p.user_id === session?.user.id)?.id;
+    if (!(role === "direccion" || role === "administracion" || (mine && mine === args.p_professional))) {
+      return Promise.resolve({ data: null, error: { message: "NOT_ALLOWED: Solo el profesional, Administración o Dirección pueden cambiar este horario" } });
+    }
+    const pro = store.professionals.find((p) => p.id === args.p_professional);
+    if (!pro) return Promise.resolve({ data: null, error: { message: "NOT_FOUND: No encontramos a ese profesional" } });
+    pro.weekly_hours = args.p_hours && Object.keys(args.p_hours as object).length ? args.p_hours : null;
+    return Promise.resolve({ data: null, error: null });
+  }
+
   if (fn === "update_my_professional_profile") {
     // Script 35: cada profesional cambia solo su foto, descripción y días
     const pro = store.professionals.find((p) => p.user_id === session?.user.id);

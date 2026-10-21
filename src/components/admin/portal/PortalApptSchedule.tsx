@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { hoursSummary, hoursWindows, parseWeeklyHours } from "@/lib/workHours";
 import { toast } from "sonner";
 import { CalendarCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -68,7 +69,7 @@ type Orphan = { id: string; date: string; time: string; msg: string; stale: bool
 // De dónde salió el profesional que se propone
 type Suggested = { id: string; from: "ficha" | "turno" };
 
-const PRO_COLS = "id, name, specialty, license, active, session_minutes";
+const PRO_COLS = "id, name, specialty, license, active, session_minutes, weekly_hours";
 const APPT_COLS = "id, professional_id, appointment_date, appointment_time, duration_minutes, status";
 const TEXT_WARN = "text-[oklch(0.45_0.11_70)]";
 const TEXT_BAD = "text-[oklch(0.5_0.19_25)]";
@@ -226,11 +227,13 @@ export function PortalApptSchedule({ request: r, allowed, onLink, onCheck, onLin
   const durationOk = Number.isInteger(durationNum) && durationNum >= SCHEDULE_MIN_MINUTES && durationNum <= SCHEDULE_MAX_MINUTES;
   const suggest = useMemo(() => {
     if (!agenda || agenda.proId !== professionalId || !durationOk) return null;
+    const hours = parseWeeklyHours(activePros.find((x) => x.id === professionalId)?.weekly_hours);
     return suggestFreeSlots({
       days: r.days, band: r.band, professionalId, duration: durationNum,
       appointments: agenda.appts, patientAppointments: patientAppts, blocks, today: now.date, nowMinutes: nowMin,
+      hours: hours ? hoursWindows(hours) : null,
     });
-  }, [agenda, professionalId, durationOk, durationNum, r.days, r.band, patientAppts, blocks, now.date, nowMin]);
+  }, [agenda, professionalId, durationOk, durationNum, r.days, r.band, patientAppts, blocks, now.date, nowMin, activePros]);
 
   // Un horario sugerido completa fecha y hora (el foco queda en el botón)
   function pick(s: SlotSuggestion) {
@@ -441,7 +444,8 @@ export function PortalApptSchedule({ request: r, allowed, onLink, onCheck, onLin
     : suggested?.id === professionalId
       ? suggested.from === "ficha" ? "Profesional a cargo según la ficha." : "Es quien lo atiende en su próximo turno."
       : null;
-  const free = windowsText(suggest?.windows ?? {});
+  const proHours = parseWeeklyHours(activePros.find((x) => x.id === professionalId)?.weekly_hours);
+  const free = proHours ? lowerFirst(hoursSummary(proHours)) : windowsText(suggest?.windows ?? {});
 
   return (
     // noValidate: los mensajes son los de acá (en castellano), no los del navegador

@@ -8,9 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar } from "./TeamTab";
+import { HoursEditor, saveHours } from "./HoursEditor";
+import { type WeeklyHours, hoursProblem, hoursSummary, parseWeeklyHours } from "@/lib/workHours";
 
-// «Mi perfil»: cada profesional cambia su foto, su descripción para el sitio y
-// sus días de atención (update_my_professional_profile, script 35). Nombre,
+// «Mi perfil»: cada profesional cambia su foto, su descripción para el sitio,
+// el texto de sus días de atención (update_my_professional_profile, script 35)
+// y su horario semanal (set_professional_hours, script 36). Nombre,
 // especialidad, matrícula y si aparece en el sitio los maneja la Dirección.
 
 type Profile = {
@@ -21,22 +24,30 @@ type Profile = {
   description: string | null;
   photo_url: string | null;
   show_on_site: boolean;
+  weekly_hours: unknown;
 };
 
 const DESCRIPTION_MAX = 600;
 
-export function MyProfileDialog({ open, onClose, professionalId }: { open: boolean; onClose: () => void; professionalId: string }) {
+export function MyProfileDialog({ open, onClose, professionalId, onSaved }: {
+  open: boolean;
+  onClose: () => void;
+  professionalId: string;
+  /** Se guardó: recargar los profesionales (la agenda usa el horario) */
+  onSaved?: () => void;
+}) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [photo, setPhoto] = useState("");
   const [description, setDescription] = useState("");
   const [days, setDays] = useState("");
+  const [hours, setHours] = useState<WeeklyHours>({});
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setProfile(null);
-    supabase.from("professionals").select("name, specialty, license, days, description, photo_url, show_on_site")
+    supabase.from("professionals").select("name, specialty, license, days, description, photo_url, show_on_site, weekly_hours")
       .eq("id", professionalId).single()
       .then(({ data, error }: { data: Profile | null; error: unknown }) => {
         if (error || !data) { toast.error("No se pudo cargar tu perfil"); onClose(); return; }
@@ -44,6 +55,7 @@ export function MyProfileDialog({ open, onClose, professionalId }: { open: boole
         setPhoto(data.photo_url ?? "");
         setDescription(data.description ?? "");
         setDays(data.days ?? "");
+        setHours(parseWeeklyHours(data.weekly_hours) ?? {});
       });
   }, [open, professionalId, onClose]);
 
@@ -63,7 +75,10 @@ export function MyProfileDialog({ open, onClose, professionalId }: { open: boole
 
   async function save() {
     if (description.trim().length > DESCRIPTION_MAX) { toast.error(`La descripción puede tener hasta ${DESCRIPTION_MAX} caracteres`); return; }
+    const problem = hoursProblem(hours);
+    if (problem) { toast.error(problem); return; }
     setSaving(true);
+    if (!(await saveHours(professionalId, hours))) { setSaving(false); return; }
     const { error } = await supabase.rpc("update_my_professional_profile", {
       p_photo_url: photo || null,
       p_description: description.trim() || null,
@@ -76,12 +91,13 @@ export function MyProfileDialog({ open, onClose, professionalId }: { open: boole
       return;
     }
     toast.success("Perfil actualizado");
+    onSaved?.();
     onClose();
   }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[92vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">Mi perfil</DialogTitle>
           <DialogDescription>
@@ -114,8 +130,26 @@ export function MyProfileDialog({ open, onClose, professionalId }: { open: boole
               </div>
             </div>
 
+            <div className="space-y-2">
+              <div>
+                <Label>Mi horario de atención</Label>
+                <p className="text-xs text-muted-foreground">
+                  Los días y horarios en que atendés. En la agenda, el resto se ve en gris y se avisa si alguien te da un turno fuera de horario.
+                </p>
+              </div>
+              <HoursEditor value={hours} onChange={setHours} idPrefix="mp" />
+            </div>
+
             <div className="space-y-1.5">
-              <Label htmlFor="mp-days">Días de atención</Label>
+              <div className="flex items-end justify-between gap-2">
+                <Label htmlFor="mp-days">Días de atención (texto del sitio)</Label>
+                {hoursSummary(hours) && (
+                  <button type="button" className="text-xs font-semibold text-primary hover:underline"
+                    onClick={() => setDays(hoursSummary(hours).slice(0, 120))}>
+                    Usar mi horario
+                  </button>
+                )}
+              </div>
               <Input id="mp-days" value={days} maxLength={120} onChange={(e) => setDays(e.target.value)}
                 placeholder="Ej: Lunes, miércoles y viernes" />
             </div>
