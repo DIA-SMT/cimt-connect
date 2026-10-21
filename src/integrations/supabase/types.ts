@@ -857,6 +857,14 @@ export type Database = {
         }
         Returns: string
       }
+      update_my_professional_profile: {
+        Args: { p_photo_url: string | null; p_description: string | null; p_days: string | null }
+        Returns: undefined
+      }
+      set_professional_hours: {
+        Args: { p_professional: string; p_hours: unknown }
+        Returns: undefined
+      }
       staff_role: {
         Args: Record<PropertyKey, never>
         Returns: string | null

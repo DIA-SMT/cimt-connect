@@ -5,6 +5,7 @@ import { PortalError, handle, setup } from "../../lib/portal";
 import { features, requireStaffRole } from "../../lib/portalClinical";
 import { staffPracticeCounts, staffPracticeInbox } from "../../lib/practice";
 import { staffHcList, staffHcNotes, staffHcPendingCount, staffHcUpdate, staffNotices, staffResolveNotice } from "../../lib/requests";
+import { assertRowPatient, onlyVisible } from "../../lib/staffScope";
 
 // Las prácticas (etapa "practice") nunca frenan el resto de la bandeja: si
 // fallan, no vienen (solo el código del error va a los logs)
@@ -18,7 +19,8 @@ async function soft<T>(p: Promise<T>): Promise<T | null> {
 }
 
 // POST /api/portal-staff/inbox — bandeja del portal en el panel.
-// Cualquier persona activa del panel (todos los roles) puede usarla. Los PDF
+// Cualquier persona activa del panel (todos los roles) puede usarla; un
+// profesional ve y resuelve solo lo de sus pacientes (lib/staffScope). Los PDF
 // de la copia digital, solo profesionales y Dirección (Administración ve los
 // estados).
 //
@@ -70,15 +72,54 @@ export default defineEventHandler((event) => handle(event, async () => {
   const body = (await readBody(event)) as Record<string, unknown> | null;
 
   const withPractice = features().includes("practice");
+  const scoped = staff.role === "profesional";
+  // Acciones sobre un pedido: el profesional, solo si el paciente es suyo
+  const rowCheck: Record<string, [string, unknown, string?]> = {
+    hc_update: ["portal_hc_requests", body?.id], hc_notes: ["portal_hc_requests", body?.id],
+    hc_doc_upload_url: ["portal_hc_requests", body?.request_id], hc_doc_register: ["portal_hc_requests", body?.request_id],
+    hc_send: ["portal_hc_requests", body?.request_id],
+    hc_doc_remove: ["portal_hc_documents", body?.document_id], hc_doc_open: ["portal_hc_documents", body?.document_id],
+    appt_update: ["portal_appt_requests", body?.id], appt_notes: ["portal_appt_requests", body?.id],
+    notice_resolve: ["portal_appointment_responses", body?.response_id, "appointment_id"],
+  };
+  const check = scoped ? rowCheck[String(body?.action)] : undefined;
+  if (check) await assertRowPatient(ctx, staff, check[0], check[1], check[2]);
+
   switch (body?.action) {
     case "list": {
       const [hc, notices, turnos, practice] = await Promise.all([
         staffHcList(ctx), staffNotices(ctx, true), staffApptList(ctx),
         withPractice ? soft(staffPracticeInbox(ctx, staff)) : Promise.resolve(null),
       ]);
+      if (scoped) {
+        const [h, n, t, p] = await Promise.all([
+          onlyVisible(ctx, staff, hc), onlyVisible(ctx, staff, notices), onlyVisible(ctx, staff, turnos),
+          practice ? onlyVisible(ctx, staff, practice.items) : Promise.resolve([]),
+        ]);
+        return { hc: h, notices: n, turnos: t, ...(practice ? { practice: { ...practice, items: p } } : {}) };
+      }
       return { hc, notices, turnos, ...(practice ? { practice } : {}) };
     }
     case "count": {
+      if (scoped) {
+        // Los números salen de lo mismo que la bandeja le muestra
+        const [hc, notices, turnos, practice] = await Promise.all([
+          staffHcList(ctx), staffNotices(ctx), staffApptList(ctx),
+          withPractice ? soft(staffPracticeInbox(ctx, staff)) : Promise.resolve(null),
+        ]);
+        const [h, n, t, p] = await Promise.all([
+          onlyVisible(ctx, staff, hc), onlyVisible(ctx, staff, notices), onlyVisible(ctx, staff, turnos),
+          practice ? onlyVisible(ctx, staff, practice.items) : Promise.resolve([]),
+        ]);
+        // Prácticas: misma cuenta que staffPracticeCounts, solo con sus pacientes
+        const risky = new Set(p.filter((i) => i.kind === "practicas" && i.pending.risk > 0).map((i) => i.patient_id));
+        return {
+          hc_pending: h.filter((r) => r.status === "pendiente").length,
+          notices_pending: n.filter((r) => r.resolution === null).length,
+          turnos_pending: t.filter((r) => r.status === "pendiente").length,
+          ...(practice ? { practice_pending: p.filter((i) => i.mine).length, practice_risk: 0, practice_urgent: risky.size } : {}),
+        };
+      }
       const [hcPending, notices, turnosPending, practice] = await Promise.all([
         staffHcPendingCount(ctx), staffNotices(ctx), staffApptPendingCount(ctx),
         withPractice && staff.clinical ? soft(staffPracticeCounts(ctx, staff)) : Promise.resolve(null),

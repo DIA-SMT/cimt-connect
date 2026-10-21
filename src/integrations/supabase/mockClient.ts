@@ -86,6 +86,10 @@ const store: Record<string, Row[]> = {
   professionals: MOCK_PROFESSIONALS.map((p, i) => ({
     ...p, license: String(1000 + i * 137), active: true, show_on_site: false, user_id: null,
     session_minutes: p.specialty.toLowerCase().startsWith("psicolog") ? 40 : 30,
+    // Horario de atención de ejemplo (script 36): se ve en gris en la agenda
+    weekly_hours: i % 2 === 0
+      ? { lun: [{ start: "08:00", end: "12:00" }, { start: "14:00", end: "17:00" }], mie: [{ start: "08:00", end: "12:00" }], vie: [{ start: "08:00", end: "13:00" }] }
+      : { mar: [{ start: "08:00", end: "13:00" }], mie: [{ start: "09:00", end: "13:00" }, { start: "14:00", end: "18:00" }], jue: [{ start: "08:00", end: "13:00" }] },
   })) as unknown as Row[],
   patients: [...patientsByDni.values()],
   appointments: MOCK_APPOINTMENTS.map((a) => ({
@@ -348,6 +352,43 @@ function currentEmail(): string | null {
   return session?.user.email ?? null;
 }
 
+// ─── Qué ve cada rol (script 34) ─────────────────────────────────────────────
+// Dirección y Administración: todo. Profesional: sus pacientes (a cargo, con
+// turnos con él o de solicitudes que le derivaron), sus turnos y las
+// solicitudes derivadas a él.
+const PATIENT_CHILD_TABLES = new Set([
+  "patient_guardians", "patient_files", "patient_followups", "patient_referrals",
+  "patient_reports", "clinical_forms", "audit_log",
+]);
+
+function myProfessionalId(): unknown {
+  return store.professionals.find((p) => p.user_id === session?.user.id)?.id ?? null;
+}
+
+function isMyPatient(patientId: unknown): boolean {
+  if (staffRole() !== "profesional") return true;
+  const mine = myProfessionalId();
+  if (!mine || !patientId) return false;
+  return store.patients.some((p) => p.id === patientId && p.professional_id === mine)
+    || store.appointments.some((a) => a.patient_id === patientId && a.professional_id === mine && a.status !== "cancelado")
+    || store.intake_requests.some((q) => q.patient_id === patientId && q.assigned_professional_id === mine);
+}
+
+/** Para el portal demo (mockPortal): la bandeja del profesional, solo sus pacientes */
+export function mockIsMyPatient(patientId: unknown): boolean {
+  return isMyPatient(patientId);
+}
+
+function rowVisible(table: string, row: Row): boolean {
+  if (staffRole() !== "profesional") return true;
+  const mine = myProfessionalId();
+  if (table === "patients") return isMyPatient(row.id);
+  if (table === "appointments") return row.professional_id === mine || isMyPatient(row.patient_id);
+  if (table === "intake_requests") return !!mine && row.assigned_professional_id === mine;
+  if (PATIENT_CHILD_TABLES.has(table)) return isMyPatient(row.patient_id);
+  return true;
+}
+
 // ─── Query builder ───────────────────────────────────────────────────────────
 
 class MockQueryBuilder {
@@ -444,6 +485,13 @@ class MockQueryBuilder {
       if (this._table === "patients" && this._store.some((p) => p.dni === this._insertPayload!.dni)) {
         return { data: null, error: { message: "duplicate key", code: "23505" } };
       }
+      // Una ficha que crea un profesional queda a su cargo (trigger del script 34)
+      if (this._table === "patients" && staffRole() === "profesional" && !this._insertPayload.professional_id) {
+        this._insertPayload = { ...this._insertPayload, professional_id: myProfessionalId() };
+      }
+      if (PATIENT_CHILD_TABLES.has(this._table) && !isMyPatient(this._insertPayload.patient_id)) {
+        return { data: null, error: { message: "new row violates row-level security policy", code: "42501" } };
+      }
       const newRow: Row = {
         id: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         created_at: now,
@@ -467,8 +515,14 @@ class MockQueryBuilder {
 
     // UPDATE
     if (this._updatePayload !== null) {
-      const targets = this._store.filter((row) => this._filters.every((f) => f(row)));
+      const targets = this._store.filter((row) => this._filters.every((f) => f(row)) && rowVisible(this._table, row));
       const payload = this._updatePayload;
+      // Derivar: Dirección o Administración (trigger intake_requests_guard, script 34)
+      if (this._table === "intake_requests" && "assigned_professional_id" in payload
+          && !["direccion", "administracion"].includes(staffRole() ?? "")
+          && targets.some((row) => row.assigned_professional_id !== payload.assigned_professional_id)) {
+        return { data: null, error: { message: "NOT_ALLOWED: Solo Administración puede derivar solicitudes" } };
+      }
 
       if (this._table === "patients" && staffRole() === "administracion") {
         const touchesClinical = targets.some((row) => CLINICAL_PATIENT_FIELDS.some(
@@ -504,7 +558,7 @@ class MockQueryBuilder {
         if (this._table === "appointments" && payload.attendance === "presente" && !row.practice_number) {
           Object.assign(payload, { practice_number: practiceSeq++, practice_registered_at: now });
         }
-        // Lo que hace el trigger intake_requests_guard (script 30): derivación y primer contacto
+        // Lo que hace el trigger intake_requests_guard (scripts 30 y 34): derivación y primer contacto
         if (this._table === "intake_requests") {
           if ("assigned_professional_id" in payload && payload.assigned_professional_id !== row.assigned_professional_id) {
             Object.assign(payload, payload.assigned_professional_id
@@ -525,7 +579,7 @@ class MockQueryBuilder {
     }
 
     // SELECT
-    let rows = this._store.filter((r) => this._filters.every((f) => f(r))).map((r) => ({ ...r }));
+    let rows = this._store.filter((r) => this._filters.every((f) => f(r)) && rowVisible(this._table, r)).map((r) => ({ ...r }));
 
     // Ordering: el primer order() es la clave principal
     rows.sort((a, b) => {
@@ -572,6 +626,30 @@ function setSession(next: MockSession, event: string) {
 // ─── RPCs ────────────────────────────────────────────────────────────────────
 
 function rpc(fn: string, args: Row = {}) {
+  if (fn === "set_professional_hours") {
+    // Script 36: el propio profesional, Administración o Dirección
+    const role = staffRole();
+    const mine = store.professionals.find((p) => p.user_id === session?.user.id)?.id;
+    if (!(role === "direccion" || role === "administracion" || (mine && mine === args.p_professional))) {
+      return Promise.resolve({ data: null, error: { message: "NOT_ALLOWED: Solo el profesional, Administración o Dirección pueden cambiar este horario" } });
+    }
+    const pro = store.professionals.find((p) => p.id === args.p_professional);
+    if (!pro) return Promise.resolve({ data: null, error: { message: "NOT_FOUND: No encontramos a ese profesional" } });
+    pro.weekly_hours = args.p_hours && Object.keys(args.p_hours as object).length ? args.p_hours : null;
+    return Promise.resolve({ data: null, error: null });
+  }
+
+  if (fn === "update_my_professional_profile") {
+    // Script 35: cada profesional cambia solo su foto, descripción y días
+    const pro = store.professionals.find((p) => p.user_id === session?.user.id);
+    if (!pro) return Promise.resolve({ data: null, error: { message: "NOT_LINKED: Tu usuario no está vinculado a un profesional. Pedile a la Dirección que lo vincule en Equipo." } });
+    if (String(args.p_description ?? "").length > 600) {
+      return Promise.resolve({ data: null, error: { message: "INVALID_DESCRIPTION: La descripción puede tener hasta 600 caracteres" } });
+    }
+    Object.assign(pro, { photo_url: args.p_photo_url ?? null, description: args.p_description ?? null, days: args.p_days ?? null });
+    return Promise.resolve({ data: null, error: null });
+  }
+
   if (fn === "current_staff") {
     const row = store.admins.find((a) => a.user_id === session?.user.id && a.active);
     if (!row) return Promise.resolve({ data: null, error: null });

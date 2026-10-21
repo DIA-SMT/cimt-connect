@@ -7,8 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Ban, CalendarClock, CalendarPlus, Check, ChevronLeft, ChevronRight, Loader2, MessageCircle, Phone, Printer, Video, BellRing,
+  Ban, CalendarClock, CalendarPlus, Check, ChevronLeft, ChevronRight, Clock, Loader2, MessageCircle, Phone, Printer, Video, BellRing,
 } from "lucide-react";
+import { HoursDialog } from "./HoursEditor";
+import { weekdayOfKey } from "@/lib/apptSchedule";
+import { closedWindows, hoursSummary, parseWeeklyHours, withinHours } from "@/lib/workHours";
 import { selectClass } from "./fields";
 import { useMine } from "./useMine";
 import { REMINDER_CHANNEL_LABEL, reminderPhone, reminderPhoneKind, setReminder, whatsappLink, type ReminderChannel } from "@/lib/reminders";
@@ -17,7 +20,7 @@ import { RESOLUTION_LABEL, portalStaffApi } from "@/lib/portalStaff";
 import { REASONS, stampLabel } from "@/lib/portal";
 import type { StaffNotice } from "@/lib/portalRules";
 import { ScopeToggle } from "./ScopeToggle";
-import { canEditClinical, type Staff } from "@/lib/staff";
+import { canEditClinical, seesAllPatients, type Staff } from "@/lib/staff";
 import { formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
 import {
   AGENDA_END_MIN, AGENDA_START_MIN, ATTENDANCE_LABEL, addDays, agendaErrorMessage, blockAffects,
@@ -35,6 +38,8 @@ type Props = {
   onOpenPatient: (patientId: string) => void;
   /** Abre Portal → Avisos de turnos (para resolver un aviso de la familia) */
   onOpenNotices?: () => void;
+  /** Se cambió el horario de un profesional: recargar la lista */
+  onHoursChanged?: () => void;
 };
 
 // Turnos sobre los que la familia avisó por el portal que no va: el aviso más
@@ -48,7 +53,7 @@ const HEADER_H = "h-16";
 // En computadora la grilla usa el scroll de la página: la fila de profesionales
 // queda fija debajo de la barra del sitio (h-16 + borde). En celular la grilla
 // se desplaza de costado y la columna de horas queda fija.
-const STICKY_TOP = "top-0 lg:top-[65px]";
+const STICKY_TOP = "top-0 lg:top-[57px]"; // debajo de PanelHeader
 const UNASSIGNED = "__sin_asignar__";
 
 const APPT_SELECT = "*, patients(first_name, last_name, dni, phone, guardian_phone, guardian_name, patient_type, phone_kind, guardian_phone_kind, autonomy)";
@@ -73,7 +78,10 @@ function nowMinutes(): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices }: Props) {
+export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices, onHoursChanged }: Props) {
+  // Horario de cada profesional: Administración y Dirección lo cambian desde acá
+  const canEditHours = seesAllPatients(staff.role);
+  const [editingHoursOf, setEditingHoursOf] = useState<ProfessionalOption | null>(null);
   const [notices, setNotices] = useState<NoticeMap>(new Map());
   const [date, setDate] = useState(() => firstWorkdayFrom(todayKey()));
   const [appts, setAppts] = useState<AgendaAppointment[]>([]);
@@ -280,6 +288,14 @@ export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices }
                         <div className="truncate text-sm font-bold text-[color:var(--primary-deep)]" title={col.title}>{col.title}</div>
                         <div className={`truncate text-xs ${colToday ? "font-semibold text-primary" : "text-muted-foreground"}`}>{col.subtitle}</div>
                       </div>
+                      {canEditHours && !weekMode && col.id !== UNASSIGNED && (
+                        <button type="button" aria-label={`Horario de ${col.title}`}
+                          title={hoursSummary(parseWeeklyHours(professionals.find((p) => p.id === col.proId)?.weekly_hours)) || "Cargar el horario de atención"}
+                          onClick={() => setEditingHoursOf(professionals.find((p) => p.id === col.proId) ?? null)}
+                          className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-[color:var(--primary-soft)] hover:text-[color:var(--primary-deep)]">
+                          <Clock className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {colAppts.length > 0 && (
                         <span className="shrink-0 rounded-full bg-[color:var(--primary-soft)] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[color:var(--primary-deep)]"
                           title={`${colAppts.length} turno${colAppts.length === 1 ? "" : "s"}`}>
@@ -297,6 +313,20 @@ export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices }
                       <div key={i} className={`absolute inset-x-0 border-t ${i % 2 === 0 ? "border-border/80" : "border-dashed border-border/40"}`}
                         style={{ top: i * 30 * PX_PER_MIN }} />
                     ))}
+                    {(() => {
+                      const hours = parseWeeklyHours(professionals.find((p) => p.id === col.proId)?.weekly_hours);
+                      const wd = weekdayOfKey(col.date);
+                      if (!hours || !wd) return null;
+                      return closedWindows(hours, wd).map((w) => (
+                        <div key={`fuera-${w.start}`} className="pointer-events-none absolute inset-x-0 bg-muted/90"
+                          title="Fuera del horario de atención"
+                          style={{ top: (w.start - AGENDA_START_MIN) * PX_PER_MIN, height: (w.end - w.start) * PX_PER_MIN }}>
+                          {w.end - w.start >= 60 && w.start === AGENDA_START_MIN && w.end === AGENDA_END_MIN && (
+                            <div className="pt-2 text-center text-[11px] font-semibold text-muted-foreground">No atiende</div>
+                          )}
+                        </div>
+                      ));
+                    })()}
                     {colBlocks.map((b) => {
                       const start = b.start_time ? toMinutes(b.start_time) : AGENDA_START_MIN;
                       const end = b.end_time ? toMinutes(b.end_time) : AGENDA_END_MIN;
@@ -331,6 +361,8 @@ export function AgendaTab({ professionals, staff, onOpenPatient, onOpenNotices }
         </div>
       )}
 
+      <HoursDialog professional={editingHoursOf} onClose={() => setEditingHoursOf(null)}
+        onSaved={() => onHoursChanged?.()} />
       {creating && (
         <NewAppointmentDialog
           professionals={professionals}
@@ -587,6 +619,16 @@ function NewAppointmentDialog({ professionals, initial, onClose, onSaved }: {
             </select>
           </div>
         </div>
+        {(() => {
+          // Fuera del horario de atención: se avisa, no se frena (excepciones)
+          const hours = parseWeeklyHours(pro?.weekly_hours);
+          const inside = withinHours(hours, weekdayOfKey(form.date), form.time, Number(form.duration));
+          return inside === false ? (
+            <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <strong>Fuera del horario de atención</strong> de {pro?.name}: {hoursSummary(hours)}. Se puede agendar igual.
+            </p>
+          ) : null;
+        })()}
         <div className="space-y-1.5">
           <Label htmlFor="na-reason">Nota (opcional)</Label>
           <Input id="na-reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Ej: Evaluación inicial" />

@@ -1,6 +1,8 @@
-// Roles del panel (relevamiento, respuestas 12, 14 y 47). Los permisos reales
-// los aplica la base (11_roles_equipo_historial.sql); acá solo se decide qué
-// mostrar u ocultar en pantalla.
+// Roles del panel. Los permisos reales los aplica la base (scripts 11 y 34);
+// acá solo se decide qué mostrar u ocultar en pantalla.
+//   - Dirección: control total (equipo de sistemas).
+//   - Administración: ve todo, recibe las solicitudes y las deriva.
+//   - Profesional: solo sus pacientes, su agenda y las solicitudes derivadas.
 import { supabase } from "@/integrations/supabase/client";
 
 export type StaffRole = "direccion" | "profesional" | "administracion";
@@ -19,13 +21,15 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
 };
 
 export const ROLE_DESCRIPTION: Record<StaffRole, string> = {
-  direccion: "Todo, más la gestión de profesionales y usuarios",
-  profesional: "Turnos y pacientes, más datos clínicos, derivaciones, informes y seguimiento",
-  administracion: "Turnos, pacientes (datos de contacto) y asistencia",
+  direccion: "Control total: todo, más profesionales, usuarios e hitos del sitio",
+  profesional: "Solo sus pacientes y su agenda: datos clínicos, evaluaciones, informes y seguimiento",
+  administracion: "Recibe y deriva las solicitudes; ve todos los pacientes y la agenda (lo clínico, sin editar)",
 };
 
 export const canEditClinical = (role: StaffRole) => role === "direccion" || role === "profesional";
 export const isDirector = (role: StaffRole) => role === "direccion";
+/** Dirección y Administración ven a todos los pacientes y derivan solicitudes */
+export const seesAllPatients = (role: StaffRole) => role === "direccion" || role === "administracion";
 
 export type PanelUser = {
   user_id: string;

@@ -197,7 +197,7 @@ import {
   AI_DRAFT_DAILY_CAP_DEFAULT, AI_ERROR, PROMPT_VERSION, buildAdaptParams, describeSent, draftToExerciseInput, editRatio,
   exerciseFullText, mockDraft, parseExerciseDraft,
 } from "@/lib/aiDraftRules";
-import { mockSupabase } from "./mockClient";
+import { mockIsMyPatient, mockSupabase } from "./mockClient";
 
 // ── Modelo ──────────────────────────────────────────────────────────────────
 
@@ -3459,15 +3459,17 @@ async function staffApptList(db: Db): Promise<StaffApptRequest[]> {
 export async function staffInbox(): Promise<ApiResult<StaffInbox>> {
   await wait(350);
   const db = load();
-  const hc = await staffHcList(db);
-  const notices = await staffNotices(db);
-  const turnos = await staffApptList(db);
+  // Un profesional ve solo lo de sus pacientes (como lib/staffScope.ts del servidor)
+  const mine = <T extends { patient_id: string }>(rows: T[]) => rows.filter((r) => mockIsMyPatient(r.patient_id));
+  const hc = mine(await staffHcList(db));
+  const notices = mine(await staffNotices(db));
+  const turnos = mine(await staffApptList(db));
   if (!FEATURES.includes("practice")) return ok({ hc, notices, turnos });
   const staff = await currentStaff("");
   const clinical = staff.ok && staff.clinical;
   return ok({
     hc, notices, turnos,
-    practice: { allowed: clinical, items: clinical ? await practiceInboxItems(load(), staff) : [] },
+    practice: { allowed: clinical, items: clinical ? mine(await practiceInboxItems(load(), staff)) : [] },
   });
 }
 
@@ -3481,14 +3483,14 @@ export async function staffInboxCount(): Promise<StaffInboxCount> {
   await wait(150);
   const db = load();
   const counts: StaffInboxCount = {
-    hc_pending: db.hc_requests.filter((r) => r.status === "pendiente").length,
-    notices_pending: (await staffNotices(db)).filter((n) => n.resolution === null).length,
-    turnos_pending: db.appt_requests.filter((r) => r.status === "pendiente").length,
+    hc_pending: db.hc_requests.filter((r) => r.status === "pendiente" && mockIsMyPatient(r.patient_id)).length,
+    notices_pending: (await staffNotices(db)).filter((n) => n.resolution === null && mockIsMyPatient(n.patient_id)).length,
+    turnos_pending: db.appt_requests.filter((r) => r.status === "pendiente" && mockIsMyPatient(r.patient_id)).length,
   };
   if (!FEATURES.includes("practice")) return counts;
   const staff = await currentStaff("");
   if (!staff.ok || !staff.clinical) return counts;
-  const items = await practiceInboxItems(load(), staff);
+  const items = (await practiceInboxItems(load(), staff)).filter((i) => mockIsMyPatient(i.patient_id));
   const risky = items.filter((i) => i.kind === "practicas" && i.pending.risk > 0);
   const patients = (rows: StaffPracticeInboxItem[]) => new Set(rows.map((i) => i.patient_id)).size;
   return {
