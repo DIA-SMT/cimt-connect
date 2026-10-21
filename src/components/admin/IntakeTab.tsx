@@ -32,11 +32,13 @@ type Props = {
   canAssign: boolean;
   /** Profesional: la base le muestra solo las solicitudes que le derivaron */
   scoped?: boolean;
+  /** Cambia cuando llega o se atiende una solicitud (tiempo real): recargar la bandeja */
+  reloadKey?: number;
 };
 
 const OPEN_STATUSES: IntakeStatus[] = ["nueva", "contactada", "taller"];
 
-export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssign, scoped = false }: Props) {
+export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssign, scoped = false, reloadKey = 0 }: Props) {
   const [requests, setRequests] = useState<IntakeRequest[]>([]);
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +59,8 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
   }
 
   useEffect(() => { load(); }, []);
+  // Llegó o se atendió una solicitud (desde otra compu o el sitio): recargar sin parpadeo
+  useEffect(() => { if (reloadKey) void load(); }, [reloadKey]);
 
   // Contador de solicitudes nuevas para la pestaña del panel
   useEffect(() => {
