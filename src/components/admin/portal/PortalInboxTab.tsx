@@ -239,7 +239,7 @@ function practiceItems(d: StaffInbox): StaffPracticeInboxItem[] {
 }
 
 // Con qué lista abrir si no se eligió ninguna: los avisos si hay alguno sin
-// resolver (son lo más urgente); después las copias (tienen plazo de 48 h) y,
+// resolver (son lo más urgente); después las copias y,
 // si no hay ninguna pendiente, los pedidos de turno. Se decide una sola vez,
 // con la primera carga: después la lista no cambia sola al resolver algo.
 function defaultView(p: ReturnType<typeof pendingOf>): View {
@@ -571,7 +571,7 @@ function HcRow({ r, now, onOpen }: { r: StaffHcRequest; now: number; onOpen: () 
           <span title={`Pedido el ${stampLabel(r.created_at)}`}
             className={`ml-auto inline-flex items-center gap-1 text-xs ${late ? `font-semibold ${TEXT_BAD}` : slow ? `font-semibold ${TEXT_WARN}` : "text-muted-foreground"}`}>
             {slow && <Clock className="h-3.5 w-3.5" aria-hidden />}
-            {ago(r.created_at, now)}{late && " · Pasaron más de 48 h"}
+            {ago(r.created_at, now)}{late && " · Espera hace más de 2 días"}
           </span>
         </div>
         <div className="flex flex-wrap gap-x-1.5 text-xs text-muted-foreground">
@@ -760,8 +760,8 @@ function HcDialog({ request: r, now, digital, onClose, onSaved, onNotesSaved, on
         <p className="flex gap-2 text-xs text-muted-foreground">
           <Scale className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           {showDigital || r.status === "enviada"
-            ? "Ley 26.529: la copia se entrega dentro de las 48 h de pedida."
-            : "Ley 26.529: la copia se entrega dentro de las 48 h de pedida, en mano y con DNI."}
+            ? "Ley 26.529: el paciente (o su representante) tiene derecho a una copia de su historia clínica."
+            : "Ley 26.529: el paciente (o su representante) tiene derecho a una copia de su historia clínica. Se entrega en mano y con DNI."}
         </p>
 
         {channel === "portal" && isOpen(r.status) && digital === false && (

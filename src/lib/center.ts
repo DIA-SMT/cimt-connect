@@ -17,9 +17,14 @@ export const CENTER = {
 } as const;
 
 export const DISCIPLINES = [
+  // Fonoaudiología va en dos áreas (pedido del centro, octubre 2026)
   {
-    name: "Fonoaudiología",
-    description: "Evaluación y tratamiento de la fluidez del habla y de la comunicación.",
+    name: "Fonoaudiología especialista en tartamudez",
+    description: "Evaluación y tratamiento de la tartamudez y de la fluidez del habla, con la persona y su familia.",
+  },
+  {
+    name: "Fonoaudiología neurolingüística",
+    description: "Evaluación y abordaje del lenguaje y la comunicación: cómo se comprende, se organiza y se expresa lo que se quiere decir.",
   },
   {
     name: "Psicología",
