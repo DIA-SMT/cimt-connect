@@ -435,6 +435,11 @@ class MockQueryBuilder {
     return this;
   }
 
+  in(col: string, values: readonly unknown[]) {
+    this._filters.push((row) => values.includes(row[col]));
+    return this;
+  }
+
   limit(_n: number) {
     return this;
   }
