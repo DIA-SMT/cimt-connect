@@ -10,8 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Loader2, Save, User, Stethoscope, ArrowRightLeft, NotebookPen, CalendarDays, Plus, X,
-  Home, History, FileCheck2, MonitorSmartphone,
+  Home, History, FileCheck2, MonitorSmartphone, CalendarPlus,
 } from "lucide-react";
+import { DarTurno } from "./DarTurno";
 import { formatTime } from "@/lib/appointments";
 import { Chip, Section, TextAreaField, TextField, selectClass } from "./fields";
 import { ReportsSection } from "./PatientReports";
@@ -92,6 +93,11 @@ const SHEET_TABS = [
 ] as const;
 type SheetTab = (typeof SHEET_TABS)[number]["id"];
 
+const apptsQuery = (patientId: string) => supabase.from("appointments")
+  .select("id, appointment_date, appointment_time, status, consultation_type, modality, reason, professional_id, duration_minutes, attendance, practice_number")
+  .eq("patient_id", patientId)
+  .order("appointment_date", { ascending: false });
+
 export function PatientRecordSheet({ patientId, professionals, onClose, onChanged, staff }: Props) {
   const clinical = canEditClinical(staff.role);
   const [tab, setTab] = useState<SheetTab>("datos");
@@ -101,6 +107,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [appts, setAppts] = useState<PatientAppt[]>([]);
+  const [booking, setBooking] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const changed = useRef(false);
@@ -117,10 +124,7 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
         .order("referral_date", { ascending: false }),
       supabase.from("patient_followups").select("*").eq("patient_id", patientId)
         .order("note_date", { ascending: false }).order("created_at", { ascending: false }),
-      supabase.from("appointments")
-        .select("id, appointment_date, appointment_time, status, consultation_type, modality, reason, professional_id, duration_minutes, attendance, practice_number")
-        .eq("patient_id", patientId)
-        .order("appointment_date", { ascending: false }),
+      apptsQuery(patientId),
       supabase.from("patient_reports").select("*").eq("patient_id", patientId)
         .order("report_date", { ascending: false }).order("created_at", { ascending: false }),
     ]).then(([p, r, f, a, rep]) => {
@@ -142,6 +146,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId]);
+
+  // Después de dar un turno desde acá
+  async function reloadAppts() {
+    if (!patientId) return;
+    const { data } = await apptsQuery(patientId);
+    if (data) setAppts(data as PatientAppt[]);
+    changed.current = true;
+  }
 
   const dirty = !!patient && !!draft && EDITABLE_FIELDS.some(
     (k) => JSON.stringify(patient[k]) !== JSON.stringify(draft[k]),
@@ -560,10 +572,14 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
 
               {/* ── Turnos y derivaciones ── */}
               <div role="tabpanel" hidden={tab !== "turnos"} className="grid items-start gap-8 xl:grid-cols-2">
-              <Section icon={CalendarDays} title="Turnos y asistencia">
+              <Section icon={CalendarDays} title="Turnos y asistencia" action={
+                <Button size="sm" onClick={() => setBooking(true)} className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+                  <CalendarPlus className="mr-1.5 h-3.5 w-3.5" /> Dar turno
+                </Button>
+              }>
                 <AttendanceSummary appts={appts} />
                 {appts.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No tiene turnos registrados. Se dan desde la pestaña Agenda.</p>
+                  <p className="text-sm text-muted-foreground">No tiene turnos registrados. Dale el primero con «Dar turno».</p>
                 ) : (
                   <ul className="divide-y divide-border/60 rounded-2xl border border-border/60">
                     {appts.map((a) => {
@@ -642,6 +658,10 @@ export function PatientRecordSheet({ patientId, professionals, onClose, onChange
               </div>
             </div>
           </>
+        )}
+        {booking && draft && (
+          <DarTurno patientId={draft.id} professionals={professionals}
+            onBooked={() => void reloadAppts()} onClose={() => setBooking(false)} />
         )}
       </SheetContent>
     </Sheet>

@@ -10,6 +10,7 @@ import {
   Ban, CalendarClock, CalendarPlus, Check, ChevronLeft, ChevronRight, Clock, Loader2, MessageCircle, Phone, Printer, Video, BellRing,
 } from "lucide-react";
 import { HoursDialog } from "./HoursEditor";
+import { FreeSlots } from "./FreeSlots";
 import { weekdayOfKey } from "@/lib/apptSchedule";
 import { closedWindows, hoursSummary, parseWeeklyHours, withinHours } from "@/lib/workHours";
 import { selectClass } from "./fields";
@@ -466,35 +467,47 @@ function Legend({ color, label }: { color: string; label: string }) {
 
 // ─── Nuevo turno ─────────────────────────────────────────────────────────────
 
-type PatientLite = { id: string; first_name: string; last_name: string; dni: string };
+export type PatientLite = { id: string; first_name: string; last_name: string; dni: string };
 
-function NewAppointmentDialog({ professionals, initial, onClose, onSaved }: {
+// Lo que quedó agendado (el primero, si se repite): para avisar a la familia
+export type BookedAppt = {
+  patient_id: string; professional_id: string; appointment_date: string; appointment_time: string;
+  modality: Modality; consultation_type: "primera_vez" | "seguimiento"; weekly: number;
+};
+
+// También se abre al admitir una derivación y desde la ficha (DarTurno.tsx):
+// con el paciente fijo (fixedPatient) y, al guardar, onBooked
+export function NewAppointmentDialog({ professionals, initial, fixedPatient, title, onClose, onSaved, onBooked }: {
   professionals: ProfessionalOption[];
-  initial: { professional_id: string; time: string; date: string };
+  initial: { professional_id: string; time: string; date: string; modality?: Modality; consultation_type?: "primera_vez" | "seguimiento" };
+  fixedPatient?: PatientLite;
+  title?: string;
   onClose: () => void;
   onSaved: () => void;
+  onBooked?: (b: BookedAppt) => void;
 }) {
   const activePros = professionals.filter((p) => p.active !== false);
   const [patients, setPatients] = useState<PatientLite[]>([]);
   const [query, setQuery] = useState("");
-  const [patient, setPatient] = useState<PatientLite | null>(null);
+  const [patient, setPatient] = useState<PatientLite | null>(fixedPatient ?? null);
   const [professionalId, setProfessionalId] = useState(initial.professional_id || activePros[0]?.id || "");
   const pro = professionals.find((p) => p.id === professionalId);
   const [form, setForm] = useState({
     date: initial.date,
     time: initial.time,
     duration: String(pro?.session_minutes ?? 30),
-    modality: "presencial" as Modality,
-    consultation_type: "seguimiento" as "primera_vez" | "seguimiento",
+    modality: initial.modality ?? ("presencial" as Modality),
+    consultation_type: initial.consultation_type ?? ("seguimiento" as "primera_vez" | "seguimiento"),
     reason: "",
     repeat: "1",
   });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (fixedPatient) return;
     supabase.from("patients").select("id, first_name, last_name, dni").order("last_name")
       .then(({ data }: { data: PatientLite[] | null }) => setPatients(data ?? []));
-  }, []);
+  }, [fixedPatient]);
 
   function changeProfessional(id: string) {
     setProfessionalId(id);
@@ -540,21 +553,30 @@ function NewAppointmentDialog({ professionals, initial, onClose, onSaved }: {
     if (ok > 0) toast.success(ok === 1 ? "Turno agendado" : `${ok} turnos agendados`);
     if (failed.length) toast.error(failed.join(" · "), { duration: 8000 });
     if (ok > 0) onSaved();
+    // Para avisar: el primero que quedó (si falló el primero, el siguiente)
+    if (ok > 0 && onBooked) {
+      const firstOk = Array.from({ length: repeat }, (_, i) => addDays(form.date, i * 7))
+        .find((d) => !failed.some((f) => f.startsWith(`${formatShortDate(d)}:`)));
+      onBooked({
+        patient_id: patient.id, professional_id: professionalId, appointment_date: firstOk ?? form.date,
+        appointment_time: form.time, modality: form.modality, consultation_type: form.consultation_type, weekly: ok,
+      });
+    }
   }
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-h-[92vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">Nuevo turno</DialogTitle>
-          <DialogDescription>El paciente tiene que estar admitido (con ficha).</DialogDescription>
+          <DialogTitle className="font-display text-2xl text-[color:var(--primary-deep)]">{title ?? "Nuevo turno"}</DialogTitle>
+          <DialogDescription>{fixedPatient ? "Elegí un horario libre o cargá día y hora a mano." : "El paciente tiene que estar admitido (con ficha)."}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           <Label htmlFor="na-patient">Paciente</Label>
           {patient ? (
             <div className="flex items-center justify-between rounded-md border border-input px-3 py-2 text-sm">
               <span><strong>{patient.last_name}, {patient.first_name}</strong> · DNI {patient.dni}</span>
-              <Button size="sm" variant="ghost" onClick={() => { setPatient(null); setQuery(""); }}>Cambiar</Button>
+              {!fixedPatient && <Button size="sm" variant="ghost" onClick={() => { setPatient(null); setQuery(""); }}>Cambiar</Button>}
             </div>
           ) : (
             <>
@@ -583,6 +605,8 @@ function NewAppointmentDialog({ professionals, initial, onClose, onSaved }: {
               {activePros.map((p) => <option key={p.id} value={p.id}>{p.name} — {p.specialty}</option>)}
             </select>
           </div>
+          <FreeSlots professional={pro} patientId={patient?.id ?? null} duration={Number(form.duration)}
+            date={form.date} time={form.time} onPick={(s) => setForm({ ...form, date: s.date, time: s.time })} />
           <div className="space-y-1.5">
             <Label htmlFor="na-date">Fecha</Label>
             <Input id="na-date" type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />

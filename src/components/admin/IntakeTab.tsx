@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CalendarPlus, CheckCircle2, Loader2, Phone, Search, UserPlus, Users, XCircle } from "lucide-react";
 import { selectClass } from "./fields";
+import { DarTurno } from "./DarTurno";
 import { PATIENT_TYPE_LABEL, formatShortDate, todayKey, type ProfessionalOption } from "@/lib/patients";
 import { GUARDIAN_RELATIONSHIP_LABEL, localityWithProvince } from "@/lib/intake";
 import { PHONE_KIND_LABEL } from "@/lib/contact";
@@ -43,6 +44,8 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
   const [filter, setFilter] = useState<"abiertas" | IntakeStatus>("abiertas");
   const [query, setQuery] = useState("");
   const [openRequest, setOpenRequest] = useState<IntakeRequest | null>(null);
+  // Al admitir (o desde una ya admitida): dar el turno y avisar a la familia
+  const [booking, setBooking] = useState<{ patientId: string; request: IntakeRequest; admitted: boolean } | null>(null);
   const [openWorkshop, setOpenWorkshop] = useState<Workshop | "new" | null>(null);
 
   async function load() {
@@ -123,7 +126,7 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
     const ok = await update(r.id, { status: "admitida", patient_id: patientId }, "Paciente admitido");
     if (ok) {
       setOpenRequest(null);
-      onOpenPatient(patientId);
+      setBooking({ patientId, request: r, admitted: true });
     }
   }
 
@@ -260,8 +263,26 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
           onUpdate={(patch, msg) => update(openRequest.id, patch, msg)}
           onAdmit={() => admit(openRequest)}
           onOpenPatient={onOpenPatient}
+          onBook={(patientId) => { setOpenRequest(null); setBooking({ patientId, request: openRequest, admitted: false }); }}
           professionals={professionals}
           canAssign={canAssign}
+        />
+      )}
+      {booking && (
+        <DarTurno
+          patientId={booking.patientId}
+          professionals={professionals}
+          professionalId={booking.request.assigned_professional_id}
+          modality={booking.request.preferred_modality}
+          consultationType="primera_vez"
+          title={booking.admitted ? "Paciente admitido: dar el primer turno" : "Dar el primer turno"}
+          onOpenPatient={onOpenPatient}
+          onClose={(booked) => {
+            const { patientId, admitted } = booking;
+            setBooking(null);
+            // Recién admitido y sin turno: se abre la ficha, como antes
+            if (admitted && !booked) onOpenPatient(patientId);
+          }}
         />
       )}
       {openWorkshop && (
@@ -279,7 +300,7 @@ export function IntakeTab({ onOpenPatient, onCountChange, professionals, canAssi
 
 // ─── Detalle de una solicitud ────────────────────────────────────────────────
 
-function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate, onAdmit, onOpenPatient, professionals, canAssign }: {
+function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate, onAdmit, onOpenPatient, onBook, professionals, canAssign }: {
   professionals: ProfessionalOption[];
   canAssign: boolean;
   request: IntakeRequest;
@@ -289,6 +310,7 @@ function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate,
   onUpdate: (patch: Partial<IntakeRequest>, okMessage?: string) => Promise<boolean>;
   onAdmit: () => Promise<void>;
   onOpenPatient: (patientId: string) => void;
+  onBook: (patientId: string) => void;
 }) {
   const [notes, setNotes] = useState(r.notes ?? "");
   const [workshopId, setWorkshopId] = useState(r.workshop_id ?? workshops[0]?.id ?? "");
@@ -348,10 +370,15 @@ function RequestDialog({ request: r, workshops, workshopById, onClose, onUpdate,
 
         {/* Pasos del circuito */}
         {r.status === "admitida" && r.patient_id ? (
-          <Button onClick={() => { onClose(); onOpenPatient(r.patient_id!); }}
-            className="w-full bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
-            Abrir ficha del paciente
-          </Button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button onClick={() => onBook(r.patient_id!)}
+              className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+              <CalendarPlus className="mr-1.5 h-4 w-4" /> Dar turno
+            </Button>
+            <Button variant="outline" onClick={() => { onClose(); onOpenPatient(r.patient_id!); }}>
+              Abrir ficha del paciente
+            </Button>
+          </div>
         ) : !closed && (
           <div className="space-y-3 rounded-2xl border border-border/60 p-4">
             {r.status === "nueva" && (
