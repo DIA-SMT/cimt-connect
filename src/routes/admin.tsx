@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen, BellRing, UserRound } from "lucide-react";
 import { MyProfileDialog } from "@/components/admin/MyProfileDialog";
+import { useNewRequests } from "@/components/admin/useNewRequests";
 import { toast } from "sonner";
 import { AdminDashboard } from "@/components/AdminDashboard";
 import { PatientsTab } from "@/components/admin/PatientsTab";
@@ -279,13 +280,15 @@ function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => 
 function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void }) {
   const [appts, setAppts] = useState<Appt[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("agenda");
+  // Solicitudes nuevas en tiempo real: número de la pestaña, cartel y aviso emergente
+  const openRequests = useCallback(() => setActiveTab("solicitudes"), []);
+  const { count: newRequests, setCount: setNewRequests, version: requestsVersion } = useNewRequests(openRequests);
   const [professionals, setProfessionals] = useState<ProfessionalOption[]>([]);
   const [openPatientId, setOpenPatientId] = useState<string | null>(null);
   const [patientsVersion, setPatientsVersion] = useState(0);
   const [changingPassword, setChangingPassword] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
   const closeProfile = useCallback(() => setEditingProfile(false), []);
-  const [newRequests, setNewRequests] = useState(0);
   const [portalView, setPortalView] = useState<"hc" | "notices" | undefined>(undefined);
   const openNotices = useCallback(() => { setPortalView("notices"); setActiveTab("portal"); }, []);
   const [portalCounts, setPortalCounts] = usePortalInboxCount(openNotices);
@@ -316,9 +319,6 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   useEffect(() => {
     fetchAppts();
     loadProfessionals();
-    // Contador de solicitudes nuevas para la pestaña
-    supabase.from("intake_requests").select("id").eq("status", "nueva")
-      .then(({ data }: { data: { id: string }[] | null }) => setNewRequests(data?.length ?? 0));
   }, []);
 
   // Al cerrar una ficha con cambios: recargar la planilla y los turnos (por si cambió el nombre)
@@ -360,6 +360,28 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             </Button>
           </div>
         </div>
+
+        {/* Solicitudes de turno nuevas (llegan en tiempo real): visible desde cualquier otra pestaña */}
+        {newRequests > 0 && activeTab !== "solicitudes" && (
+          <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-primary/30 bg-[color:var(--primary-soft)] px-4 py-3">
+            <Inbox className="h-5 w-5 shrink-0 text-[color:var(--primary-deep)]" aria-hidden />
+            <p className="min-w-0 flex-1 text-sm">
+              <strong className="text-[color:var(--primary-deep)]">
+                {seesAllPatients(staff.role)
+                  ? newRequests === 1 ? "Tenés una solicitud de turno nueva." : `Tenés ${newRequests} solicitudes de turno nuevas.`
+                  : newRequests === 1 ? "Te derivaron una solicitud nueva." : `Te derivaron ${newRequests} solicitudes nuevas.`}
+              </strong>{" "}
+              <span className="text-foreground/80">
+                {seesAllPatients(staff.role)
+                  ? newRequests === 1 ? "Revisala, contactá a la familia y derivala al profesional." : "Revisalas, contactá a las familias y derivalas a cada profesional."
+                  : newRequests === 1 ? "Revisala y coordiná con la familia." : "Revisalas y coordiná con las familias."}
+              </span>
+            </p>
+            <Button size="sm" onClick={openRequests} className="bg-primary text-primary-foreground hover:bg-[color:var(--primary-deep)]">
+              Ver solicitudes
+            </Button>
+          </div>
+        )}
 
         {/* Avisos de familias que no van a venir: lo más urgente, visible desde cualquier pestaña */}
         {portalCounts.notices > 0 && !(activeTab === "portal") && (
@@ -412,7 +434,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
             onOpenNotices={portalStaffApi.enabled ? openNotices : undefined} />
         ) : activeTab === "solicitudes" ? (
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
-            onCountChange={setNewRequests} professionals={professionals} canAssign={seesAllPatients(staff.role)}
+            onCountChange={setNewRequests} reloadKey={requestsVersion} professionals={professionals} canAssign={seesAllPatients(staff.role)}
             scoped={!seesAllPatients(staff.role)} />
         ) : activeTab === "portal" && portalStaffApi.enabled ? (
           <PortalInboxTab key={portalView ?? "auto"} initialView={portalView} onOpenPatient={setOpenPatientId} onCountChange={setPortalCounts} />
