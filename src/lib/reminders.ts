@@ -42,8 +42,11 @@ export function whatsappNumber(raw: string | null | undefined): string | null {
   return d.length === 10 ? `549${d}` : null;
 }
 
+// Lo que hace falta del turno para avisar (el de la Agenda o uno recién dado)
+export type ApptContact = Pick<AgendaAppointment, "patients" | "appointment_date" | "appointment_time" | "modality">;
+
 // A quién se le escribe: para menores, al adulto responsable principal
-export function reminderPhone(a: AgendaAppointment): string | null {
+export function reminderPhone(a: Pick<AgendaAppointment, "patients">): string | null {
   const p = a.patients;
   if (!p) return null;
   const minor = p.patient_type !== "adulto";
@@ -59,22 +62,50 @@ function dayLabel(dateKey: string): string {
   return `el ${WEEKDAYS[new Date(y, m - 1, d).getDay()]} ${formatShortDate(dateKey).slice(0, 5)}`;
 }
 
-// Mensaje mínimo: sin diagnóstico ni datos clínicos
-export function reminderMessage(a: AgendaAppointment, professionalName?: string): string {
+// Partes del mensaje que comparten el recordatorio y el aviso de turno nuevo
+function messageParts(a: ApptContact, professionalName?: string) {
   const p = a.patients;
   const minor = p?.patient_type !== "adulto";
   const guardianFirst = p?.guardian_name?.trim().split(/\s+/)[0];
-  const greeting = minor && guardianFirst ? `¡Hola, ${guardianFirst}!` : p ? `¡Hola, ${p.first_name}!` : "¡Hola!";
-  const who = minor && p ? `el turno de ${p.first_name}` : "tu turno";
-  const when = `${dayLabel(a.appointment_date)} a las ${fromMinutes(toMinutes(a.appointment_time))} hs`;
-  const where = a.modality === "telemedicina" ? "por telemedicina" : `en ${CENTER.address}`;
-  const withPro = professionalName ? ` con ${professionalName}` : "";
-  return `${greeting} Te recordamos ${who} en el CIMT (Dirección Centro Integral Municipal de Tartamudez) ${when}${withPro}, ${where}. ` +
-    `Si no ${minor ? "pueden" : "podés"} asistir, avisanos respondiendo este mensaje o llamando al ${CENTER.phoneDisplay}. ¡Gracias!`;
+  return {
+    minor,
+    greeting: minor && guardianFirst ? `¡Hola, ${guardianFirst}!` : p ? `¡Hola, ${p.first_name}!` : "¡Hola!",
+    when: `${dayLabel(a.appointment_date)} a las ${fromMinutes(toMinutes(a.appointment_time))} hs`,
+    where: a.modality === "telemedicina" ? "por telemedicina" : `en ${CENTER.address}`,
+    withPro: professionalName ? ` con ${professionalName}` : "",
+    cancel: `Si no ${minor ? "pueden" : "podés"} asistir, avisanos respondiendo este mensaje o llamando al ${CENTER.phoneDisplay}. ¡Gracias!`,
+  };
+}
+
+// Mensaje mínimo: sin diagnóstico ni datos clínicos
+export function reminderMessage(a: ApptContact, professionalName?: string): string {
+  const m = messageParts(a, professionalName);
+  const p = a.patients;
+  const who = m.minor && p ? `el turno de ${p.first_name}` : "tu turno";
+  return `${m.greeting} Te recordamos ${who} en el CIMT (Dirección Centro Integral Municipal de Tartamudez) ${m.when}${m.withPro}, ${m.where}. ` +
+    m.cancel;
+}
+
+// Aviso al dar un turno (al admitir una derivación o desde la ficha). No es el
+// recordatorio: ese se manda igual el día anterior. weekly: cuántas semanas
+// seguidas quedó (1 si es uno solo). Sin datos clínicos
+export function bookedMessage(
+  a: ApptContact & { consultation_type?: "primera_vez" | "seguimiento" },
+  professionalName?: string,
+  weekly = 1,
+): string {
+  const m = messageParts(a, professionalName);
+  const p = a.patients;
+  const first = a.consultation_type === "primera_vez";
+  const turno = first ? "el primer turno" : "un turno";
+  const who = m.minor && p ? `${turno} de ${p.first_name}` : first ? "tu primer turno" : "tu turno";
+  const repeat = weekly > 1 ? ` Queda el mismo día y horario durante ${weekly} semanas.` : "";
+  return `${m.greeting} Te escribimos del CIMT (Dirección Centro Integral Municipal de Tartamudez). ` +
+    `Ya tenemos ${who}: ${m.when}${m.withPro}, ${m.where}.${repeat} ${m.cancel}`;
 }
 
 // El tipo del teléfono al que se le escribe (mismo criterio que reminderPhone)
-export function reminderPhoneKind(a: AgendaAppointment): PhoneKind | null {
+export function reminderPhoneKind(a: Pick<AgendaAppointment, "patients">): PhoneKind | null {
   const p = a.patients;
   if (!p) return null;
   const minor = p.patient_type !== "adulto";
@@ -82,12 +113,12 @@ export function reminderPhoneKind(a: AgendaAppointment): PhoneKind | null {
   return (useGuardian ? p.guardian_phone_kind : p.phone_kind) ?? null;
 }
 
-export function whatsappLink(a: AgendaAppointment, professionalName?: string): string | null {
+export function whatsappLink(a: ApptContact, professionalName?: string, message?: string): string | null {
   // Un fijo o un celular sin WhatsApp no recibe el mensaje: se avisa por llamada
   if (!acceptsWhatsApp(reminderPhoneKind(a))) return null;
   const number = whatsappNumber(reminderPhone(a));
   if (!number) return null;
-  return `https://wa.me/${number}?text=${encodeURIComponent(reminderMessage(a, professionalName))}`;
+  return `https://wa.me/${number}?text=${encodeURIComponent(message ?? reminderMessage(a, professionalName))}`;
 }
 
 // Marca o desmarca el aviso del turno. Devuelve los datos guardados (o null si falló).
