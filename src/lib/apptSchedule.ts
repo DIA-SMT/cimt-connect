@@ -212,6 +212,8 @@ export function suggestFreeSlots(input: {
   nowMinutes: number;
   horizonDays?: number;
   max?: number;
+  /** Horario de atención cargado (script 36): manda sobre lo que se deduce de los turnos */
+  hours?: Partial<Record<Weekday, DayWindow[]>> | null;
 }): SuggestResult {
   const { days, band, professionalId, duration, blocks, today, nowMinutes } = input;
   const horizonDays = input.horizonDays ?? SCHEDULE_HORIZON_DAYS;
@@ -221,7 +223,8 @@ export function suggestFreeSlots(input: {
   const windows = professionalId
     ? workWindows(mine, professionalId, addDaysKey(today, -SCHEDULE_HISTORY_DAYS), addDaysKey(today, horizonDays))
     : {};
-  if (!Object.keys(windows).length) return { slots: [], reason: "no_history", windows };
+  const hours = input.hours && Object.keys(input.hours).length ? input.hours : null;
+  if (!hours && !Object.keys(windows).length) return { slots: [], reason: "no_history", windows };
   if (!Number.isInteger(duration) || duration < SCHEDULE_MIN_MINUTES || duration > SCHEDULE_MAX_MINUTES || max <= 0) {
     return { slots: [], reason: "no_free", windows };
   }
@@ -231,8 +234,11 @@ export function suggestFreeSlots(input: {
   for (let i = 0; i < horizonDays; i++) {
     const date = addDaysKey(today, i);
     const wd = weekdayOfKey(date);
-    const w = wd && days.includes(wd) ? windows[wd] : undefined;
-    if (!w) continue;
+    if (!wd || !days.includes(wd)) continue;
+    // Con horario cargado, cada franja del día; si no, la que se deduce de sus turnos
+    const dayWindows = hours ? hours[wd] ?? [] : windows[wd] ? [windows[wd]!] : [];
+    const dayFree: number[] = [];
+    for (const w of dayWindows) {
     let lo = Math.max(range.start, w.start, AGENDA_START_MIN);
     const hi = Math.min(range.end, w.end, AGENDA_END_MIN);
     if (date === today) lo = Math.max(lo, nowMinutes + SCHEDULE_LEAD_MIN);
@@ -253,7 +259,10 @@ export function suggestFreeSlots(input: {
         appointment_date: date, appointment_time: fromMinutes(s), duration_minutes: duration, professional_id: professionalId,
       })))
       .sort((a, b) => a - b);
-    if (free.length) perDay.push(free.map((s) => ({ date, time: fromMinutes(s) })));
+    dayFree.push(...free);
+    }
+    const uniqueFree = [...new Set(dayFree)].sort((a, b) => a - b);
+    if (uniqueFree.length) perDay.push(uniqueFree.map((s) => ({ date, time: fromMinutes(s) })));
   }
 
   const slots: SlotSuggestion[] = [];

@@ -298,7 +298,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
   }, [portalCounts.notices]);
 
   function loadProfessionals() {
-    supabase.from("professionals").select("id, name, specialty, license, active, session_minutes").order("name", { ascending: true })
+    supabase.from("professionals").select("id, name, specialty, license, active, session_minutes, weekly_hours").order("name", { ascending: true })
       .then(({ data }: { data: ProfessionalOption[] | null }) => setProfessionals(data ?? []));
   }
 
@@ -408,7 +408,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         </div>
 
         {activeTab === "agenda" ? (
-          <AgendaTab professionals={professionals} staff={staff} onOpenPatient={setOpenPatientId}
+          <AgendaTab professionals={professionals} staff={staff} onOpenPatient={setOpenPatientId} onHoursChanged={loadProfessionals}
             onOpenNotices={portalStaffApi.enabled ? openNotices : undefined} />
         ) : activeTab === "solicitudes" ? (
           <IntakeTab onOpenPatient={(id) => { setPatientsVersion((v) => v + 1); setOpenPatientId(id); }}
@@ -433,7 +433,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
 
       <ChangePasswordDialog open={changingPassword} onClose={() => setChangingPassword(false)} />
       {staff.professional_id && (
-        <MyProfileDialog open={editingProfile} onClose={closeProfile} professionalId={staff.professional_id} />
+        <MyProfileDialog open={editingProfile} onClose={closeProfile} professionalId={staff.professional_id} onSaved={loadProfessionals} />
       )}
 
       <PatientRecordSheet
