@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowRight, Brain, GraduationCap, Hand, MessageCircle, Scale, User2 } from "lucide-react";
+import { ArrowRight, Brain, BrainCircuit, GraduationCap, Hand, MessageCircle, Scale, User2 } from "lucide-react";
 import { CENTER, DISCIPLINES } from "@/lib/center";
 import { ServicesGrid } from "@/components/ServicesGrid";
 
@@ -17,16 +17,17 @@ export const Route = createFileRoute("/profesionales")({
   head: () => ({
     meta: [
       { title: "Nuestro equipo — CIMT" },
-      { name: "description", content: "Equipo interdisciplinario de la Dirección Centro Integral Municipal de Tartamudez: fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
+      { name: "description", content: "Equipo interdisciplinario de la Dirección Centro Integral Municipal de Tartamudez: fonoaudiología (especialista en tartamudez y neurolingüística), psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
       { property: "og:title", content: "Nuestro equipo — CIMT" },
-      { property: "og:description", content: "Fonoaudiología, psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
+      { property: "og:description", content: "Fonoaudiología (especialista en tartamudez y neurolingüística), psicología, psicopedagogía, terapia ocupacional y asesoría legal." },
     ],
   }),
   component: ProfesionalesPage,
 });
 
 const DISCIPLINE_ICONS: Record<(typeof DISCIPLINES)[number]["name"], typeof Brain> = {
-  "Fonoaudiología": MessageCircle,
+  "Fonoaudiología especialista en tartamudez": MessageCircle,
+  "Fonoaudiología neurolingüística": BrainCircuit,
   "Psicología": Brain,
   "Psicopedagogía": GraduationCap,
   "Terapia ocupacional": Hand,

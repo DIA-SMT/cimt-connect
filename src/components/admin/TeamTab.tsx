@@ -36,11 +36,7 @@ type Props = {
   onProfessionalsChanged: () => void;
 };
 
-const SPECIALTY_SUGGESTIONS = [
-  ...DISCIPLINES.map((d) => d.name),
-  "Fonoaudiología — neurolingüística",
-  "Fonoaudiología — especialista en tartamudez",
-];
+const SPECIALTY_SUGGESTIONS = DISCIPLINES.map((d) => d.name);
 
 export function TeamTab({ currentEmail, onProfessionalsChanged }: Props) {
   const [pros, setPros] = useState<Professional[]>([]);

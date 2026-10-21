@@ -162,7 +162,7 @@ export function SummaryTab({ staff, professionals, portalCounts, onOpenTab, onOp
   });
   if (portalCounts.hc > 0) pending.push({
     icon: MailOpen, tone: "ambar", action: "Ir al Portal", go: () => onOpenTab("portal"),
-    text: `${plural(portalCounts.hc, "Hay un pedido de copia del historial", `Hay ${portalCounts.hc} pedidos de copia del historial`)} por preparar (se entrega dentro de las 48 hs).`,
+    text: `${plural(portalCounts.hc, "Hay un pedido de copia del historial", `Hay ${portalCounts.hc} pedidos de copia del historial`)} por preparar.`,
   });
   if (unregistered > 0) pending.push({
     icon: FileText, tone: "azul", action: "Ir a Pacientes", go: () => onOpenTab("pacientes"),
