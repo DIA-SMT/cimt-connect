@@ -99,6 +99,9 @@ const CLOSE_REASON_LABEL: Record<PlanCloseReason, string> = {
 };
 
 const SI_CUESTA_BASE = "Si cuesta, paren ahí y prueben otro día. Cuéntenlo en la próxima sesión.";
+// Un plan nuevo ya viene con título (se puede cambiar): antes el ejemplo en gris
+// parecía escrito y el plan no se guardaba por «Escribí el título del plan»
+const DEFAULT_PLAN_TITLE = "Ejercicios para casa";
 
 // ── Fechas y textos ─────────────────────────────────────────────────────────
 
@@ -316,7 +319,7 @@ function fromPlan(p: StaffPlanDTO, asDraft: boolean): PlanForm {
 
 function emptyForm(data: StaffPracticeDTO): PlanForm {
   const f: PlanForm = {
-    id: null, base: null, seed: "", title: "", goal_text: "", audience: data.patient.audience,
+    id: null, base: null, seed: "", title: DEFAULT_PLAN_TITLE, goal_text: "", audience: data.patient.audience,
     days: L.days_per_week_default, review_on: "", auto_medals: true, keep: false, note: "", exercises: [],
   };
   f.seed = canon(f);
@@ -436,7 +439,7 @@ export function PortalPracticePlan(props: PracticeViewProps) {
 
 type Batch = { key: string; req: AiDraftRequest; result: AiDraftResult };
 type DialogState = { kind: "catalog" } | { kind: "ai"; ids: string[] } | { kind: "publish" } | { kind: "break" } | { kind: "withdraw" } | null;
-type FormError = { message: string; uid?: string };
+type FormError = { message: string; uid?: string; field?: "title" }; // field: un dato del plan (se marca y se va a él)
 
 const draftKeyOf = (d: StaffPlanDTO | null) => (d ? `${d.id}|${d.updated_at}` : null);
 
@@ -537,7 +540,7 @@ function PlanEditorView({ data, busy, send, reload, onDirty, owner = null }: Pra
   const [scrollTo, setScrollTo] = useState<string | null>(null);
   useEffect(() => {
     if (!scrollTo) return;
-    document.getElementById(cardDomId(scrollTo))?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById(cardDomId(scrollTo))?.scrollIntoView({ block: "start" });
     setScrollTo(null);
   }, [scrollTo]);
   useEffect(() => {
@@ -718,7 +721,8 @@ function PlanEditorView({ data, busy, send, reload, onDirty, owner = null }: Pra
     const v = validatePlanDraft(toInput(f));
     if (!v.ok) {
       const uid = v.index !== undefined ? f.exercises[v.index]?.uid : undefined;
-      showFormError({ message: v.index !== undefined ? `Ejercicio ${v.index + 1}: ${v.error}` : v.error, uid });
+      const field = v.index === undefined && v.field === "title" ? "title" as const : undefined;
+      showFormError({ message: v.index !== undefined ? `Ejercicio ${v.index + 1}: ${v.error}` : v.error, uid, field });
       return null;
     }
     pendingOwn.current = true;
@@ -878,7 +882,7 @@ function PlanEditorView({ data, busy, send, reload, onDirty, owner = null }: Pra
 
           <fieldset disabled={busy} className="min-w-0 space-y-4">
             <legend className="sr-only">Datos del plan</legend>
-            <PlanFields form={form} data={data} onChange={setPlan} />
+            <PlanFields form={form} data={data} onChange={setPlan} titleError={formError?.field === "title" ? formError.message : null} />
 
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1221,9 +1225,20 @@ function DiscardButton({ form, dirty, busy, hasPublished, onDiscard, onUndo }: {
 }
 
 // Datos del plan
-function PlanFields({ form, data, onChange }: { form: PlanForm; data: StaffPracticeDTO; onChange: (patch: Partial<PlanForm>) => void }) {
+function PlanFields({ form, data, onChange, titleError = null }: {
+  form: PlanForm; data: StaffPracticeDTO; onChange: (patch: Partial<PlanForm>) => void;
+  titleError?: string | null; // «Escribí el título del plan»: se marca el campo y se va a él
+}) {
   const p = data.patient;
   const titleId = useId();
+  const titleErrId = useId();
+  const titleRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!titleError) return;
+    // Sin animación: dentro del diálogo de la ficha, la suave se corta
+    titleRef.current?.scrollIntoView({ block: "center" });
+    titleRef.current?.focus({ preventScroll: true });
+  }, [titleError]);
   const goalId = useId();
   const audienceId = useId();
   const daysId = useId();
@@ -1234,8 +1249,11 @@ function PlanFields({ form, data, onChange }: { form: PlanForm; data: StaffPract
     <div className="space-y-3">
       <div className="space-y-1.5">
         <Label htmlFor={titleId}>Título del plan</Label>
-        <Input id={titleId} value={form.title} maxLength={L.plan_title} placeholder="Ej.: Ejercicios para casa"
+        <Input ref={titleRef} id={titleId} value={form.title} maxLength={L.plan_title} placeholder="Escribí el título que va a ver la familia"
+          aria-invalid={!!titleError} aria-describedby={titleError ? titleErrId : undefined}
+          className={titleError ? "border-[oklch(0.6_0.19_25)] ring-2 ring-[oklch(0.6_0.19_25)]/30" : undefined}
           onChange={(e) => onChange({ title: e.target.value })} />
+        {titleError && <p id={titleErrId} className={`text-xs font-semibold ${ERROR_TEXT}`}>{titleError}</p>}
         <Counter n={form.title.length} max={L.plan_title} />
       </div>
       <div className="space-y-1.5">
