@@ -9,7 +9,7 @@ import type { TourStep, TourTarget } from "./siteTour";
 import type { StaffRole } from "./staff";
 
 export type PanelStep = TourStep & { roles?: StaffRole[] };
-export type PanelTab = "agenda" | "solicitudes" | "portal" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
+export type PanelTab = "resumen" | "agenda" | "solicitudes" | "portal" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
 
 const tab = (label: string): TourTarget => ({ text: label, tag: "button", within: '[data-tour="pestanas"]' });
 const btn = (label: string): TourTarget => ({ text: label, tag: "button" });
@@ -28,6 +28,11 @@ export const PANEL_WELCOME: PanelStep[] = [
     id: "pestanas", title: "Las pestañas",
     text: "Arriba están las secciones del panel. Ves las que corresponden a tu rol.",
     targets: ['[data-tour="pestanas"]'],
+  },
+  {
+    id: "resumen", title: "Resumen",
+    text: "Lo primero que ves al entrar: cómo viene el día, qué hay para resolver y lo último que se hizo.",
+    targets: [tab("Resumen")],
   },
   {
     id: "agenda", title: "Agenda",
@@ -72,6 +77,24 @@ export const PANEL_WELCOME: PanelStep[] = [
 ];
 
 export const PANEL_GUIDES: Record<PanelTab, PanelStep[]> = {
+  resumen: [
+    {
+      id: "hoy", title: "Tu día",
+      text: "Arriba ves cómo viene el día: cuántos turnos hay, quién ya vino y cuál es el próximo.",
+    },
+    {
+      id: "pendientes", title: "Para resolver",
+      text: "Lo que hay que atender, del más urgente al menos. Cada uno tiene un botón que te lleva a resolverlo.",
+    },
+    {
+      id: "manana", title: "Lo que viene",
+      text: "Los turnos del próximo día hábil y cuántos recordatorios faltan.",
+    },
+    {
+      id: "historial", title: "Lo último que se hizo",
+      text: "Quién hizo qué y cuándo, en palabras simples. Con «Ver más» vas más atrás.",
+    },
+  ],
   agenda: [
     {
       id: "dia", title: "Elegir el día",

@@ -5,8 +5,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen, BellRing, UserRound } from "lucide-react";
+import { Loader2, ShieldAlert, LayoutDashboard, LogOut, Lock, Users, BarChart3, UserCog, KeyRound, CalendarDays, Inbox, Sparkles, MailOpen, BellRing, UserRound, Home } from "lucide-react";
 import { MyProfileDialog } from "@/components/admin/MyProfileDialog";
+import { SummaryTab } from "@/components/admin/SummaryTab";
 import { useNewRequests } from "@/components/admin/useNewRequests";
 import { toast } from "sonner";
 import { AdminDashboard } from "@/components/AdminDashboard";
@@ -62,7 +63,7 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type Tab = "agenda" | "solicitudes" | "portal" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
+type Tab = "resumen" | "agenda" | "solicitudes" | "portal" | "pacientes" | "estadisticas" | "dashboard" | "rincon" | "equipo";
 
 type AuthState =
   | { kind: "loading" }
@@ -279,7 +280,7 @@ function AdminForbidden({ email, onSignOut }: { email: string; onSignOut: () => 
 
 function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void }) {
   const [appts, setAppts] = useState<Appt[]>([]);
-  const [activeTab, setActiveTab] = useState<Tab>("agenda");
+  const [activeTab, setActiveTab] = useState<Tab>("resumen");
   // Solicitudes nuevas en tiempo real: número de la pestaña, cartel y aviso emergente
   const openRequests = useCallback(() => setActiveTab("solicitudes"), []);
   const { count: newRequests, setCount: setNewRequests, version: requestsVersion } = useNewRequests(openRequests);
@@ -362,7 +363,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         </div>
 
         {/* Solicitudes de turno nuevas (llegan en tiempo real): visible desde cualquier otra pestaña */}
-        {newRequests > 0 && activeTab !== "solicitudes" && (
+        {newRequests > 0 && activeTab !== "solicitudes" && activeTab !== "resumen" && (
           <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-primary/30 bg-[color:var(--primary-soft)] px-4 py-3">
             <Inbox className="h-5 w-5 shrink-0 text-[color:var(--primary-deep)]" aria-hidden />
             <p className="min-w-0 flex-1 text-sm">
@@ -384,7 +385,7 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
         )}
 
         {/* Avisos de familias que no van a venir: lo más urgente, visible desde cualquier pestaña */}
-        {portalCounts.notices > 0 && !(activeTab === "portal") && (
+        {portalCounts.notices > 0 && activeTab !== "portal" && activeTab !== "resumen" && (
           <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border-2 border-[oklch(0.6_0.19_25)]/50 bg-[color:var(--status-occupied-bg)] px-4 py-3">
             <BellRing className="h-5 w-5 shrink-0 text-[oklch(0.5_0.19_25)]" aria-hidden />
             <p className="min-w-0 flex-1 text-sm">
@@ -401,6 +402,8 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
 
         {/* Tabs */}
         <div data-tour="pestanas" className="mt-6 flex w-fit flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/40 p-1">
+          <TabButton active={activeTab === "resumen"} onClick={() => setActiveTab("resumen")}
+            icon={<Home className="h-4 w-4" />} label="Resumen" />
           <TabButton active={activeTab === "agenda"} onClick={() => setActiveTab("agenda")}
             icon={<CalendarDays className="h-4 w-4" />} label="Agenda" />
           <TabButton active={activeTab === "solicitudes"} onClick={() => setActiveTab("solicitudes")}
@@ -429,7 +432,11 @@ function AdminPanel({ staff, onSignOut }: { staff: Staff; onSignOut: () => void 
           )}
         </div>
 
-        {activeTab === "agenda" ? (
+        {activeTab === "resumen" ? (
+          <SummaryTab staff={staff} professionals={professionals} refreshKey={requestsVersion}
+            portalCounts={{ hc: portalCounts.hc, notices: portalCounts.notices, turnos: portalCounts.turnos }}
+            onOpenTab={(t) => setActiveTab(t)} onOpenNotices={openNotices} />
+        ) : activeTab === "agenda" ? (
           <AgendaTab professionals={professionals} staff={staff} onOpenPatient={setOpenPatientId} onHoursChanged={loadProfessionals}
             onOpenNotices={portalStaffApi.enabled ? openNotices : undefined} />
         ) : activeTab === "solicitudes" ? (
