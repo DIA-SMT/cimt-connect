@@ -1,11 +1,31 @@
 // Voz, teclado y animaciones del recorrido guiado (GuidedTour). Aparte del
 // componente para que la recarga en caliente funcione.
+import { audioKey } from "@/lib/siteTour";
+import { RECORDED } from "@/lib/tourAudio.gen";
 
-export const canSpeak = () => typeof window !== "undefined" && "speechSynthesis" in window;
+const hasSynth = () => typeof window !== "undefined" && "speechSynthesis" in window;
+export const canSpeak = () => typeof window !== "undefined" && ("speechSynthesis" in window || "Audio" in window);
 export const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+let player: HTMLAudioElement | null = null;
+
+// Si el texto tiene audio grabado (la voz de los podcasts, scripts/tour-audio.ts)
+// suena ese; si no, o si el audio no carga, la voz del navegador
 export function speak(text: string) {
   if (!canSpeak()) return;
+  stopSpeaking();
+  const file = RECORDED[audioKey(text)];
+  if (!file || !("Audio" in window)) { speakWithBrowser(text); return; }
+  const audio = (player ??= new Audio());
+  audio.src = `/audio/recorrido/${file}`;
+  audio.play().catch((e: unknown) => {
+    // AbortError: se pausó o se pasó a otro paso antes de que arranque
+    if ((e as Error).name !== "AbortError" && audio.src.endsWith(file)) speakWithBrowser(text);
+  });
+}
+
+function speakWithBrowser(text: string) {
+  if (!hasSynth()) return;
   const synth = window.speechSynthesis;
   synth.cancel();
   const u = new SpeechSynthesisUtterance(text);
@@ -15,7 +35,11 @@ export function speak(text: string) {
   u.rate = 0.95;
   synth.speak(u);
 }
-export const stopSpeaking = () => { if (canSpeak()) window.speechSynthesis.cancel(); };
+
+export function stopSpeaking() {
+  player?.pause();
+  if (hasSynth()) window.speechSynthesis.cancel();
+}
 
 // Tab y Shift+Tab quedan dentro de la tarjeta
 export function trapTab(e: React.KeyboardEvent, box: HTMLElement | null) {

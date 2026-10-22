@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "bun test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "tour:audio": "node --env-file-if-exists=.env scripts/tour-audio.ts"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

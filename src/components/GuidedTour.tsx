@@ -10,7 +10,8 @@ import { reducedMotion, canSpeak, speak, stopSpeaking, trapTab } from "./tourHel
 //   - la tarjeta va abajo (también en el celular), con letra grande;
 //   - teclado: Tab queda dentro de la tarjeta, Escape cierra, flechas para
 //     ir y volver; el lector de pantalla anuncia cada paso;
-//   - voz del navegador (no se graba nada) y "menos animaciones".
+//   - voz (grabada si el paso tiene audio; si no, la del navegador) y
+//     "menos animaciones".
 
 const visible = (el: HTMLElement) => {
   const r = el.getBoundingClientRect();

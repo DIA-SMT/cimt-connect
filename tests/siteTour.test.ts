@@ -1,11 +1,12 @@
 // Pruebas del recorrido accesible del sitio público (src/lib/siteTour.ts).
 // Correr con: bun test
 import { describe, expect, test } from "bun:test";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  EASY_READ_MAX_WORDS, SITE_TOUR, TEXT_SIZES, longSentences, nextTextSize, parseTextSize, spokenText,
+  EASY_READ_MAX_WORDS, SITE_TOUR, TEXT_SIZES, audioKey, longSentences, nextTextSize, parseTextSize, spokenText,
 } from "../src/lib/siteTour";
+import { RECORDED } from "../src/lib/tourAudio.gen";
 
 // Todo el código de src, para buscar los lugares que resalta el recorrido
 function sources(dir: string): string {
@@ -67,5 +68,24 @@ describe("letra y voz", () => {
   });
   test("lo que se lee en voz alta dice en qué paso está", () => {
     expect(spokenText(SITE_TOUR[1], 1, SITE_TOUR.length)).toBe(`Paso 2 de ${SITE_TOUR.length}. ${SITE_TOUR[1].title}. ${SITE_TOUR[1].text}`);
+  });
+});
+
+describe("voz grabada", () => {
+  const DIR = join(import.meta.dir, "..", "public", "audio", "recorrido");
+  test("la clave del audio cambia si cambia el texto", () => {
+    expect(audioKey("Paso 1 de 8. Hola.")).toBe(audioKey("Paso 1 de 8. Hola."));
+    expect(audioKey("Paso 1 de 8. Hola.")).not.toBe(audioKey("Paso 1 de 8. Hola"));
+    expect(audioKey("¡Listo!")).toMatch(/^[0-9a-f]{8}$/);
+  });
+  test("cada paso tiene su audio y está al día (si no: npm run tour:audio)", () => {
+    for (const [i, s] of SITE_TOUR.entries()) {
+      const file = RECORDED[audioKey(spokenText(s, i, SITE_TOUR.length))];
+      expect({ id: s.id, ok: !!file && existsSync(join(DIR, file)) }).toEqual({ id: s.id, ok: true });
+    }
+  });
+  test("no quedan audios de textos viejos", () => {
+    const listed = new Set(Object.values(RECORDED));
+    for (const f of readdirSync(DIR)) expect({ f, listed: listed.has(f) }).toEqual({ f, listed: true });
   });
 });

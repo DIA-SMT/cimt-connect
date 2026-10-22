@@ -1,7 +1,8 @@
 // Recorrido guiado del sitio público, pensado para personas con discapacidad
 // (baja visión, lectura, motricidad, cognitivas). Textos en lectura fácil:
 // frases cortas, una idea por frase, palabras simples. Cada paso se puede
-// escuchar (voz del navegador: no se graba nada).
+// escuchar: con la voz argentina de los podcasts de EnseñIA, ya grabada
+// (scripts/tour-audio.ts), o con la del navegador si el texto no tiene audio.
 //
 // Cada paso resalta un lugar real de la página («targets»: el primero que se
 // vea, así sirve en la compu y en el celular). Sin target: tarjeta sola.
@@ -94,4 +95,12 @@ export function parseTextSize(raw: string | null): TextSize {
 /** Lo que se lee en voz alta en cada paso */
 export function spokenText(step: TourStep, index: number, total: number): string {
   return `Paso ${index + 1} de ${total}. ${step.title}. ${step.text}`;
+}
+
+// Clave del audio grabado de un texto (FNV-1a): si el texto cambia, cambia la
+// clave y no suena una grabación vieja
+export function audioKey(text: string): string {
+  let h = 0x811c9dc5;
+  for (const ch of text) h = Math.imul(h ^ ch.codePointAt(0)!, 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
 }
