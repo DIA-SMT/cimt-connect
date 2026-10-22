@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { ChevronLeft, Mail, MapPin, Phone } from "lucide-react";
 import { CENTER } from "@/lib/center";
+import { CLINICAL_LEGAL_BASIS } from "@/lib/legalBasis";
 import { CLINICAL_NOTICE_POINTS, CLINICAL_NOTICE_VERSION, PRIVACY_POINTS, PRIVACY_VERSION, portalApi } from "@/lib/portal";
-import { NoticeList, PageTitle } from "@/components/portal/ui";
+import { LegalBasisNote, NoticeList, PageTitle } from "@/components/portal/ui";
 import { card, sectionTitle } from "@/components/portal/styles";
 
 // Aviso de privacidad completo del portal. Se ve sin sesión: se enlaza desde
@@ -57,6 +58,7 @@ function PrivacidadPage() {
             Esto vale solo si activás la información de salud en el portal. Es optativo: si no la activás, ves los turnos igual que siempre.
           </p>
           <NoticeList points={CLINICAL_NOTICE_POINTS} />
+          <LegalBasisNote basis={CLINICAL_LEGAL_BASIS} title="Por qué se pide un permiso aparte" />
         </div>
       </section>}
 

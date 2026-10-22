@@ -2,11 +2,12 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, CircleCheck, Info, Loader2 } from "lucide-react";
 import { CENTER } from "@/lib/center";
+import { CLINICAL_LEGAL_BASIS } from "@/lib/legalBasis";
 import {
   type ChildClinicalDTO, type ChildDTO, type FamilyClinicalDTO, type MeDTO, type PublicOutcome,
   CLINICAL_NOTICE_POINTS, portalApi, retryLabel,
 } from "@/lib/portal";
-import { FormAlert, NoticeList, PageTitle, PasswordField } from "@/components/portal/ui";
+import { FormAlert, LegalBasisNote, NoticeList, PageTitle, PasswordField } from "@/components/portal/ui";
 import { card, pillOutline, pillPrimary, sectionTitle, snoozeClinicalNotice } from "@/components/portal/styles";
 
 // Información de salud en el portal (etapa A): la cuenta la activa aceptando
@@ -218,6 +219,7 @@ function Activate({ clinical, onActivated, onAction }: {
       </section>
 
       <form onSubmit={submit} noValidate className={`${card} flex flex-col gap-4`}>
+        <LegalBasisNote basis={CLINICAL_LEGAL_BASIS} />
         <label className="flex min-h-11 cursor-pointer items-start gap-3 text-base font-semibold">
           <input ref={acceptRef} type="checkbox" checked={accept} required
             onChange={(e) => { setAccept(e.target.checked); setError(null); }}

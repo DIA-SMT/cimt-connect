@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { AlertCircle, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { AlertCircle, ChevronDown, Eye, EyeOff, Scale, ShieldCheck } from "lucide-react";
 import { CENTER } from "@/lib/center";
+import type { LegalBasis } from "@/lib/legalBasis";
 import { TONE_CLASS, apptMeta, card, inputClass, pillOutline, pillPrimary } from "./styles";
 import { type ApptDTO, type ApptTone, apptDateLabel, apptStatus, portalApi, shortDayLabel } from "@/lib/portal";
 
@@ -48,6 +49,37 @@ export function NoticeList({ points }: { points: readonly string[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+// De dónde sale un permiso expreso: la norma mínima a la vista y el detalle
+// en «Ver más» (src/lib/legalBasis.ts)
+export function LegalBasisNote({ basis, title = "Por qué te pedimos este permiso" }: { basis: LegalBasis; title?: string }) {
+  const [open, setOpen] = useState(false);
+  const moreId = useId();
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-[color:var(--primary-soft)] px-4 py-3 text-left">
+      <p className="flex items-start gap-2 text-base font-bold">
+        <Scale className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" /> {title}
+      </p>
+      <p className="text-base">{basis.summary}</p>
+      <p className="text-sm text-muted-foreground">{basis.laws}</p>
+      {open && (
+        <ul id={moreId} className="flex flex-col gap-2.5 border-t border-primary/20 pt-3">
+          {basis.more.map((p) => (
+            <li key={p.ref} className="text-base">
+              <span className="block text-sm font-bold text-[color:var(--primary-deep)]">{p.ref}</span>
+              {p.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={moreId}
+        className="flex min-h-11 items-center gap-1 self-start text-base font-bold text-primary underline underline-offset-2">
+        {open ? "Ver menos" : "Ver más"}
+        <ChevronDown className={`h-5 w-5 transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

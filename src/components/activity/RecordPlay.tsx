@@ -2,8 +2,10 @@ import { useState } from "react";
 import { Check, Mic, RotateCcw, Send, ShieldCheck, Square } from "lucide-react";
 import type { RecordingSpec } from "@/lib/activitySpec";
 import { portalApi } from "@/lib/portal";
+import { RECORDING_LEGAL_BASIS } from "@/lib/legalBasis";
 import { RECORDING_NOTICE_POINTS } from "@/lib/recordingRules";
 import { focusRing } from "@/components/portal/practiceFormat";
+import { LegalBasisNote } from "@/components/portal/ui";
 import { pillOutline, pillPrimary } from "@/components/portal/styles";
 import type { MechanicProps } from "@/components/activity/types";
 import { useRecorder } from "@/components/activity/useRecorder";
@@ -73,6 +75,7 @@ export function RecordPlay({ spec, dispatch, big, exerciseId, together }: Mechan
           <ul className="list-disc space-y-1 pl-5 text-base">
             {RECORDING_NOTICE_POINTS.map((p) => <li key={p}>{p}</li>)}
           </ul>
+          <LegalBasisNote basis={RECORDING_LEGAL_BASIS} />
           <div className="flex flex-col gap-2 min-[420px]:flex-row">
             <button type="button" onClick={() => void accept()} className={`${pillPrimary} ${focusRing} gap-2`}>
               <Check className="h-5 w-5" aria-hidden="true" /> Acepto y la mando
