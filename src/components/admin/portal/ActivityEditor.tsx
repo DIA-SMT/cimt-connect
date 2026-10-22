@@ -160,7 +160,7 @@ function FilledEditor({ activity, age, approach, screenMode, together, onChange 
         <div className="mx-auto w-full max-w-[380px] rounded-[2rem] border-4 border-foreground/10 bg-background p-3">
           {/* Cada cambio vuelve a empezar la vista previa */}
           <Activity key={JSON.stringify(checked.value)} spec={checked.value} screenMode={screenMode} speech={speech} together={together}
-            finishArea={<p className="text-sm text-muted-foreground">Acá la familia ve «Ya lo hicimos» para anotar la práctica.</p>} />
+            finishArea={<p className="text-sm text-muted-foreground">Acá la familia ve «{together ? "Ya lo hicimos" : "Ya lo hice"}» para anotar la práctica.</p>} />
         </div>
       )}
     </section>
@@ -391,12 +391,14 @@ function RecordingFields({ spec, onChange }: { spec: RecordingSpec; onChange: (a
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        El paciente (solo o con quien lo acompañe) graba lo que pide la consigna, la escucha y te la manda. Te llega en «Grabaciones» con las
-        marcas de la IA (pausas largas, posibles repeticiones, muletillas) para que la escuches y cuentes las sílabas tartamudeadas. Quien graba no ve ningún número.
+        El paciente (solo o con quien lo acompañe) graba lo que pide la consigna, la escucha y te la manda. Te llega en «Grabaciones» y en la
+        bandeja del Portal, con las marcas de la IA (pausas largas, posibles repeticiones, muletillas, palabras estiradas) para que la escuches y
+        cuentes las sílabas tartamudeadas. Quien graba no ve ningún número. Grabarse es optativo (puede terminar sin grabar); la primera vez la
+        cuenta acepta un permiso, y se pueden mandar hasta 10 por día.
       </p>
       <div className="space-y-1.5">
         <Label htmlFor={ids.consigna}>Consigna</Label>
-        <Input id={ids.consigna} value={spec.consigna} maxLength={AL.consigna} placeholder="Contá en un minuto qué hiciste el fin de semana."
+        <Input id={ids.consigna} value={spec.consigna} maxLength={AL.consigna} placeholder="Contá qué hiciste el fin de semana."
           onChange={(e) => onChange({ ...spec, consigna: e.target.value })} />
       </div>
       <div className="space-y-1.5">

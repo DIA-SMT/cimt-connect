@@ -9,7 +9,8 @@ import { FRAME_MS, displayLevel, newTracker, trackVoice } from "@/lib/speechGame
 //   - Sin cancelación de eco ni control automático de volumen: si no, el
 //     celular «aplana» la voz y no se ve cómo arranca.
 
-export type MeterStatus = "apagado" | "pidiendo" | "escuchando" | "sin_permiso" | "sin_microfono";
+// ocupado: el micrófono lo está usando otra cosa (por ejemplo, una llamada)
+export type MeterStatus = "apagado" | "pidiendo" | "escuchando" | "sin_permiso" | "sin_microfono" | "ocupado";
 
 export type VoiceMeter = {
   status: MeterStatus;
@@ -59,7 +60,8 @@ export function useVoiceMeter(onAttempt: (levels: number[]) => void): VoiceMeter
         });
       } catch (e) {
         wanted.current = false;
-        setStatus((e as Error).name === "NotAllowedError" ? "sin_permiso" : "sin_microfono");
+        const name = (e as Error).name;
+        setStatus(name === "NotAllowedError" ? "sin_permiso" : name === "NotReadableError" || name === "AbortError" ? "ocupado" : "sin_microfono");
         return;
       }
       if (!wanted.current) {
@@ -105,6 +107,18 @@ export function useVoiceMeter(onAttempt: (levels: number[]) => void): VoiceMeter
   }, []);
 
   useEffect(() => stop, [stop]);
+
+  // Salir de la pantalla (otra app, bloquear el celular): el micrófono se apaga
+  useEffect(() => {
+    const leave = () => { if (parts.current || wanted.current) stop(); };
+    const away = () => { if (document.visibilityState === "hidden") leave(); };
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      document.removeEventListener("visibilitychange", away);
+      window.removeEventListener("pagehide", leave);
+    };
+  }, [stop]);
 
   return { status, level, start, stop };
 }

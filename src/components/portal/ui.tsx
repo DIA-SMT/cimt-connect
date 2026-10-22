@@ -64,16 +64,15 @@ export function LegalBasisNote({ basis, title = "Por qué te pedimos este permis
       </p>
       <p className="text-base">{basis.summary}</p>
       <p className="text-sm text-muted-foreground">{basis.laws}</p>
-      {open && (
-        <ul id={moreId} className="flex flex-col gap-2.5 border-t border-primary/20 pt-3">
-          {basis.more.map((p) => (
-            <li key={p.ref} className="text-base">
-              <span className="block text-sm font-bold text-[color:var(--primary-deep)]">{p.ref}</span>
-              {p.text}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Siempre en la página (aria-controls apunta a algo), oculta mientras está cerrada */}
+      <ul id={moreId} hidden={!open} className={`${open ? "flex" : "hidden"} flex-col gap-2.5 border-t border-primary/20 pt-3`}>
+        {basis.more.map((p) => (
+          <li key={p.ref} className="text-base">
+            <span className="block text-sm font-bold text-[color:var(--primary-deep)]">{p.ref}</span>
+            {p.text}
+          </li>
+        ))}
+      </ul>
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={moreId}
         className="flex min-h-11 items-center gap-1 self-start text-base font-bold text-primary underline underline-offset-2">
         {open ? "Ver menos" : "Ver más"}

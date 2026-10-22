@@ -243,7 +243,7 @@ function Practice({ initial, toLogin }: { initial: PracticeExerciseDTO; toLogin:
   const meta = [`${ex.minutes} ${ex.minutes === 1 ? "minuto" : "minutos"}`, ex.with_adult ? "Con un adulto" : null]
     .filter(Boolean).join(" · ");
   const doneArea = (
-    <DoneButton mode={mode} done={loggedToday} busy={busy === "hoy"} onDone={() => void log(today)} />
+    <DoneButton mode={mode} together={ex.with_adult} done={loggedToday} busy={busy === "hoy"} onDone={() => void log(today)} />
   );
 
   return (
@@ -328,7 +328,9 @@ function Practice({ initial, toLogin }: { initial: PracticeExerciseDTO; toLogin:
 
 
 // "Ya lo hice / Ya lo hicimos" (o "Hecho hoy" si ya se anotó desde acá)
-function DoneButton({ mode, done, busy, onDone }: { mode: ScreenMode; done: boolean; busy: boolean; onDone: () => void }) {
+function DoneButton({ mode, together, done, busy, onDone }: {
+  mode: ScreenMode; together: boolean; done: boolean; busy: boolean; onDone: () => void;
+}) {
   if (done) {
     return (
       <p className={`inline-flex min-h-12 items-center gap-2 self-center rounded-full px-5 text-base font-bold ${TONE_CLASS.ok}`}>
@@ -340,7 +342,7 @@ function DoneButton({ mode, done, busy, onDone }: { mode: ScreenMode; done: bool
   return (
     <button type="button" onClick={onDone} disabled={busy}
       className={`${pillPrimary} ${focusRing} h-14 w-full text-lg min-[420px]:w-auto min-[420px]:self-center min-[420px]:px-8`}>
-      {busy ? "Guardando…" : doneButton(mode)}
+      {busy ? "Guardando…" : doneButton(mode, together)}
     </button>
   );
 }

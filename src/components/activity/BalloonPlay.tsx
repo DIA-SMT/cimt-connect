@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Check, Mic, MicOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Mic, MicOff, RotateCcw } from "lucide-react";
 import type { BalloonSpec } from "@/lib/activitySpec";
 import { onsetMessage, onsetOf } from "@/lib/speechGames";
 import { pictureFor } from "@/lib/wordPictures";
@@ -20,10 +20,11 @@ export function BalloonPlay({ spec, state, dispatch, big, ink, together }: Mecha
   const word = spec.palabras[state.step];
   const [feedback, setFeedback] = useState<string | null>(null);
   const [curve, setCurve] = useState<number[] | null>(null);
+  const feedbackRef = useRef<HTMLParagraphElement>(null);
   const meter = useVoiceMeter((levels) => {
     const onset = onsetOf(levels);
     if (!onset) return; // un ruido, no una palabra
-    setFeedback(onsetMessage(onset));
+    setFeedback(onsetMessage(onset, together));
     setCurve(levels.slice(0, 50));
     dispatch({ type: "COMPLETAR" });
   });
@@ -35,11 +36,17 @@ export function BalloonPlay({ spec, state, dispatch, big, ink, together }: Mecha
   }, [state.step]);
 
   const done = !!state.done[state.step];
+  // «Ya la dije» desaparece al tocarlo: el foco va al mensaje
+  function saidIt() {
+    setFeedback("¡Listo!");
+    dispatch({ type: "COMPLETAR" });
+    requestAnimationFrame(() => feedbackRef.current?.focus());
+  }
   return (
     <div className="flex flex-col items-center gap-3 text-center">
       <p className={`break-words font-display font-bold text-[color:var(--primary-deep)] ${big ? "text-5xl" : "text-4xl"}`}>{word}</p>
       <Balloon level={meter.level} ink={ink} picture={pictureFor(word)} />
-      <p aria-live="polite" className="min-h-7 text-lg font-semibold">{feedback ?? ""}</p>
+      <p ref={feedbackRef} tabIndex={-1} aria-live="polite" className="min-h-7 text-lg font-semibold outline-none">{feedback ?? ""}</p>
       {curve && <OnsetCurve levels={curve} />}
 
       {meter.status === "apagado" && (
@@ -53,20 +60,30 @@ export function BalloonPlay({ spec, state, dispatch, big, ink, together }: Mecha
       {meter.status === "pidiendo" && <p role="status" className="text-base text-muted-foreground">Esperando el permiso del micrófono…</p>}
       {meter.status === "escuchando" && (
         <>
-          <p className="text-base">Decí «{word}» arrancando suave, como si soplaras apenas.</p>
+          <p className="text-base">
+            {together ? `Digan «${word}» arrancando suave, como si soplaran apenas.` : `Decí «${word}» arrancando suave, como si soplaras apenas.`}
+          </p>
           <button type="button" onClick={meter.stop} className={`${pillOutline} ${focusRing} gap-2`}>
             <MicOff className="h-5 w-5" aria-hidden="true" /> Apagar el micrófono
           </button>
         </>
       )}
-      {(meter.status === "sin_permiso" || meter.status === "sin_microfono") && (
-        <p className="text-base text-muted-foreground">
-          {meter.status === "sin_permiso" ? "El micrófono no tiene permiso." : "Acá no se puede usar el micrófono."}{" "}
-          {together ? `Pueden jugar igual: digan la palabra y toquen «${said}».` : `Podés jugar igual: decí la palabra y tocá «${said}».`}
-        </p>
+      {(meter.status === "sin_permiso" || meter.status === "sin_microfono" || meter.status === "ocupado") && (
+        <>
+          <p className="text-base text-muted-foreground">
+            {meter.status === "sin_permiso" ? "El micrófono no tiene permiso."
+              : meter.status === "ocupado" ? "El micrófono está ocupado (por ejemplo, en una llamada)." : "Acá no se puede usar el micrófono."}{" "}
+            {together ? `Pueden jugar igual: digan la palabra y toquen «${said}».` : `Podés jugar igual: decí la palabra y tocá «${said}».`}
+          </p>
+          {meter.status !== "sin_microfono" && (
+            <button type="button" onClick={meter.start} className={`${pillOutline} ${focusRing} gap-2`}>
+              <RotateCcw className="h-5 w-5" aria-hidden="true" /> Probar el micrófono de nuevo
+            </button>
+          )}
+        </>
       )}
       {!done && (
-        <button type="button" onClick={() => dispatch({ type: "COMPLETAR" })} className={`${pillOutline} ${focusRing} gap-2`}>
+        <button type="button" onClick={saidIt} className={`${pillOutline} ${focusRing} gap-2`}>
           <Check className="h-5 w-5" aria-hidden="true" /> {said}
         </button>
       )}
@@ -90,7 +107,7 @@ function Balloon({ level, ink, picture }: { level: number; ink: string; picture:
   );
 }
 
-// «Así arrancó tu voz»: la montañita de la voz al empezar. Si sube despacito,
+// «Así arrancó la voz»: la montañita de la voz al empezar. Si sube despacito,
 // fue un arranque suave
 function OnsetCurve({ levels }: { levels: number[] }) {
   const max = Math.max(...levels, 1e-6);
@@ -102,7 +119,7 @@ function OnsetCurve({ levels }: { levels: number[] }) {
       <svg viewBox={`0 0 ${w} ${h}`} className="h-12 w-52 text-primary" aria-hidden="true">
         <polyline points={points} fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
-      <figcaption className="text-xs text-muted-foreground">Así arrancó tu voz</figcaption>
+      <figcaption className="text-sm text-muted-foreground">Así arrancó la voz</figcaption>
     </figure>
   );
 }

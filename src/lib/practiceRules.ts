@@ -250,8 +250,11 @@ export function practiceButton(w: PracticeWho, mode: ScreenMode): string {
   return mode === "tortuga" && !w.self ? `Practicar con ${w.first_name}` : "Empezar";
 }
 
-// Botón del final: "Ya lo hicimos" (hasta 12) o "Ya lo hice" (desde 13)
-export function doneButton(mode: ScreenMode): string {
+// Botón del final: "Ya lo hicimos" (hasta 12) o "Ya lo hice" (desde 13). Si
+// se sabe si el ejercicio es con un acompañante (together, «Con un adulto»),
+// manda eso: así coincide con el «¡Terminaron!» / «¡Terminaste!» del juego
+export function doneButton(mode: ScreenMode, together?: boolean): string {
+  if (together !== undefined) return together ? "Ya lo hicimos" : "Ya lo hice";
   return mode === "lista" ? "Ya lo hice" : "Ya lo hicimos";
 }
 

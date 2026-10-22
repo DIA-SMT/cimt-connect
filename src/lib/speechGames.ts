@@ -135,11 +135,13 @@ export function onsetOf(levels: number[]): Onset | null {
   return { kind: riseMs >= SOFT_RISE_MS ? "suave" : "brusco", riseMs };
 }
 
-/** Lo que se le dice después de cada intento: siempre algo bueno */
-export function onsetMessage(o: Onset): string {
-  return o.kind === "suave"
-    ? "¡Qué arranque suave! El globo subió despacito."
-    : "¡Bien ahí! La próxima, probá empezar como si soplaras apenas.";
+/** Lo que se le dice después de cada intento: siempre primero algo bueno, y
+ * la sugerencia como opción (together: con acompañante, en plural) */
+export function onsetMessage(o: Onset, together = false): string {
+  if (o.kind === "suave") return "¡Qué arranque suave! El globo subió despacito.";
+  return together
+    ? "¡Bien ahí! Si quieren, la próxima prueben empezar como si soplaran apenas."
+    : "¡Bien ahí! Si querés, la próxima probá empezar como si soplaras apenas.";
 }
 
 /** El volumen para dibujar (0 a 1): en decibeles, así se ve también la voz bajita */
