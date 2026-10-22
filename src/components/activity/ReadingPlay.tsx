@@ -97,7 +97,7 @@ export function ReadingPlay({ spec, state, dispatch, big, ink, together }: Mecha
           {finished ? "Otra vez" : "Leer con la tortuga"}
         </button>
       )}
-      <p className="text-sm text-muted-foreground">Leé cada palabra cuando se ilumina, despacito, siguiendo a la tortuga.</p>
+      <p className="text-sm text-muted-foreground">Leé cada palabra cuando se ilumina, siguiendo a la tortuga.</p>
     </div>
   );
 }

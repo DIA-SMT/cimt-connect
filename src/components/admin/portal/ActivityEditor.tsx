@@ -361,7 +361,7 @@ function ReadingFields({ spec, onChange }: { spec: ReadingSpec; onChange: (a: Ac
             <li key={i} className="space-y-1 rounded-lg bg-background p-2">
               <div className="flex items-start gap-2">
                 <span className="w-5 shrink-0 pt-2 text-right text-xs text-muted-foreground" aria-hidden="true">{i + 1}.</span>
-                <Textarea rows={2} value={f} maxLength={AL.frase} placeholder="La tortuga camina despacito por el campo." aria-label={`Frase ${i + 1}`}
+                <Textarea rows={2} value={f} maxLength={AL.frase} placeholder="La tortuga camina tranquila por el campo." aria-label={`Frase ${i + 1}`}
                   onChange={(e) => setPhrases(spec.frases.map((x, j) => (j === i ? e.target.value : x)))} />
                 <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 rounded-full" disabled={spec.frases.length <= AL.frases_min}
                   aria-label={`Quitar la frase ${i + 1}`} onClick={() => setPhrases(spec.frases.filter((_, j) => j !== i))}>
