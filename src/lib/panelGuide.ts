@@ -51,7 +51,7 @@ export const PANEL_WELCOME: PanelStep[] = [
   },
   {
     id: "portal", title: "Portal",
-    text: "Lo que mandan las familias desde su cuenta: avisos, pedidos de turno y pedidos de historia clínica.",
+    text: "Lo que mandan las familias desde su cuenta: avisos, pedidos de turno, copias del historial, prácticas y grabaciones.",
     targets: [tab("Portal")],
   },
   {
@@ -193,8 +193,21 @@ export const PANEL_GUIDES: Record<PanelTab, PanelStep[]> = {
       text: "Desde la ficha del paciente, en «Adultos responsables», tocá «Invitar al portal».",
     },
     {
+      id: "practicas", title: "Prácticas y grabaciones", roles: CLINICAL,
+      text: "En «Prácticas» ves lo que anotaron las familias, las metas cumplidas y las grabaciones de «Me grabo» para escuchar. Las grabaciones se escuchan y se revisan ahí mismo.",
+      targets: [btn("Prácticas")],
+    },
+    {
       id: "practica", title: "Ejercicios con IA", roles: CLINICAL,
       text: "En la ficha, pestaña Portal, armás el plan de práctica. La IA solo propone: vos revisás todo antes de publicar.",
+    },
+    {
+      id: "juegos", title: "Juegos para el celular", roles: CLINICAL,
+      text: "Cada ejercicio puede tener un juego: poesía, rima, el globo, la tortuga o «Me grabo». Lo probás en la vista previa antes de publicar.",
+    },
+    {
+      id: "grabaciones", title: "Revisar una grabación", roles: CLINICAL,
+      text: "En la ficha, pestaña Portal → «Grabaciones», escuchás y tocás las marcas de la IA para ir a ese momento. Contás las sílabas tartamudeadas y queda tu %SS. La familia no ve ningún número.",
     },
   ],
   pacientes: [

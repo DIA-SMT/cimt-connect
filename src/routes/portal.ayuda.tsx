@@ -4,8 +4,9 @@ import { Phone } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { type ClinicalFeature, portalApi } from "@/lib/portal";
 import {
-  APPT_A_ASK, APPT_A_CALL, APPT_Q, CODE_FAQ, COPY_A_CHOOSE, COPY_A_HAND, COPY_Q, EXERCISE_FAQ, FAMILY_FAQ, LEAVE_FAQ,
-  LINKED_FAQ, MEDALS_FAQ, NOTICE_FAQ, PASSWORD_FAQ, REPORTS_A_CHOOSE, REPORTS_A_HAND, REPORTS_INFO, REPORTS_Q,
+  APPT_A_ASK, APPT_A_CALL, APPT_Q, CODE_FAQ, COPY_A_CHOOSE, COPY_A_HAND, COPY_Q, EXERCISE_FAQ, FAMILY_FAQ, GAMES_FAQ, LEAVE_FAQ,
+  LINKED_FAQ, MEDALS_FAQ, NOTICE_FAQ, PASSWORD_FAQ, RECORDINGS_FAQ, REPORTS_A_CHOOSE, REPORTS_A_HAND, REPORTS_INFO, REPORTS_Q,
+  clinicalFlags,
 } from "@/lib/portalHelp";
 import { PageTitle } from "@/components/portal/ui";
 import { card } from "@/components/portal/styles";
@@ -70,14 +71,16 @@ function AyudaPage() {
     return () => { cancelled = true; };
   }, []);
 
-  const infoOn = !!features?.includes("info");
-  const digital = !!features?.includes("hc_digital") && !!features?.includes("consent");
+  const { infoOn, digital, games, recordings } = clinicalFlags(features);
+  const exercises = hasExercises
+    ? [...EXERCISE_FAQ, ...(games ? [GAMES_FAQ] : []), ...(recordings ? RECORDINGS_FAQ : [])]
+    : [];
   const faqs = FAQ.flatMap((f): Faq[] => {
     if (f.q === APPT_Q && canAskAppt) return [{ ...f, a: APPT_A_ASK }];
     if (f.q === REPORTS_Q) {
       const reports = infoOn ? REPORTS_INFO : digital ? { ...f, a: REPORTS_A_CHOOSE } : f;
       return features
-        ? [reports, ...CLINICAL_FAQ, ...(hasPractice ? MEDALS_FAQ : []), ...(hasExercises ? EXERCISE_FAQ : [])]
+        ? [reports, ...CLINICAL_FAQ, ...(hasPractice ? MEDALS_FAQ : []), ...exercises]
         : [reports];
     }
     if (f.q === COPY_Q && digital) return [{ ...f, a: COPY_A_CHOOSE }];

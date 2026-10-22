@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { ChevronLeft, Mail, MapPin, Phone } from "lucide-react";
 import { CENTER } from "@/lib/center";
-import { CLINICAL_LEGAL_BASIS } from "@/lib/legalBasis";
+import { CLINICAL_LEGAL_BASIS, RECORDING_LEGAL_BASIS } from "@/lib/legalBasis";
+import { RECORDING_NOTICE_POINTS, RECORDING_NOTICE_VERSION } from "@/lib/recordingRules";
+import { clinicalFlags } from "@/lib/portalHelp";
 import { CLINICAL_NOTICE_POINTS, CLINICAL_NOTICE_VERSION, PRIVACY_POINTS, PRIVACY_VERSION, portalApi } from "@/lib/portal";
 import { LegalBasisNote, NoticeList, PageTitle } from "@/components/portal/ui";
 import { card, sectionTitle } from "@/components/portal/styles";
@@ -20,13 +22,17 @@ function PrivacidadPage() {
   const navigate = useNavigate();
   const router = useRouter();
   const [clinicalOn, setClinicalOn] = useState(false);
+  // «Me grabo» prendido: su aviso también va acá
+  const [recordingsOn, setRecordingsOn] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!(await portalApi.hasSession())) return;
       const r = await portalApi.me();
-      if (!cancelled && r.ok && r.data.clinical) setClinicalOn(true);
+      if (cancelled || !r.ok || !r.data.clinical) return;
+      setClinicalOn(true);
+      setRecordingsOn(clinicalFlags(r.data.clinical.features).recordings);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -59,6 +65,20 @@ function PrivacidadPage() {
           </p>
           <NoticeList points={CLINICAL_NOTICE_POINTS} />
           <LegalBasisNote basis={CLINICAL_LEGAL_BASIS} title="Por qué se pide un permiso aparte" />
+        </div>
+      </section>}
+
+      {recordingsOn && <section aria-labelledby="portal-privacidad-grabaciones" className="mt-2 flex flex-col gap-3">
+        <div>
+          <h2 id="portal-privacidad-grabaciones" className="font-display text-xl font-bold text-[color:var(--primary-deep)]">Grabaciones de «Me grabo»</h2>
+          <p className="text-sm text-muted-foreground">Borrador para revisión del área legal · versión {RECORDING_NOTICE_VERSION}</p>
+        </div>
+        <div className={`${card} flex flex-col gap-4`}>
+          <p className="text-base">
+            Esto vale solo si mandás grabaciones desde un ejercicio con «Me grabo». El permiso se pide la primera vez y se retira en «Información de salud».
+          </p>
+          <NoticeList points={RECORDING_NOTICE_POINTS} />
+          <LegalBasisNote basis={RECORDING_LEGAL_BASIS} />
         </div>
       </section>}
 

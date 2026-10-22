@@ -44,6 +44,7 @@ const STAFF_SUGGESTIONS = [
   // Ayuda con el panel (lo sabe por «Dónde se hace cada cosa» del prompt)
   { id: "dar-turno", label: "¿Cómo doy un turno?" },
   { id: "invitar", label: "¿Cómo invito a una familia al portal?" },
+  { id: "grabacion", label: "¿Dónde escucho las grabaciones de «Me grabo»?" },
 ];
 
 // Portal: las preguntas cerradas que se ven de entrada (el resto, con «Más preguntas»)
@@ -129,7 +130,7 @@ export function ChatbotWidget({ staff, portal = false, raised = false }: { staff
             ? `¡Hola${staff?.full_name ? `, ${staff.full_name.split(" ")[0]}` : ""}! Soy **Migue**, en modo equipo. Puedo consultar turnos, métricas, solicitudes, pacientes y talleres del centro, y contarte dónde se hace cada cosa en el panel. No veo datos clínicos y no modifico nada. ¿Qué necesitás?`
             : portalMode
               ? "¡Hola! Soy **Migue**. Te ayudo a usar el portal. Tocá una pregunta; si no está la tuya, la podés escribir."
-              : "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
+              : "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy acá para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
         },
       ]);
     }, 900);

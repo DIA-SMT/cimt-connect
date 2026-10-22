@@ -73,7 +73,7 @@ export const LEAVE_FAQ: FaqText = {
 // logros"); las de los ejercicios, solo si alguna tiene un plan publicado
 export const MEDALS_FAQ: FaqText[] = [
   {
-    q: "¿Las medallas son por hablar sin trabarse?",
+    q: "¿Las medallas dependen de cómo sale el habla?",
     a: "No. Son por practicar y por las metas que acordaron con tu profesional, que son de práctica y de animarse. Una medalla no se pierde nunca.",
   },
 ];
@@ -89,6 +89,23 @@ export const EXERCISE_FAQ: FaqText[] = [
   {
     q: "¿Quién lee lo que contamos en «¿Cómo te fue?»?",
     a: `Lo lee el equipo profesional del CIMT antes del próximo turno. No es un chat ni se contesta al momento: si es urgente, llamanos al ${CENTER.phoneDisplay}. ${PRACTICE_TEXT.emergency_hint}`,
+  },
+];
+
+// Juegos en el celular (etapa "activities") y «Me grabo» (etapa "recordings"),
+// solo si alguna persona tiene un plan publicado
+export const GAMES_FAQ: FaqText = {
+  q: "¿Los juegos del celular graban lo que decimos?",
+  a: "No. El globo usa el micrófono solo para moverse, en el momento y en el celular: no se graba ni se manda nada. La tortuga y la poesía no usan el micrófono. Cada ejercicio también se puede hacer «Sin pantalla».",
+};
+export const RECORDINGS_FAQ: FaqText[] = [
+  {
+    q: "¿Quién escucha las grabaciones de «Me grabo»?",
+    a: "Solo el equipo profesional del CIMT que atiende al paciente. Un sistema de reconocimiento de voz la pasa a texto y marca momentos para escuchar, pero quien la revisa es el profesional. Grabarse es optativo y el audio se borra solo a los 90 días.",
+  },
+  {
+    q: "¿Cómo retiro el permiso de grabaciones?",
+    a: "En el inicio, tocá «Información de salud» y, en «Grabaciones de «Me grabo»», «Retirar el permiso de grabaciones». No se mandan más grabaciones y se borran ya los audios que mandaste.",
   },
 ];
 
@@ -132,9 +149,12 @@ const PRACTICE = ["/portal/ejercicios", "/portal/practicar", "/portal/medallas",
 const ENTRY = ["/portal/ingresar", "/portal/activar"];
 
 export function clinicalFlags(features: readonly ClinicalFeature[] | null) {
+  const games = !!features?.includes("practice") && !!features?.includes("activities");
   return {
     infoOn: !!features?.includes("info"),
     digital: !!features?.includes("hc_digital") && !!features?.includes("consent"),
+    games,
+    recordings: games && !!features?.includes("recordings"),
   };
 }
 
@@ -142,7 +162,7 @@ export const MIGUE_QUESTIONS: MigueQuestion[] = [
   {
     id: "aviso",
     q: "¿Cómo aviso si vamos o no a un turno?",
-    a: () => "En el inicio, cada turno de esta semana tiene «Vamos a ir» y «No vamos a poder ir»: tocá el que corresponda. Para los turnos que siguen, tocá «Turnos» en la tarjeta de cada paciente. «Vamos a ir» se habilita unos días antes del turno; «No vamos a poder ir», cuando quieras. Si te equivocaste, tocá «Cambiar respuesta».",
+    a: () => "En el inicio, cada turno de esta semana tiene «Vamos a ir» y «No vamos a poder ir» (o «Voy a ir» y «No voy a poder ir», si el turno es tuyo): tocá el que corresponda. Para los turnos que siguen, tocá «Turnos» en la tarjeta de cada paciente. «Vamos a ir» se habilita unos días antes del turno; «No vamos a poder ir», cuando quieras. Si te equivocaste, tocá «Cambiar respuesta».",
     link: { to: "/portal", label: "Ir al inicio" },
     screens: TURNS,
   },
@@ -169,6 +189,16 @@ export const MIGUE_QUESTIONS: MigueQuestion[] = [
   { id: "medallas", ...fixed(MEDALS_FAQ[0]), screens: PRACTICE, when: (c) => c.hasPractice },
   { id: "sin-practicar", ...fixed(EXERCISE_FAQ[0]), screens: PRACTICE, when: (c) => c.hasExercises },
   { id: "como-te-fue", ...fixed(EXERCISE_FAQ[2]), screens: PRACTICE, when: (c) => c.hasExercises },
+  { id: "juegos", ...fixed(GAMES_FAQ), screens: PRACTICE, when: (c) => c.hasExercises && clinicalFlags(c.features).games },
+  {
+    id: "grabaciones", ...fixed(RECORDINGS_FAQ[0]), screens: PRACTICE,
+    when: (c) => c.hasExercises && clinicalFlags(c.features).recordings,
+  },
+  {
+    id: "grabaciones-permiso", ...fixed(RECORDINGS_FAQ[1]), screens: PRACTICE,
+    link: { to: "/portal/informacion-salud", label: "Ir a «Información de salud»" },
+    when: (c) => c.hasExercises && clinicalFlags(c.features).recordings,
+  },
   {
     id: "activar",
     q: "¿Cómo activo mi cuenta?",
@@ -221,7 +251,10 @@ export const WRITE_NOTICE = "Migue solo ayuda a usar el portal y no ve tu cuenta
 
 // Lo que la IA sabe del portal. Las respuestas que cambian según la cuenta van
 // con las dos versiones: la IA no sabe qué tiene habilitado quien escribe
-const FULL: HelpContext = { signedIn: true, canAskAppt: true, features: ["consent", "info", "practice", "hc_digital"], hasPractice: true, hasExercises: true };
+const FULL: HelpContext = {
+  signedIn: true, canAskAppt: true, features: ["consent", "info", "practice", "hc_digital", "activities", "recordings"],
+  hasPractice: true, hasExercises: true,
+};
 const BASIC: HelpContext = { ...SIGNED_OUT, signedIn: true };
 
 function faqForPrompt(): string {
@@ -258,6 +291,7 @@ export function portalMigueSystemPrompt(): string {
 ## Cómo está armado el portal
 - Abajo hay una barra con «Inicio», «Ejercicios» (solo si hay un plan de ejercicios) y «Ayuda» (preguntas frecuentes). «Salir» está arriba a la derecha.
 - Inicio: los avisos del centro, los turnos de esta semana con «Vamos a ir» y «No vamos a poder ir», y una tarjeta por paciente con «Turnos» (ver, avisar y pedir turno, los próximos 90 días) e «Información» (lo que compartió el equipo y la copia del historial).
+- Ejercicios: el plan que arma el profesional. Cada ejercicio se puede hacer «Sin pantalla» o, si tiene un juego, «Jugar en el celular» (poesía, rima, el globo de la voz suave, leer con la tortuga o «Me grabo», que manda una grabación al profesional). Al terminar se toca «Ya lo hicimos» y se cuenta cómo les fue.
 - Sin sesión: «Ingresar» con DNI y contraseña, «¿Olvidaste tu contraseña?» y «Activá tu cuenta» con el código que da el centro.
 
 ## Preguntas frecuentes

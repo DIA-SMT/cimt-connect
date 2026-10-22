@@ -1,5 +1,7 @@
 # Prompt — Actividades interactivas en el portal CIMT
 
+> **Nota (octubre 2026).** Este es el prompt original de la fase 1. Después se sumaron el globo de la voz suave, leer con la tortuga y «Me grabo» (grabaciones que escucha el profesional; script 38, etapa `recordings`), que acá figuraban fuera de alcance. Lo vigente está en el código (`src/lib/activitySpec.ts`, `src/lib/recordingRules.ts`) y en `supabase/sql_para_copiar/README.md`.
+
 Minijuegos, ejercicios, poesías y rimas que se juegan de verdad, para el profesional que los crea y para la familia o el paciente que los usa.
 
 > **Cómo usarlo.** Pegalo completo al empezar la sesión. El agente trabaja **una fase por vez** (sección 12), se detiene al terminar cada una con un informe corto y espera el OK antes de seguir. Antes de la fase 1 tienen que estar respondidas las decisiones de la sección 3 (o aceptados los supuestos que trae).
