@@ -5,10 +5,12 @@ import logoTortuga from "../assets/logo-tortuga.png";
 import { CENTER } from "@/lib/center";
 import { PORTAL_ENABLED, portalApi } from "@/lib/portal";
 import { PRACTICE_NAV_EVENT } from "@/components/portal/practiceFormat";
+import { ChatbotWidget } from "@/components/ChatbotWidget";
 
-// Marco del Portal de familias. No usa <Layout>: el portal no muestra el chat
-// de Migue (en un área con sesión las familias escribirían datos de sus hijos)
-// ni el botón "Solicitar turno" del sitio.
+// Marco del Portal de familias. No usa <Layout>: el portal no muestra el botón
+// "Solicitar turno" del sitio, y Migue va en modo portal (src/lib/portalHelp.ts):
+// preguntas cerradas primero y, si hace falta escribir, sin datos personales
+// (en un área con sesión las familias podrían escribir datos de sus hijos).
 
 export const Route = createFileRoute("/portal")({
   head: () => ({
@@ -152,6 +154,10 @@ function PortalLayout() {
       </footer>
 
       {showNav && <BottomNav pathname={pathname} practice={practiceNav === true} />}
+      {/* Mientras se practica, nada encima del ejercicio. Al entrar o salir de la cuenta, de cero */}
+      {PORTAL_ENABLED && !isPracticing(pathname) && (
+        <ChatbotWidget key={signedIn ? "con-sesion" : "sin-sesion"} portal raised={showNav} />
+      )}
     </div>
   );
 }

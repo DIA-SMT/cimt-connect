@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { defineEventHandler, getRequestIP, readBody, setResponseStatus } from "nitro/h3";
+import { portalMigueSystemPrompt, redactPersonal } from "../../src/lib/portalHelp";
 
 const SYSTEM_PROMPT = `Sos Migue, el asistente virtual del CIMT (Dirección Centro Integral Municipal de Tartamudez) de San Miguel de Tucumán, Argentina.
 
@@ -151,8 +152,12 @@ export default defineEventHandler(async (event) => {
     return { error: "OpenRouter API key not configured" };
   }
 
-  const body = await readBody(event) as { messages?: unknown };
-  const userMessages = sanitizeMessages(body?.messages);
+  // mode "portal": Migue dentro del Portal de familias (src/lib/portalHelp.ts).
+  // Ahí se borran los datos personales aunque el navegador ya lo haya hecho
+  const body = await readBody(event) as { messages?: unknown; mode?: unknown };
+  const portal = body?.mode === "portal";
+  const userMessages = sanitizeMessages(body?.messages)
+    .map((m) => (portal ? { ...m, content: redactPersonal(m.content) } : m));
   if (userMessages.length === 0 || userMessages[userMessages.length - 1].role !== "user") {
     setResponseStatus(event, 400);
     return { error: "Mensaje inválido" };
@@ -173,16 +178,17 @@ export default defineEventHandler(async (event) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
         "HTTP-Referer": "https://cimt-connect.vercel.app",
-        "X-Title": "CIMT - Migue Asistente Virtual",
+        "X-Title": portal ? "CIMT - Migue Portal de familias" : "CIMT - Migue Asistente Virtual",
       },
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: portal ? portalMigueSystemPrompt() : SYSTEM_PROMPT },
           ...userMessages,
         ],
-        max_tokens: 400,
-        temperature: 0.7,
+        max_tokens: portal ? 300 : 400,
+        // En el portal, respuestas pegadas a los textos del centro
+        temperature: portal ? 0.3 : 0.7,
       }),
     });
 

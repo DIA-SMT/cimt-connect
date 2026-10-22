@@ -3,7 +3,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Phone } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { type ClinicalFeature, portalApi } from "@/lib/portal";
-import { PRACTICE_TEXT } from "@/lib/practiceRules";
+import {
+  APPT_A_ASK, APPT_A_CALL, APPT_Q, CODE_FAQ, COPY_A_CHOOSE, COPY_A_HAND, COPY_Q, EXERCISE_FAQ, FAMILY_FAQ, LEAVE_FAQ,
+  LINKED_FAQ, MEDALS_FAQ, NOTICE_FAQ, PASSWORD_FAQ, REPORTS_A_CHOOSE, REPORTS_A_HAND, REPORTS_INFO, REPORTS_Q,
+} from "@/lib/portalHelp";
 import { PageTitle } from "@/components/portal/ui";
 import { card } from "@/components/portal/styles";
 import { announcePracticeNav, practiceHomes, practicePeople } from "@/components/portal/practiceFormat";
@@ -14,59 +17,17 @@ export const Route = createFileRoute("/portal/ayuda")({
 
 type Faq = { q: string; a: React.ReactNode };
 
-// Pedir un turno: solo se explica cómo pedirlo si esta cuenta puede (con
-// sesión, el servidor tiene los pedidos de turno y hay personas vinculadas).
-// Si no (sin sesión, sin pedidos de turno o sin conexión), la respuesta neutra
-const APPT_Q = "¿Puedo pedir o cambiar un turno desde acá?";
-const APPT_A_ASK = "Podés pedir un turno desde «Turnos» → «Pedir un turno»: contás qué días y horarios te quedan bien y el centro te asigna uno según la agenda. Te avisamos acá. Para cambiar un turno ya dado, avisá «No vamos a poder ir» y el equipo te contacta.";
-const APPT_A_CALL = "El centro asigna los días y horarios. Si necesitás un turno, llamanos. Para cambiar uno ya dado, avisá «No vamos a poder ir» y el equipo te contacta.";
-
-// Diagnósticos e informes: sin "Mi información" (etapa "info"), el portal no
-// muestra nada clínico. Con ella, solo lo que el profesional publica (nunca el
-// historial completo): la pregunta se reemplaza por REPORTS_INFO
-const REPORTS_Q = "¿Por qué no veo diagnósticos ni informes?";
-const REPORTS_A_HAND = "El portal es solo para turnos, avisos y pedidos: no muestra diagnósticos, informes ni el historial del paciente. Si necesitás una copia del historial, la podés pedir desde el portal y te la entregamos en mano en el centro.";
-const REPORTS_A_CHOOSE = "El portal es solo para turnos, avisos y pedidos: no muestra diagnósticos, informes ni el historial del paciente. Si necesitás una copia del historial, la podés pedir desde el portal y elegir si la recibís ahí o en mano en el centro.";
-const REPORTS_INFO: Faq = {
-  q: "¿Por qué no veo todos los diagnósticos e informes?",
-  a: "En «Mi información» ves solo lo que tu profesional revisa y publica para la familia, explicado de forma simple: si todavía no publicó nada, no aparece nada. El portal nunca muestra el historial completo del paciente. Si lo necesitás, pedí una copia (más abajo te contamos cómo).",
-};
-
-// Copia del historial: con la copia digital (etapas "hc_digital" y "consent")
-// se elige cómo recibirla; si no, siempre en mano
-const COPY_Q = "¿Puedo pedir una copia del historial del paciente?";
-const COPY_HOW = "Sí: en el inicio, tocá «Información» en la tarjeta del paciente (o «Mi información», si es la tuya) y ahí tocá «Pedir una copia». La pueden pedir el propio paciente, si es mayor de edad, y la madre, el padre o el/la tutor/a; un adulto autorizado, no.";
-const COPY_A_HAND = `${COPY_HOW} El equipo la prepara y la entrega en mano en el centro (${CENTER.address}), con DNI, a quien la pidió. Cómo va el pedido lo ves en esa misma pantalla, y cuando esté lista para retirar también te avisamos arriba de todo en el inicio.`;
-const COPY_A_CHOOSE = `${COPY_HOW} El equipo la prepara y elegís cómo recibirla: en el portal, con la firma digital de la Dirección (la descargás desde esa pantalla con tu contraseña), o en mano en el centro (${CENTER.address}), con DNI, a quien la pidió. Para recibirla en el portal tenés que tener activada la información de salud (y la primera vez, pasar por el centro con tu DNI); si esa opción no aparece, pedila en mano. Cómo va el pedido lo ves en esa misma pantalla, y cuando esté lista para retirar o para descargar también te avisamos arriba de todo en el inicio.`;
-
+// Los textos los comparte Migue en el portal (src/lib/portalHelp.ts)
 const FAQ: Faq[] = [
   { q: APPT_Q, a: APPT_A_CALL },
-  {
-    q: "¿Avisar que no vamos cancela el turno?",
-    a: "No automáticamente. El equipo revisa tu aviso y te contesta en el portal (por ejemplo, «Falta justificada»). Si podés, avisá con al menos un día de anticipación: así le damos el horario a otra familia.",
-  },
+  NOTICE_FAQ,
   { q: REPORTS_Q, a: REPORTS_A_HAND },
   { q: COPY_Q, a: COPY_A_HAND },
-  {
-    q: "Me olvidé la contraseña.",
-    a: "En «Ingresar», tocá «¿Olvidaste tu contraseña?» y pedí un código nuevo, o llamanos.",
-  },
-  {
-    q: "Me pidieron el código por WhatsApp o por teléfono.",
-    a: "No lo pases. Nadie del CIMT te lo va a pedir. El código es solo para que vos actives tu cuenta.",
-  },
-  {
-    q: "Otra persona de la familia quiere entrar.",
-    a: "Cada adulto tiene su propia cuenta y su propia contraseña. Pedile al centro una invitación para esa persona.",
-  },
-  {
-    q: "Alguien vinculado no debería ver estos turnos.",
-    a: "Llamanos cuanto antes y le quitamos el acceso.",
-  },
-  {
-    q: "¿Cómo dejo de usar el portal?",
-    a: "Avisanos y desactivamos tu acceso. La atención sigue igual.",
-  },
+  PASSWORD_FAQ,
+  CODE_FAQ,
+  FAMILY_FAQ,
+  LINKED_FAQ,
+  LEAVE_FAQ,
 ];
 
 // Información de salud: solo se explica si la etapa está prendida para esta
@@ -80,31 +41,6 @@ const CLINICAL_FAQ: Faq[] = [
   {
     q: "¿Cómo dejo de ver la información de salud?",
     a: <>En el inicio, tocá <Link to="/portal/informacion-salud" className={linkClass}>«Información de salud»</Link> y después «Dejar de ver la información de salud». Los turnos siguen funcionando igual.</>,
-  },
-];
-
-// Medallas y ejercicios (etapa "practice"), después de la información de
-// salud. La de las medallas, si alguna persona de esta cuenta tiene algo para
-// ver (también sin plan, en "Mis logros"); las de los ejercicios, solo si
-// alguna tiene un plan publicado
-const MEDALS_FAQ: Faq[] = [
-  {
-    q: "¿Las medallas son por hablar sin trabarse?",
-    a: "No. Son por practicar y por las metas que acordaron con tu profesional, que son de práctica y de animarse. Una medalla no se pierde nunca.",
-  },
-];
-const EXERCISE_FAQ: Faq[] = [
-  {
-    q: "¿Qué pasa si un día no practicamos?",
-    a: "No pasa nada. Las medallas no se pierden nunca y no hay rachas que se corten: se retoma cuando se pueda.",
-  },
-  {
-    q: "¿Los ejercicios los hace una computadora?",
-    a: "Los arma tu profesional, a partir de ejercicios que aprobó el centro. A veces usa una herramienta de inteligencia artificial para adaptarlos, pero siempre los revisa y los aprueba antes de publicarlos.",
-  },
-  {
-    q: "¿Quién lee lo que contamos en «¿Cómo te fue?»?",
-    a: `Lo lee el equipo profesional del CIMT antes del próximo turno. No es un chat ni se contesta al momento: si es urgente, llamanos al ${CENTER.phoneDisplay}. ${PRACTICE_TEXT.emergency_hint}`,
   },
 ];
 

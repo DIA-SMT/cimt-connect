@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { Send, X, MessageCircle, CalendarCheck, ChevronDown } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Send, X, MessageCircle, CalendarCheck, ChevronDown, ArrowRight, Pencil, ShieldCheck } from "lucide-react";
 import migueAvatar from "@/assets/migue-avatar.jpg";
 import { MigueAvatar } from "./MigueAvatar";
+import { practiceHomes, practicePeople } from "./portal/practiceFormat";
 import { ROLE_LABEL, type Staff } from "@/lib/staff";
 import { StaffChatError, askStaffMigue } from "@/lib/staffAssistant";
+import { portalApi } from "@/lib/portal";
+import {
+  type HelpContext, type MigueQuestion, SIGNED_OUT, WRITE_NOTICE, questionsFor, redactPersonal,
+} from "@/lib/portalHelp";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,6 +18,10 @@ interface ChatMessage {
   id: string;
   role: Role;
   content: string;
+  /** Portal: botón para ir a la pantalla de la respuesta */
+  link?: MigueQuestion["link"];
+  /** Portal: aviso de que se borraron datos antes de mandar */
+  note?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -32,7 +41,13 @@ const STAFF_SUGGESTIONS = [
   { id: "ingresos", label: "¿Cuántos ingresos hubo este mes?" },
   { id: "solicitudes", label: "¿Qué solicitudes están pendientes?" },
   { id: "taller", label: "¿Cuándo es el próximo taller?" },
+  // Ayuda con el panel (lo sabe por «Dónde se hace cada cosa» del prompt)
+  { id: "dar-turno", label: "¿Cómo doy un turno?" },
+  { id: "invitar", label: "¿Cómo invito a una familia al portal?" },
 ];
+
+// Portal: las preguntas cerradas que se ven de entrada (el resto, con «Más preguntas»)
+const PORTAL_FIRST = 4;
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
@@ -54,9 +69,15 @@ function TypingDots() {
 
 // ─── Main widget ─────────────────────────────────────────────────────────────
 
-/** Sin `staff`: el Migue informativo del sitio. Con `staff`: el modo equipo del panel. */
-export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
+/**
+ * Sin `staff`: el Migue informativo del sitio. Con `staff`: el modo equipo del panel.
+ * Con `portal`: el Migue del Portal de familias (src/lib/portalHelp.ts): preguntas
+ * cerradas primero y, si ninguna sirve, texto libre sin datos personales.
+ * `raised`: más arriba, para no tapar la barra de abajo del portal.
+ */
+export function ChatbotWidget({ staff, portal = false, raised = false }: { staff?: Staff; portal?: boolean; raised?: boolean } = {}) {
   const staffMode = !!staff;
+  const portalMode = !staffMode && portal;
   const suggestions = staffMode
     ? [...(staff?.professional_id ? [{ id: "semana", label: "¿Qué turnos tengo esta semana?" }] : []), ...STAFF_SUGGESTIONS]
     : QUICK_SUGGESTIONS;
@@ -67,14 +88,25 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
   const [showBadge, setShowBadge] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // Portal: qué tiene habilitado la cuenta (para elegir preguntas y respuestas),
+  // las preguntas ya hechas y si se abrió la casilla para escribir
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [helpCtx, setHelpCtx] = useState<HelpContext>(SIGNED_OUT);
+  const [asked, setAsked] = useState<string[]>([]);
+  const [allQuestions, setAllQuestions] = useState(false);
+  const [writing, setWriting] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const hasOpenedRef = useRef(false);
+  // Portal: la última pregunta, para que se vea con su respuesta (debajo van las preguntas)
+  const lastAskRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom whenever messages update
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [messages, isTyping]);
+    if (portalMode) lastAskRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    else bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [messages, isTyping, portalMode]);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -95,7 +127,9 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
           role: "assistant",
           content: staffMode
             ? `¡Hola${staff?.full_name ? `, ${staff.full_name.split(" ")[0]}` : ""}! Soy **Migue**, en modo equipo. Puedo consultar turnos, métricas, solicitudes, pacientes y talleres del centro, y contarte dónde se hace cada cosa en el panel. No veo datos clínicos y no modifico nada. ¿Qué necesitás?`
-            : "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
+            : portalMode
+              ? "¡Hola! Soy **Migue**. Te ayudo a usar el portal. Tocá una pregunta; si no está la tuya, la podés escribir."
+              : "¡Hola! 👋 Soy **Migue**, el asistente virtual del CIMT. Estoy aquí para ayudarte con cualquier pregunta sobre tartamudez, nuestros servicios o cómo sacar un turno. ¿En qué te puedo ayudar?",
         },
       ]);
     }, 900);
@@ -103,6 +137,43 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
     // El saludo se arma una sola vez; al cambiar de modo el widget se vuelve a montar (key en Layout)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Portal: al abrir por primera vez, lo que tiene habilitado la cuenta (igual
+  // que «Ayuda»). Sin sesión o sin conexión, las preguntas de siempre. Al
+  // entrar o salir de la cuenta el portal vuelve a montar el widget (key)
+  const ctxAsked = useRef(false);
+  useEffect(() => {
+    if (!portalMode || !isOpen || ctxAsked.current) return;
+    ctxAsked.current = true;
+    void (async () => {
+      try {
+        if (!(await portalApi.hasSession())) return;
+        const r = await portalApi.me();
+        if (!r.ok) return;
+        setHelpCtx({
+          signedIn: true,
+          canAskAppt: r.data.can_request_appts === true && r.data.children.length > 0,
+          features: r.data.clinical?.features ?? null,
+          hasPractice: practiceHomes(r.data).length > 0,
+          hasExercises: practicePeople(r.data).length > 0,
+        });
+      } catch { /* sin sesión o sin conexión: las preguntas de siempre */ }
+    })();
+  }, [isOpen, portalMode]);
+
+  // Portal: una pregunta cerrada se contesta acá mismo, sin mandar nada
+  const answerQuestion = (q: MigueQuestion) => {
+    if (isTyping) return;
+    setApiError(null);
+    setAsked((prev) => [...prev, q.id]);
+    setAllQuestions(false);
+    setMessages((prev) => [...prev, { id: uid(), role: "user", content: q.q }]);
+    setIsTyping(true);
+    setTimeout(() => {
+      setIsTyping(false);
+      setMessages((prev) => [...prev, { id: uid(), role: "assistant", content: q.a(helpCtx), link: q.link }]);
+    }, 500);
+  };
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -113,7 +184,12 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
     if (!text.trim() || isTyping) return;
     setApiError(null);
 
-    const userMsg: ChatMessage = { id: uid(), role: "user", content: text.trim() };
+    // Portal: DNI, teléfonos, códigos y correos se borran antes de mandar (y se ve qué se mandó)
+    const clean = portalMode ? redactPersonal(text.trim()) : text.trim();
+    const userMsg: ChatMessage = {
+      id: uid(), role: "user", content: clean,
+      note: clean !== text.trim() ? "Borramos números y correos: no hacen falta para ayudarte." : undefined,
+    };
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
     setInput("");
@@ -145,6 +221,7 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+          ...(portalMode ? { mode: "portal" } : {}),
         }),
       });
 
@@ -191,6 +268,15 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
   };
 
   const firstUserMessageSent = messages.some((m) => m.role === "user");
+  const lastAskId = [...messages].reverse().find((m) => m.role === "user")?.id;
+
+  // Portal: primero las preguntas de la pantalla en la que se está; las ya hechas no se repiten
+  const portalQuestions = portalMode ? questionsFor(helpCtx, pathname).filter((q) => !asked.includes(q.id)) : [];
+  const shownQuestions = allQuestions ? portalQuestions : portalQuestions.slice(0, PORTAL_FIRST);
+  // En el portal, la casilla para escribir aparece solo si se la pide
+  const showInput = !portalMode || writing;
+  // Más arriba en el portal con la barra de abajo
+  const bottom = raised ? "bottom-20" : "bottom-5";
 
   // Render bold markdown in bot messages
   const renderContent = (text: string) => {
@@ -232,7 +318,7 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
           onClick={handleOpen}
           aria-label="Abrir chat con Migue"
           title="Chateá con Migue"
-          className="fixed bottom-5 right-5 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] p-[3px] shadow-[0_4px_24px_rgba(0,0,0,0.2)] transition-all hover:scale-105 hover:shadow-[0_6px_32px_rgba(0,0,0,0.28)] active:scale-95 sm:h-16 sm:w-16"
+          className={`fixed ${bottom} right-5 z-50 h-14 w-14 rounded-full bg-gradient-to-br from-primary to-[color:var(--primary-deep)] p-[3px] shadow-[0_4px_24px_rgba(0,0,0,0.2)] transition-all hover:scale-105 hover:shadow-[0_6px_32px_rgba(0,0,0,0.28)] active:scale-95 print:hidden sm:h-16 sm:w-16`}
         >
           {/* Pulse ring (detrás de la foto) */}
           {showBadge && (
@@ -265,9 +351,9 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
       {isOpen && (
         <div
           id="migue-chatbot-panel"
-          className="fixed bottom-5 right-5 z-50 flex w-[360px] max-w-[calc(100vw-24px)] flex-col rounded-2xl border border-border/60 bg-background shadow-[0_8px_40px_rgba(0,0,0,0.18)]"
+          className={`fixed ${bottom} right-5 z-50 flex w-[360px] max-w-[calc(100vw-24px)] flex-col rounded-2xl border border-border/60 bg-background shadow-[0_8px_40px_rgba(0,0,0,0.18)] print:hidden`}
           style={{
-            height: "min(560px, calc(100dvh - 100px))",
+            height: raised ? "min(560px, calc(100dvh - 160px))" : "min(560px, calc(100dvh - 100px))",
             animation: "migue-slide-up 0.22s ease-out",
           }}
         >
@@ -279,7 +365,7 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
                 Migue
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {staffMode ? `Modo equipo · ${ROLE_LABEL[staff!.role]}` : "Asistente virtual · CIMT"}
+                {staffMode ? `Modo equipo · ${ROLE_LABEL[staff!.role]}` : portalMode ? "Ayuda del portal · CIMT" : "Asistente virtual · CIMT"}
               </p>
             </div>
             <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
@@ -301,17 +387,27 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
             {messages.map((msg) => (
               <div
                 key={msg.id}
+                ref={msg.id === lastAskId ? lastAskRef : undefined}
                 className={`flex ${msg.role === "user" ? "justify-end" : "items-end gap-2"} animate-in fade-in slide-in-from-bottom-2 duration-300`}
               >
                 {msg.role === "assistant" && <MigueAvatar size="sm" label="Migue:" />}
-                <div
-                  className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${staffMode ? "whitespace-pre-line " : ""}${
-                    msg.role === "user"
-                      ? "rounded-br-none bg-primary text-primary-foreground font-medium shadow-sm"
-                      : "rounded-bl-none bg-card border border-border/60 text-foreground shadow-[var(--shadow-card)]"
-                  }`}
-                >
-                  {msg.role === "assistant" ? renderContent(msg.content) : msg.content}
+                <div className={`flex max-w-[80%] flex-col gap-1.5 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${staffMode ? "whitespace-pre-line " : ""}${
+                      msg.role === "user"
+                        ? "rounded-br-none bg-primary text-primary-foreground font-medium shadow-sm"
+                        : "rounded-bl-none bg-card border border-border/60 text-foreground shadow-[var(--shadow-card)]"
+                    }`}
+                  >
+                    {msg.role === "assistant" ? renderContent(msg.content) : msg.content}
+                  </div>
+                  {msg.note && <p className="text-[11px] text-muted-foreground">{msg.note}</p>}
+                  {msg.link && msg.link.to !== (pathname.replace(/\/+$/, "") || "/") && (
+                    <Link to={msg.link.to} onClick={() => setIsOpen(false)}
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-primary/25 bg-[color:var(--primary-soft)] px-3 text-xs font-semibold text-[color:var(--primary-deep)] hover:bg-primary/10">
+                      {msg.link.label} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}
@@ -333,8 +429,37 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
               </p>
             )}
 
+            {/* Portal: preguntas cerradas (se contestan acá, sin mandar nada), después de cada respuesta */}
+            {portalMode && !isTyping && messages.length > 0 && (
+              <div className="pt-1">
+                <p className="mb-2 text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {firstUserMessageSent ? "¿Algo más?" : "Preguntas frecuentes"}
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {shownQuestions.map((q) => (
+                    <button key={q.id} type="button" id={`migue-pregunta-${q.id}`} onClick={() => answerQuestion(q)}
+                      className="min-h-10 rounded-xl border border-primary/25 bg-[color:var(--primary-soft)] px-3 py-2 text-left text-sm font-semibold text-[color:var(--primary-deep)] transition-colors hover:border-primary hover:bg-primary/10">
+                      {q.q}
+                    </button>
+                  ))}
+                  {!allQuestions && portalQuestions.length > PORTAL_FIRST && (
+                    <button type="button" onClick={() => setAllQuestions(true)}
+                      className="min-h-10 rounded-xl px-3 text-sm font-semibold text-primary underline-offset-2 hover:underline">
+                      Más preguntas ({portalQuestions.length - PORTAL_FIRST})
+                    </button>
+                  )}
+                  {!writing && (
+                    <button type="button" onClick={() => { setWriting(true); setTimeout(() => inputRef.current?.focus(), 0); }}
+                      className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-dashed border-border px-3 text-sm font-semibold text-muted-foreground hover:bg-muted">
+                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> No está mi pregunta: la escribo
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Quick suggestions — only before first user message */}
-            {!firstUserMessageSent && !isTyping && messages.length > 0 && (
+            {!portalMode && !firstUserMessageSent && !isTyping && messages.length > 0 && (
               <div className="pt-1">
                 <p className="text-[10px] text-muted-foreground text-center mb-2 uppercase tracking-wider font-medium">
                   Sugerencias rápidas
@@ -355,7 +480,7 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
             )}
 
             {/* Turno shortcut — shown after some interaction */}
-            {!staffMode && firstUserMessageSent && !isTyping && (
+            {!staffMode && !portalMode && firstUserMessageSent && !isTyping && (
               <div className="flex justify-center pt-1">
                 <Link
                   to="/turnos"
@@ -381,8 +506,15 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
             </button>
           </div>
 
+          {/* Portal: antes de escribir, qué no poner */}
+          {portalMode && writing && (
+            <p className="mx-3 mb-1 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] leading-snug text-amber-950">
+              <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" /> {WRITE_NOTICE}
+            </p>
+          )}
+
           {/* Input */}
-          <form
+          {showInput && <form
             onSubmit={handleSubmit}
             className="flex items-center gap-2 border-t border-border/60 px-3 py-3"
           >
@@ -392,7 +524,8 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={staffMode ? "Preguntá por turnos, métricas, solicitudes…" : "Escribí tu consulta..."}
+              placeholder={staffMode ? "Preguntá por turnos, métricas, solicitudes…" : portalMode ? "¿Qué querés hacer en el portal?" : "Escribí tu consulta..."}
+              aria-label={portalMode ? "Tu pregunta sobre el portal" : undefined}
               disabled={isTyping}
               className="flex-1 rounded-full border border-border/60 bg-muted/40 px-4 py-2 text-sm outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary/50 focus:ring-2 focus:ring-primary/15 disabled:opacity-50"
             />
@@ -405,7 +538,7 @@ export function ChatbotWidget({ staff }: { staff?: Staff } = {}) {
             >
               <Send className="h-4 w-4" />
             </button>
-          </form>
+          </form>}
         </div>
       )}
     </>
