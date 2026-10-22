@@ -5117,6 +5117,9 @@ function applyPracticeAction(
         if (e.removed) continue;
         if (!offered.has(e.approach) || !approachAgeOk(e.approach, p.age)) return fail(400, PRACTICE_ERROR.approach, { code: "APPROACH" });
         if (activitiesOn() && e.activity && !activityAgeOk(p.age)) return fail(400, ACTIVITY_AGE, { code: "INVALID" });
+        if (e.activity?.mecanica === "grabacion" && !FEATURES.includes("recordings")) {
+          return fail(400, "«Me grabo» no está disponible en este momento. Quitala del ejercicio: los pasos quedan como siempre.", { code: "INVALID" });
+        }
       }
       const draft = plans.find((x) => x.status === "borrador") ?? null;
       if (input.id ? !draft || draft.id !== input.id || draft.updated_at !== expected : !!draft) return conflict();

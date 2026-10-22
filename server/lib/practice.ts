@@ -72,6 +72,7 @@ const AI_DRAFT_GONE = "El borrador de la IA no es de este paciente o ya no se pu
 const NOT_IN_CATALOG = "Ese ejercicio no está en el catálogo.";
 const PAUSED = "El portal de este paciente está en pausa: no se puede publicar.";
 const ACTIVITY_AGE = `Las actividades para jugar en el celular son desde los ${ACTIVITY_MIN_AGE} años. Quitala: los pasos quedan como siempre.`;
+const RECORDINGS_OFF = "«Me grabo» no está disponible en este momento. Quitala del ejercicio: los pasos quedan como siempre.";
 const NOTHING_TO_REVIEW = "Todavía no hay prácticas para marcar como vistas. Actualizá la sección.";
 const GOAL_HAS_MEDAL = "Esa meta ya tiene su medalla.";
 const GOAL_NOT_DRAFT = "Esa meta ya no está en borrador. Actualizá la sección.";
@@ -1480,6 +1481,10 @@ async function saveDraft(ctx: Ctx, staff: Staff, patientId: string, body: Json) 
       throw fail(400, PRACTICE_ERROR.approach, { code: "APPROACH", field: "approach", index: i });
     }
     if (e.activity && !activityAgeOk(patient.age)) throw fail(400, ACTIVITY_AGE, { code: "INVALID", field: "activity", index: i });
+    // «Me grabo» solo con la etapa prendida (el panel no la ofrece, pero se controla acá)
+    if (e.activity?.mecanica === "grabacion" && !features().includes("recordings")) {
+      throw fail(400, RECORDINGS_OFF, { code: "INVALID", field: "activity", index: i });
+    }
   }
 
   // Los ejercicios del borrador que se edita (se usan después de confirmar
