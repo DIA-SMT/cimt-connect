@@ -20,7 +20,7 @@
 //
 // Las familias nunca leen las tablas (script 26): todo pasa por el servidor.
 
-import { type ActivitySpec, validateActivity } from "./activitySpec";
+import { type ActivitySpec, MECHANIC_LABEL, mechanicAllowed, validateActivity } from "./activitySpec";
 import { activityTexts } from "./activityMechanics";
 import { CENTER } from "./center";
 import { ADOLESCENT_FROM, ADULT_FROM } from "./portalClinicalRules";
@@ -1123,6 +1123,10 @@ export function validateExerciseInput(raw: unknown): { ok: true; value: Exercise
   if (b.activity !== undefined && b.activity !== null) {
     const a = validateActivity(b.activity);
     if (!a.ok) return bad("activity", `Actividad: ${a.error}`);
+    // Cada juego, solo en los enfoques que le corresponden (el globo, en «habla fácil»)
+    if (!mechanicAllowed(a.value.mecanica, b.approach)) {
+      return bad("activity", `«${MECHANIC_LABEL[a.value.mecanica]}» no corresponde al enfoque «${APPROACH_LABEL[b.approach]}».`);
+    }
     activity = a.value;
   }
 

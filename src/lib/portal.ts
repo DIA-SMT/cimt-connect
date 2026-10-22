@@ -21,6 +21,7 @@ import {
 import type { ChildClinicalDTO, FamilyClinicalDTO } from "@/lib/portalClinicalRules";
 import type { InfoDTO } from "@/lib/portalInfoRules";
 import type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";
+import type { VoiceUrlsDTO } from "@/lib/voiceRules";
 import type {
   CelebrationDTO, FeedbackDTO, MedalsDTO, PracticeActionResult, PracticeDTO, PracticeExerciseDTO, PracticeLogInput,
   PracticeNoteInput,
@@ -266,10 +267,10 @@ const OFFLINE = { ok: false as const, status: 503, error: "No pudimos conectar. 
 
 // Llama a un endpoint del portal con la sesión de la familia. Si el token
 // venció, lo renueva una vez; si la sesión ya no sirve, la cierra.
-async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; auth?: boolean } = {}): Promise<ApiResult<T>> {
+async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; auth?: boolean; keepMe?: boolean } = {}): Promise<ApiResult<T>> {
   // Un cambio (responder un turno, pedir una copia…) deja vieja cualquier /me
-  // en curso: el próximo me() pregunta de nuevo
-  if ((init.method ?? "GET") !== "GET") meInFlight = null;
+  // en curso: el próximo me() pregunta de nuevo. keepMe: un POST que no cambia nada
+  if ((init.method ?? "GET") !== "GET" && !init.keepMe) meInFlight = null;
   const client = await sessionClient();
   const send = async (token: string | null) => fetch(`/api/portal/${path}`, {
     method: init.method ?? "GET",
@@ -472,6 +473,13 @@ export const portalApi = {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).practiceMedals(patientId);
     return call(`practice?view=medals&id=${encodeURIComponent(patientId)}`);
+  },
+  // «Escuchar» con la voz de Azure: las URLs firmadas de los textos (server/lib/voice.ts).
+  // En el modo demo no hay voz de Azure: queda la del celular
+  async voiceUrls(texts: string[]): Promise<ApiResult<VoiceUrlsDTO>> {
+    if (MOCK) return { ok: true, data: { available: false, urls: [] } };
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    return call<VoiceUrlsDTO>("voz", { method: "POST", body: { texts }, keepMe: true });
   },
   // La celebración ya se vio (por cuenta: si hay dos adultos, cada uno la ve una vez)
   async medalsSeen(ids: string[]): Promise<ApiResult<{ ok: true }>> {

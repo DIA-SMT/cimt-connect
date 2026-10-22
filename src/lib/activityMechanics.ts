@@ -6,9 +6,13 @@
 // Sumar una mecánica: su esquema en activitySpec.ts, su entrada en
 // MECHANIC_RULES y su componente en el registro del portal.
 
-import { type ActivitySpec, type Mechanic, type PoemScheme, type PoemSpec, type RhymeSpec, BLANK, POEM_SCHEMES, SCHEME_LINES, SCHEME_PAIRS, SPEC_VERSION } from "./activitySpec";
+import {
+  type ActivitySpec, type BalloonSpec, type Mechanic, type PoemScheme, type PoemSpec, type ReadingSpec, type RhymeSpec,
+  BLANK, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LINES, SCHEME_PAIRS, SPEC_VERSION,
+} from "./activitySpec";
 import { DEFAULT_THEME } from "./activityAssets";
 import { type RhymeKind, lastWord, rhymeOf } from "./rhymeEs";
+import { hardStart, pacePhrase } from "./speechGames";
 
 // Desde qué edad hay versión interactiva (de 2 a 5 años, solo la versión sin
 // pantalla: decisión D2 del prompt de actividades)
@@ -67,6 +71,24 @@ function rhymeWarnings(s: RhymeSpec): ActivityWarning[] {
   return out;
 }
 
+function balloonWarnings(s: BalloonSpec): ActivityWarning[] {
+  return s.palabras.flatMap((w, i) => hardStart(w)
+    ? [{ path: `palabras.${i}`, message: `Palabra ${i + 1}: ${cap(w)} empieza con un sonido que cuesta más arrancar suave. Para empezar, mejor palabras con vocal (árbol, oso, uva).` }]
+    : []);
+}
+
+// Una frase que con la tortuga dura más que esto cansa: mejor partirla
+const READING_MAX_MS = 20_000;
+
+function readingWarnings(s: ReadingSpec): ActivityWarning[] {
+  return s.frases.flatMap((f, i) => {
+    const ms = pacePhrase(f, s.ritmo).total;
+    return ms > READING_MAX_MS
+      ? [{ path: `frases.${i}`, message: `Frase ${i + 1}: con este ritmo dura unos ${Math.round(ms / 1000)} segundos. Mejor partirla en dos.` }]
+      : [];
+  });
+}
+
 export const MECHANIC_RULES: { [K in Mechanic]: Rules<Extract<ActivitySpec, { mecanica: K }>> } = {
   poesia: {
     steps: (p) => p.estrofas.reduce((n, e) => n + e.versos.length, 0),
@@ -79,6 +101,20 @@ export const MECHANIC_RULES: { [K in Mechanic]: Rules<Extract<ActivitySpec, { me
     autoComplete: false,
     texts: (s) => [s.titulo, ...s.tarjetas.flatMap((c) => [c.verso, c.completar.replace(BLANK, c.respuesta), ...c.distractores])],
     warnings: rhymeWarnings,
+  },
+  // Un paso queda hecho al decir la palabra con el micrófono (o con «Ya la dijimos»)
+  globo: {
+    steps: (s) => s.palabras.length,
+    autoComplete: false,
+    texts: (s) => [s.titulo, ...s.palabras],
+    warnings: balloonWarnings,
+  },
+  // Un paso queda hecho cuando la tortuga llega al final de la frase
+  lectura: {
+    steps: (s) => s.frases.length,
+    autoComplete: false,
+    texts: (s) => [s.titulo, ...s.frases],
+    warnings: readingWarnings,
   },
 };
 
@@ -100,7 +136,9 @@ export const activityAgeOk = (age: number | null) => age === null || age >= ACTI
 // ── Para empezar a cargar a mano ────────────────────────────────────────────
 
 export function emptyActivity(m: Mechanic, titulo: string): ActivitySpec {
-  const t = titulo.trim().slice(0, 60) || (m === "poesia" ? "Poesía para leer juntos" : "Rimas para completar");
+  const t = titulo.trim().slice(0, 60) || (m === "rima" ? "Rimas para completar" : MECHANIC_LABEL[m]);
+  if (m === "globo") return { v: SPEC_VERSION, mecanica: "globo", titulo: t, tema: DEFAULT_THEME, palabras: ["", "", ""] };
+  if (m === "lectura") return { v: SPEC_VERSION, mecanica: "lectura", titulo: t, tema: DEFAULT_THEME, ritmo: "lento", frases: [""] };
   if (m === "poesia") {
     return { v: SPEC_VERSION, mecanica: "poesia", titulo: t, tema: DEFAULT_THEME, esquema: "AABB", rima: "asonante", palmas: false,
       estrofas: [{ versos: ["", "", "", ""], icono: null }] };

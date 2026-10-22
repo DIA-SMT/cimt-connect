@@ -6,14 +6,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { selectClass } from "../fields";
 import {
-  type ActivitySpec, type PoemScheme, type PoemSpec, type RhymeCard, type RhymeSpec,
+  type ActivitySpec, type BalloonSpec, type PoemScheme, type PoemSpec, type ReadingSpec, type RhymeCard, type RhymeSpec,
   ACTIVITY_LIMITS as AL, BLANK, MECHANICS, MECHANIC_HINT, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL, SCHEME_LINES,
-  validateActivity,
+  mechanicAllowed, validateActivity,
 } from "@/lib/activitySpec";
+import { PACE_LABEL, READING_PACES, type ReadingPace, pacePhrase } from "@/lib/speechGames";
 import { ACTIVITY_MIN_AGE, activityAgeOk, activityWarnings, emptyActivity, poemFromText } from "@/lib/activityMechanics";
 import { type IconId, ICON_IDS, ICON_LABEL, THEME_IDS, THEME_LABEL, type ThemeId } from "@/lib/activityAssets";
 import { RHYME_KINDS, type RhymeKind } from "@/lib/rhymeEs";
-import type { ScreenMode } from "@/lib/practiceRules";
+import { APPROACH_LABEL, type Approach, type ScreenMode } from "@/lib/practiceRules";
 import { Activity } from "@/components/activity/Activity";
 import { useSpeech } from "@/components/portal/useSpeech";
 
@@ -21,7 +22,8 @@ import { useSpeech } from "@/components/portal/useSpeech";
 // ejercicio, cargada a mano (fase 1). Es optativa: los pasos del ejercicio
 // son la versión sin pantalla. La vista previa usa el mismo componente que
 // la familia. Los avisos de rima nunca bloquean (la rima se mide con una
-// aproximación); lo que falta completar sí impide guardar.
+// aproximación); lo que falta completar sí impide guardar. Cada juego se
+// ofrece solo en los enfoques que le corresponden (MECHANIC_APPROACHES).
 
 const PILL_BTN = "h-8 rounded-full";
 const WARN_BOX = "rounded-xl bg-[color:var(--status-pending-bg)] px-3 py-2 text-sm text-[oklch(0.42_0.1_70)]";
@@ -31,10 +33,11 @@ const RHYME_KIND_LABEL: Record<RhymeKind, string> = {
   consonante: "Consonante (riman todos los sonidos: «canción» y «corazón»)",
 };
 
-export function ActivityEditor({ activity, exerciseTitle, age, screenMode, onChange }: {
+export function ActivityEditor({ activity, exerciseTitle, age, approach, screenMode, onChange }: {
   activity: ActivitySpec | null;
   exerciseTitle: string;
   age: number | null;
+  approach: Approach;
   screenMode: ScreenMode;
   onChange: (a: ActivitySpec | null) => void;
 }) {
@@ -56,7 +59,7 @@ export function ActivityEditor({ activity, exerciseTitle, age, screenMode, onCha
               La familia elige entre jugarlo en el celular o hacer los pasos sin pantalla. Terminar el juego no anota la práctica: la anotan como siempre.
             </p>
             <div className="flex flex-wrap gap-2">
-              {MECHANICS.map((m) => (
+              {MECHANICS.filter((m) => mechanicAllowed(m, approach)).map((m) => (
                 <Button key={m} type="button" size="sm" variant="outline" className={PILL_BTN} title={MECHANIC_HINT[m]}
                   onClick={() => onChange(emptyActivity(m, exerciseTitle))}>
                   <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> {MECHANIC_LABEL[m]}
@@ -82,17 +85,18 @@ export function ActivityEditor({ activity, exerciseTitle, age, screenMode, onCha
     );
   }
 
-  return <FilledEditor activity={activity} age={age} screenMode={screenMode} onChange={onChange} />;
+  return <FilledEditor activity={activity} age={age} approach={approach} screenMode={screenMode} onChange={onChange} />;
 }
 
-function FilledEditor({ activity, age, screenMode, onChange }: {
+function FilledEditor({ activity, age, approach, screenMode, onChange }: {
   activity: ActivitySpec;
   age: number | null;
+  approach: Approach;
   screenMode: ScreenMode;
   onChange: (a: ActivitySpec | null) => void;
 }) {
   const [preview, setPreview] = useState(false);
-  const speech = useSpeech();
+  const speech = useSpeech("equipo");
   const ids = { title: useId(), theme: useId() };
   const checked = validateActivity(activity);
   const warnings = checked.ok ? activityWarnings(checked.value) : [];
@@ -111,6 +115,9 @@ function FilledEditor({ activity, age, screenMode, onChange }: {
       {!activityAgeOk(age) && (
         <p className={`text-xs font-semibold ${ERROR_TEXT}`}>Las actividades son desde los {ACTIVITY_MIN_AGE} años: quitala para poder guardar.</p>
       )}
+      {!mechanicAllowed(activity.mecanica, approach) && (
+        <p className={`text-xs font-semibold ${ERROR_TEXT}`}>Este juego no corresponde al enfoque «{APPROACH_LABEL[approach]}»: quitalo o cambiá el enfoque para poder guardar.</p>
+      )}
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="space-y-1.5">
           <Label htmlFor={ids.title}>Título del juego</Label>
@@ -124,9 +131,10 @@ function FilledEditor({ activity, age, screenMode, onChange }: {
         </div>
       </div>
 
-      {activity.mecanica === "poesia"
-        ? <PoemFields poem={activity} onChange={onChange} />
-        : <RhymeFields spec={activity} onChange={onChange} />}
+      {activity.mecanica === "poesia" && <PoemFields poem={activity} onChange={onChange} />}
+      {activity.mecanica === "rima" && <RhymeFields spec={activity} onChange={onChange} />}
+      {activity.mecanica === "globo" && <BalloonFields spec={activity} onChange={onChange} />}
+      {activity.mecanica === "lectura" && <ReadingFields spec={activity} onChange={onChange} />}
 
       {!checked.ok && <p role="status" className={`text-xs font-semibold ${ERROR_TEXT}`}>Para guardar: {checked.error}</p>}
       {warnings.length > 0 && (
@@ -292,6 +300,76 @@ function RhymeFields({ spec, onChange }: { spec: RhymeSpec; onChange: (a: Activi
       <Button type="button" size="sm" variant="ghost" className={PILL_BTN} disabled={spec.tarjetas.length >= AL.tarjetas_max}
         onClick={() => onChange({ ...spec, tarjetas: [...spec.tarjetas, { verso: "", completar: BLANK, respuesta: "", distractores: ["", ""], icono: null }] })}>
         <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Sumar una tarjeta
+      </Button>
+    </div>
+  );
+}
+
+// El globo: las palabras (o frases cortas) que se dicen con arranque suave
+function BalloonFields({ spec, onChange }: { spec: BalloonSpec; onChange: (a: ActivitySpec) => void }) {
+  const setWords = (palabras: string[]) => onChange({ ...spec, palabras });
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Una palabra o frase corta por paso. Para empezar, palabras que empiezan con vocal (árbol, oso, uva). Con el micrófono, el globo sube con la voz
+        y la familia ve cómo arrancó; sin micrófono, tocan «Ya la dijimos». No se graba nada.
+      </p>
+      <ol className="space-y-2">
+        {spec.palabras.map((w, i) => (
+          <li key={i} className="flex items-center gap-2">
+            <span className="w-5 shrink-0 text-right text-xs text-muted-foreground" aria-hidden="true">{i + 1}.</span>
+            <Input value={w} maxLength={AL.palabra_voz} placeholder={["árbol", "oso", "uva"][i % 3]} aria-label={`Palabra ${i + 1}`}
+              onChange={(e) => setWords(spec.palabras.map((x, j) => (j === i ? e.target.value : x)))} />
+            <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 rounded-full" disabled={spec.palabras.length <= AL.palabras_min}
+              aria-label={`Quitar la palabra ${i + 1}`} onClick={() => setWords(spec.palabras.filter((_, j) => j !== i))}>
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </li>
+        ))}
+      </ol>
+      <Button type="button" size="sm" variant="ghost" className={PILL_BTN} disabled={spec.palabras.length >= AL.palabras_max}
+        onClick={() => setWords([...spec.palabras, ""])}>
+        <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Sumar una palabra
+      </Button>
+    </div>
+  );
+}
+
+// Leer con la tortuga: el ritmo y las frases (con cuánto dura cada una)
+function ReadingFields({ spec, onChange }: { spec: ReadingSpec; onChange: (a: ActivitySpec) => void }) {
+  const paceId = useId();
+  const setPhrases = (frases: string[]) => onChange({ ...spec, frases });
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor={paceId}>Ritmo de la tortuga</Label>
+        <select id={paceId} className={selectClass} value={spec.ritmo} onChange={(e) => onChange({ ...spec, ritmo: e.target.value as ReadingPace })}>
+          {READING_PACES.map((r) => <option key={r} value={r}>{PACE_LABEL[r]}</option>)}
+        </select>
+      </div>
+      <p className="text-xs text-muted-foreground">Una frase por paso. Las palabras se iluminan a ese ritmo y se lee siguiendo a la tortuga.</p>
+      <ol className="space-y-2">
+        {spec.frases.map((f, i) => {
+          const secs = f.trim() ? Math.round(pacePhrase(f, spec.ritmo).total / 1000) : 0;
+          return (
+            <li key={i} className="space-y-1 rounded-lg bg-background p-2">
+              <div className="flex items-start gap-2">
+                <span className="w-5 shrink-0 pt-2 text-right text-xs text-muted-foreground" aria-hidden="true">{i + 1}.</span>
+                <Textarea rows={2} value={f} maxLength={AL.frase} placeholder="La tortuga camina despacito por el campo." aria-label={`Frase ${i + 1}`}
+                  onChange={(e) => setPhrases(spec.frases.map((x, j) => (j === i ? e.target.value : x)))} />
+                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 rounded-full" disabled={spec.frases.length <= AL.frases_min}
+                  aria-label={`Quitar la frase ${i + 1}`} onClick={() => setPhrases(spec.frases.filter((_, j) => j !== i))}>
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+              {secs > 0 && <p className="pl-7 text-xs text-muted-foreground">Con la tortuga: unos {secs} segundos.</p>}
+            </li>
+          );
+        })}
+      </ol>
+      <Button type="button" size="sm" variant="ghost" className={PILL_BTN} disabled={spec.frases.length >= AL.frases_max}
+        onClick={() => setPhrases([...spec.frases, ""])}>
+        <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Sumar una frase
       </Button>
     </div>
   );

@@ -17,47 +17,18 @@
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SITE_TOUR, audioKey, spokenText } from "../src/lib/siteTour.ts";
+import { azureConfig, synthesize } from "../server/lib/voice.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const DIR = join(ROOT, "public", "audio", "recorrido");
 const LIST = join(ROOT, "src", "lib", "tourAudio.gen.ts");
-const VOICE = process.env.AZURE_SPEECH_VOICE?.trim() || "es-AR-ElenaNeural";
-// Mono a 48 kbps, como los podcasts: unos 30 KB por paso
-const FORMAT = "audio-24khz-48kbitrate-mono-mp3";
-// Algo más pausada que los podcasts (-6 %): el recorrido es en lectura fácil
+// Algo más pausada que el «Escuchar» del portal (-8 %): el recorrido es en lectura fácil
 const RATE = "-10%";
-
-const keys = [...new Set(["AZURE_SPEECH_KEY", "AZURE_SPEECH_KEY_1", "AZURE_SPEECH_KEY_2"]
-  .map((n) => process.env[n]?.trim())
-  .filter((k): k is string => Boolean(k)))];
-const region = process.env.AZURE_SPEECH_REGION?.trim().toLowerCase();
+// La misma voz y las mismas claves que el portal (server/lib/voice.ts)
+const azure = azureConfig(process.env);
 const all = process.argv.includes("--todo");
 
-const xml = (s: string) => s
-  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-  .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-
-async function record(text: string): Promise<Uint8Array> {
-  const ssml = `<speak version="1.0" xml:lang="es-AR"><voice name="${VOICE}"><prosody rate="${RATE}">${xml(text)}</prosody></voice></speak>`;
-  let last = "";
-  // Azure da dos claves por recurso: si rechaza una (rotada), se prueba la otra
-  for (const key of keys) {
-    const res = await fetch(`https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": FORMAT,
-        "User-Agent": "cimt-recorrido",
-      },
-      body: ssml,
-    });
-    if (res.ok) return new Uint8Array(await res.arrayBuffer());
-    last = `Azure ${res.status}: ${(await res.text().catch(() => "")).slice(0, 150)}`;
-    if (res.status !== 401 && res.status !== 403) break;
-  }
-  throw new Error(last);
-}
+const record = (text: string) => synthesize(text, azure!, RATE);
 
 const steps = SITE_TOUR.map((s, i) => {
   const text = spokenText(s, i, SITE_TOUR.length);
@@ -67,7 +38,7 @@ const steps = SITE_TOUR.map((s, i) => {
 
 mkdirSync(DIR, { recursive: true });
 const pending = steps.filter((s) => all || !existsSync(join(DIR, s.file)));
-if (pending.length && (!keys.length || !region)) {
+if (pending.length && !azure) {
   console.error("Faltan AZURE_SPEECH_KEY y AZURE_SPEECH_REGION (en el .env o en el entorno).");
   process.exit(1);
 }

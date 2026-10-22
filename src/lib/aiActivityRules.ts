@@ -16,7 +16,7 @@
 // enlaces (ideaProblem lo revisa en el panel y en el servidor). Va dentro
 // de <pedido>, como dato.
 
-import { type ActivitySpec, type Mechanic, type PoemScheme, BLANK, MECHANICS, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL, SCHEME_LINES, SCHEME_PAIRS, SPEC_VERSION, validateActivity } from "./activitySpec";
+import { type ActivitySpec, type AiMechanic, type PoemScheme, AI_MECHANICS, BLANK, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL, SCHEME_LINES, SCHEME_PAIRS, SPEC_VERSION, validateActivity } from "./activitySpec";
 import { DEFAULT_THEME, ICON_IDS, THEME_IDS, isIconId, isThemeId } from "./activityAssets";
 import { RHYME_KINDS, type RhymeKind } from "./rhymeEs";
 
@@ -40,7 +40,7 @@ export const SOUND_LABEL: Record<Sound, string> = {
 
 // Lo que se pide (va en AiAdaptParams.actividad, tal cual al proveedor)
 export type ActivityRequest = {
-  mecanica: Mechanic;
+  mecanica: AiMechanic; // los juegos con la voz se cargan a mano
   idea: string | null; // la idea del profesional, revisada con ideaProblem
   sonidos: Sound[];
   // poesía
@@ -87,7 +87,7 @@ const intIn = (raw: unknown, min: number, max: number, fallback: number) => {
 export function buildActivityRequest(raw: unknown): { ok: true; value: ActivityRequest } | { ok: false; error: string } {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "Pedido inválido" };
   const b = raw as Record<string, unknown>;
-  if (!(MECHANICS as readonly unknown[]).includes(b.mecanica)) return { ok: false, error: "Elegí qué juego armar." };
+  if (!(AI_MECHANICS as readonly unknown[]).includes(b.mecanica)) return { ok: false, error: "Elegí qué juego armar." };
   const problem = ideaProblem(b.idea);
   if (problem) return { ok: false, error: problem };
   const sonidos = SOUNDS.filter((s) => Array.isArray(b.sonidos) && b.sonidos.includes(s));
@@ -96,7 +96,7 @@ export function buildActivityRequest(raw: unknown): { ok: true; value: ActivityR
   return {
     ok: true,
     value: {
-      mecanica: b.mecanica as Mechanic,
+      mecanica: b.mecanica as AiMechanic,
       idea: clean(b.idea) || null,
       sonidos,
       estrofas: intIn(b.estrofas, AL.estrofas_min, AL.estrofas_max, d.estrofas),

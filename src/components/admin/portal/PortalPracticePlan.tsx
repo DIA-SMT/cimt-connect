@@ -37,7 +37,7 @@ import { type UnsavedPart, forgetUnsaved, keepUnsaved, peekUnsaved } from "./pra
 import { ActivityEditor } from "./ActivityEditor";
 import { type PreviewExercise, ExercisePreview } from "./ExercisePreview";
 import {
-  type ActivitySpec, type PoemScheme, MECHANICS, MECHANIC_HINT, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL,
+  type ActivitySpec, type PoemScheme, AI_MECHANICS, MECHANIC_HINT, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL,
 } from "@/lib/activitySpec";
 import { activityAgeOk } from "@/lib/activityMechanics";
 import {
@@ -1537,7 +1537,7 @@ function ExerciseCard({
             <FlagLine flags={flagsFor("pasos")} />
           </fieldset>
           {(data.features.activities || ex.activity) && (
-            <ActivityEditor activity={ex.activity} exerciseTitle={ex.title} age={data.patient.age}
+            <ActivityEditor activity={ex.activity} exerciseTitle={ex.title} age={data.patient.age} approach={ex.approach}
               screenMode={SCREEN_MODE_BY_AUDIENCE[data.patient.audience]} onChange={(activity) => onChange({ activity })} />
           )}
           <div className="flex flex-wrap items-end gap-4">
@@ -2134,7 +2134,7 @@ function AiDialog({ data, catalog, initialIds, inPlan, room, onResult, onClose }
                 {game && (
                   <>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      {MECHANICS.map((m) => (
+                      {AI_MECHANICS.map((m) => (
                         <label key={m} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border-2 bg-background p-2.5 text-sm ${gameReq.mecanica === m ? "border-primary" : "border-border"}`}>
                           <span className="flex items-center gap-2 font-semibold">
                             <input type="radio" name={gameName} value={m} checked={gameReq.mecanica === m} onChange={() => setGamePart({ mecanica: m })} />

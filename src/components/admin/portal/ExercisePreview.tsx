@@ -28,7 +28,7 @@ export type PreviewExercise = {
 const DONE_NOTE = <p className="text-center text-sm text-muted-foreground">Acá la familia toca «Ya lo hice» para anotar la práctica.</p>;
 
 export function ExercisePreview({ ex, screenMode }: { ex: PreviewExercise; screenMode: ScreenMode }) {
-  const speech = useSpeech();
+  const speech = useSpeech("equipo");
   const [way, setWay] = useState<Way>("jugar");
   const pasos = ex.pasos.map((p) => p.trim()).filter(Boolean);
   const meta = [`${ex.minutes} ${ex.minutes === 1 ? "minuto" : "minutos"}`, ex.with_adult ? "Con un adulto" : null].filter(Boolean).join(" · ");

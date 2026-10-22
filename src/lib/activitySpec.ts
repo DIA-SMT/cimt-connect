@@ -9,23 +9,48 @@
 // «mecanica». «v» es la versión del contrato: migrateSpec lleva las viejas a
 // la actual antes de validar, así un plan publicado siempre se puede abrir.
 //
-// Fase 1: «poesia» y «rima», cargadas a mano por el profesional.
+// Fase 1: «poesia» y «rima», cargadas a mano o armadas con la IA.
+// Juegos con la voz (src/lib/speechGames.ts), cargados a mano: «globo»
+// (arranque suave con el micrófono, que no graba nada) y «lectura» (leer
+// siguiendo a la tortuga, al ritmo que elige el profesional).
 
 import { z } from "zod";
 import { DEFAULT_THEME, ICON_IDS, THEME_IDS } from "./activityAssets";
 import { RHYME_KINDS } from "./rhymeEs";
+import { READING_PACES } from "./speechGames";
 
 export const SPEC_VERSION = 1;
 
-export const MECHANICS = ["poesia", "rima"] as const;
+export const MECHANICS = ["poesia", "rima", "globo", "lectura"] as const;
 export type Mechanic = (typeof MECHANICS)[number];
+// Las que puede armar la IA (los juegos con la voz se cargan a mano)
+export const AI_MECHANICS = ["poesia", "rima"] as const satisfies readonly Mechanic[];
+export type AiMechanic = (typeof AI_MECHANICS)[number];
 export const MECHANIC_LABEL: Record<Mechanic, string> = {
   poesia: "Poesía para leer juntos",
   rima: "Completar la rima",
+  globo: "El globo de la voz suave",
+  lectura: "Leer con la tortuga",
 };
 export const MECHANIC_HINT: Record<Mechanic, string> = {
   poesia: "La poesía aparece verso por verso, con la voz del celular si quieren, para decirla juntos.",
   rima: "Tarjetas con un verso para completar: se elige la palabra que rima.",
+  globo: "Se dice cada palabra arrancando suave, como un soplido: el globo sube con la voz. El micrófono se usa solo en el celular: no se graba nada.",
+  lectura: "La tortuga va iluminando la frase despacito y se lee siguiéndola.",
+};
+
+// En qué enfoques del ejercicio se ofrece cada juego (null: en todos).
+// Propuesta a validar por las fonoaudiólogas: el arranque suave es una
+// técnica de «habla fácil»; leer despacio sirve también para el ritmo y la lectura
+export const MECHANIC_APPROACHES: Record<Mechanic, readonly string[] | null> = {
+  poesia: null,
+  rima: null,
+  globo: ["habla_facil"],
+  lectura: ["habla_facil", "ritmo_y_claridad", "escuela_y_lectura"],
+};
+export const mechanicAllowed = (m: Mechanic, approach: string) => {
+  const list = MECHANIC_APPROACHES[m];
+  return list === null || list.includes(approach);
 };
 
 // Esquemas de rima de cada estrofa (A con A, B con B). «libre»: sin rima pedida
@@ -61,6 +86,12 @@ export const ACTIVITY_LIMITS = {
   palabra: 24,
   distractores_min: 1,
   distractores_max: 3,
+  palabras_min: 2,
+  palabras_max: 10,
+  palabra_voz: 40, // una palabra o una frase corta para el globo
+  frases_min: 1,
+  frases_max: 8,
+  frase: 140,
   json: 24_000, // tope del JSON guardado (el mismo CHECK en la base)
 } as const;
 
@@ -137,16 +168,37 @@ export const rhymeSchema = z.object({
     .max(L.tarjetas_max, `Armá de ${L.tarjetas_min} a ${L.tarjetas_max} tarjetas.`),
 }).strict();
 
+// El globo: una palabra (o una frase corta) por paso
+export const balloonSchema = z.object({
+  ...base,
+  mecanica: z.literal("globo"),
+  palabras: z.array(text(L.palabra_voz, "la palabra"))
+    .min(L.palabras_min, `Escribí de ${L.palabras_min} a ${L.palabras_max} palabras.`)
+    .max(L.palabras_max, `Escribí de ${L.palabras_min} a ${L.palabras_max} palabras.`),
+}).strict();
+
+// Leer con la tortuga: una frase por paso, al ritmo elegido
+export const readingSchema = z.object({
+  ...base,
+  mecanica: z.literal("lectura"),
+  ritmo: z.enum(READING_PACES).default("lento"),
+  frases: z.array(text(L.frase, "la frase"))
+    .min(L.frases_min, `Escribí de ${L.frases_min} a ${L.frases_max} frases.`)
+    .max(L.frases_max, `Escribí de ${L.frases_min} a ${L.frases_max} frases.`),
+}).strict();
+
 // La unión necesita los objetos sin refinar: la regla de los versos por
 // estrofa se corre después, sobre la unión
-export const activitySchema = z.discriminatedUnion("mecanica", [poemObject, rhymeSchema]).superRefine((a, ctx) => {
+export const activitySchema = z.discriminatedUnion("mecanica", [poemObject, rhymeSchema, balloonSchema, readingSchema]).superRefine((a, ctx) => {
   if (a.mecanica === "poesia") poemLines(a, ctx);
 });
 
 export type PoemSpec = z.output<typeof poemObject>;
 export type RhymeCard = z.output<typeof rhymeCardSchema>;
 export type RhymeSpec = z.output<typeof rhymeSchema>;
-export type ActivitySpec = PoemSpec | RhymeSpec;
+export type BalloonSpec = z.output<typeof balloonSchema>;
+export type ReadingSpec = z.output<typeof readingSchema>;
+export type ActivitySpec = PoemSpec | RhymeSpec | BalloonSpec | ReadingSpec;
 
 // Lleva una versión vieja del contrato a la actual. null: no se reconoce
 export function migrateSpec(raw: unknown): unknown | null {
@@ -166,6 +218,8 @@ export function activityPlace(path: string): string {
     return `Estrofa ${Number(p[1]) + 1}${verse}`;
   }
   if (p[0] === "tarjetas" && p[1] !== undefined) return `Tarjeta ${Number(p[1]) + 1}`;
+  if (p[0] === "palabras" && p[1] !== undefined) return `Palabra ${Number(p[1]) + 1}`;
+  if (p[0] === "frases" && p[1] !== undefined) return `Frase ${Number(p[1]) + 1}`;
   return "";
 }
 

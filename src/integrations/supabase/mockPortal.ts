@@ -401,7 +401,7 @@ const SESSION_KEY = "cimt-portal-mock-session";
 // "Volvé a poner tu contraseña": va con la sesión de la pestaña (en la base,
 // portal_step_up por session_id)
 const STEP_UP_KEY = "cimt-portal-mock-step-up";
-const DB_VERSION = 13;
+const DB_VERSION = 14; // 14: el globo y la tortuga en la demo
 
 // Etapas de la información de salud prendidas (en el servidor:
 // PORTAL_CLINICAL_FEATURES). La demo muestra las etapas A, B, C, D y E1.
@@ -726,6 +726,17 @@ const DEMO_POEM: ActivitySpec = {
     { versos: ["La voz sale despacito", "como un globo chiquito,", "y cuando sale el sol", "decimos hola los dos."], icono: "sol" },
   ],
 };
+// Los juegos con la voz (cargados a mano): el globo en «Arranque suave», con
+// las palabras del catálogo, y leer con la tortuga en un ejercicio propio
+const DEMO_BALLOON: ActivitySpec = {
+  v: 1, mecanica: "globo", titulo: "El globo de la voz suave", tema: "cielo",
+  palabras: ["árbol", "oso", "uva", "elefante", "isla"],
+};
+const DEMO_READING: ActivitySpec = {
+  v: 1, mecanica: "lectura", titulo: "Leer con la tortuga", tema: "campo", ritmo: "lento",
+  frases: ["La tortuga camina despacito por el campo.", "Mira las flores, saluda al sol y sigue su camino.", "Cuando llega al río, toma agua y descansa."],
+};
+const DEMO_READING_EXERCISE = { id: "4c9e1a5d-7f6b-4d8e-8a2c-5b4f3e2d1c06", key: "8b5d2f7e-4a6c-4e9d-9f0b-3c2a5e7f9d46" } as const;
 // Valentina: logros sin plan publicado (una devolución con medalla y dos metas)
 const DEMO_VALE = {
   feedback: "5c1d7e3a-9b2f-4e6d-8a4c-1f0b3d5e7a92",
@@ -828,9 +839,26 @@ function seedPractice(today: string, authorLabel: string, staffEmail: string): P
       trabas.edit_ratio = editRatio(exerciseFullText(proposed), exerciseFullText(trabas));
     }
   }
-  // La poesía para decir juntos de «habla fácil» (actividades, fase 1)
-  if (arranque) arranque.activity = DEMO_POEM;
-  for (const e of [arranque, turnos, trabas]) if (e) out.practice_exercises.push(e);
+  // Actividades: el globo en «Arranque suave» y la poesía para decir juntos
+  // en el de los turnos (la poesía va con cualquier enfoque)
+  if (arranque) arranque.activity = DEMO_BALLOON;
+  if (turnos) turnos.activity = DEMO_POEM;
+  // Leer con la tortuga: un ejercicio escrito a mano por la profesional
+  const lectura: ExerciseRow | null = arranque && {
+    ...arranque, id: DEMO_READING_EXERCISE.id, exercise_key: DEMO_READING_EXERCISE.key, source: "manual",
+    catalog_id: null, catalog_version: null, position: 3,
+    title: "Leer despacito con la tortuga",
+    para_que: "Practicar leer en voz alta despacio y suave, siguiendo el ritmo de la tortuga.",
+    pasos: [
+      "Elegí un texto cortito que te guste.",
+      "Leelo en voz alta muy despacio, como habla la tortuga.",
+      "Si querés, el adulto lee una frase y vos la siguiente.",
+    ],
+    minutes: 5, materiales: "Un texto corto o un libro de cuentos.",
+    si_cuesta: "Si se cansa o se aburre, paren ahí. Cuéntenlo en la próxima sesión.",
+    activity: DEMO_READING,
+  };
+  for (const e of [arranque, turnos, trabas, lectura]) if (e) out.practice_exercises.push(e);
 
   // Las prácticas que anotó Laura (fecha → ejercicios) y lo que contó
   const { arranque: A, turnos: T, trabas: TF } = DEMO_EXERCISES;
