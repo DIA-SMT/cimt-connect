@@ -11,6 +11,7 @@ import {
   mechanicAllowed, validateActivity,
 } from "@/lib/activitySpec";
 import { PACE_LABEL, READING_PACES, type ReadingPace, pacePhrase } from "@/lib/speechGames";
+import { pictureFor, picturesIn } from "@/lib/wordPictures";
 import { ACTIVITY_MIN_AGE, activityAgeOk, activityWarnings, emptyActivity, poemFromText } from "@/lib/activityMechanics";
 import { type IconId, ICON_IDS, ICON_LABEL, THEME_IDS, THEME_LABEL, type ThemeId } from "@/lib/activityAssets";
 import { RHYME_KINDS, type RhymeKind } from "@/lib/rhymeEs";
@@ -312,12 +313,13 @@ function BalloonFields({ spec, onChange }: { spec: BalloonSpec; onChange: (a: Ac
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
         Una palabra o frase corta por paso. Para empezar, palabras que empiezan con vocal (árbol, oso, uva). Con el micrófono, el globo sube con la voz
-        y la familia ve cómo arrancó; sin micrófono, tocan «Ya la dijimos». No se graba nada.
+        y la familia ve cómo arrancó; sin micrófono, tocan «Ya la dijimos». No se graba nada. Si la palabra tiene dibujo, el globo lo lleva.
       </p>
       <ol className="space-y-2">
         {spec.palabras.map((w, i) => (
           <li key={i} className="flex items-center gap-2">
             <span className="w-5 shrink-0 text-right text-xs text-muted-foreground" aria-hidden="true">{i + 1}.</span>
+            <span className="w-7 shrink-0 text-center text-xl" title={pictureFor(w) ? "El dibujo que lleva el globo" : "Sin dibujo"} aria-hidden="true">{pictureFor(w) ?? "·"}</span>
             <Input value={w} maxLength={AL.palabra_voz} placeholder={["árbol", "oso", "uva"][i % 3]} aria-label={`Palabra ${i + 1}`}
               onChange={(e) => setWords(spec.palabras.map((x, j) => (j === i ? e.target.value : x)))} />
             <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 rounded-full" disabled={spec.palabras.length <= AL.palabras_min}
@@ -362,7 +364,11 @@ function ReadingFields({ spec, onChange }: { spec: ReadingSpec; onChange: (a: Ac
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 </Button>
               </div>
-              {secs > 0 && <p className="pl-7 text-xs text-muted-foreground">Con la tortuga: unos {secs} segundos.</p>}
+              {secs > 0 && (
+                <p className="pl-7 text-xs text-muted-foreground">
+                  Con la tortuga: unos {secs} segundos.{picturesIn(f).length > 0 && <> Dibujos: <span className="text-base">{picturesIn(f).join(" ")}</span></>}
+                </p>
+              )}
             </li>
           );
         })}

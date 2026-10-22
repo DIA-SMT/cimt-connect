@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Play, RotateCcw, Square, Turtle } from "lucide-react";
 import type { ReadingSpec } from "@/lib/activitySpec";
 import { pacePhrase, wordAt } from "@/lib/speechGames";
+import { picturesIn } from "@/lib/wordPictures";
 import { focusRing } from "@/components/portal/practiceFormat";
 import { pillOutline, pillPrimary } from "@/components/portal/styles";
 import type { MechanicProps } from "@/components/activity/types";
@@ -10,7 +11,8 @@ import type { MechanicProps } from "@/components/activity/types";
 // las palabras se iluminan al ritmo que eligió el profesional (sílabas por
 // segundo, src/lib/speechGames.ts) y la tortuga camina debajo: se lee
 // siguiéndola. Cuando llega al final, el paso queda hecho. Sin micrófono.
-// Con «menos animaciones», la tortuga salta de palabra en palabra.
+// Con «menos animaciones», la tortuga salta de palabra en palabra. Arriba,
+// los dibujos de las palabras de la frase que tienen (src/lib/wordPictures.ts).
 
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -61,8 +63,10 @@ export function ReadingPlay({ spec, state, dispatch, big, ink }: MechanicProps<R
     : finished ? 1
       : reduced() ? (words[Math.max(0, at)]?.start ?? 0) / total : ms / total;
 
+  const pictures = picturesIn(frase);
   return (
     <div className="flex flex-col items-center gap-4 text-center">
+      {pictures.length > 0 && <p aria-hidden="true" className="flex gap-3 text-5xl">{pictures.map((p) => <span key={p}>{p}</span>)}</p>}
       <p className={`flex flex-wrap justify-center gap-x-2 gap-y-1 leading-snug ${big ? "text-3xl" : "text-2xl"}`}>
         {words.map((w, i) => (
           <span key={i} className={`rounded-lg px-1 transition-colors motion-reduce:transition-none ${
