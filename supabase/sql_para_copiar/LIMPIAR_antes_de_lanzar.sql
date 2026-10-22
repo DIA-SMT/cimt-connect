@@ -40,10 +40,11 @@
 --      no existe porque su script no se corrió).
 --   2. Si está todo bien, sacale el "-- " a la línea SET de abajo y correlo
 --      de nuevo: ahí sí borra. Al final todo tiene que dar 0 (o vacío).
---   3. A mano, en Supabase → Storage, en los buckets patient-files y
+--   3. A mano, en Supabase → Storage, en los buckets patient-files,
 --      portal-documents (los PDF de la copia digital, si se corrió el
---      script 25): seleccioná todo y borrá (Supabase no permite borrar
---      archivos desde SQL).
+--      script 25) y practice-recordings (los audios de «Me grabo», si se
+--      corrió el script 38): seleccioná todo y borrá (Supabase no permite
+--      borrar archivos desde SQL).
 --   4. En el panel → Equipo: desactivá los usuarios de prueba y revisá los
 --      profesionales de prueba (se desactivan, no se borran).
 -- ============================================================
@@ -62,7 +63,8 @@ DECLARE
     'patient_medals', 'patient_goals',                     -- script 26
     'patient_practice_feedback', 'exercise_practice_notes',
     'exercise_practice_logs', 'patient_exercises',
-    'patient_exercise_plans', 'ai_drafts'
+    'patient_exercise_plans', 'ai_drafts',
+    'practice_recordings'                                 -- script 38
   ];
   -- Tablas que están siempre (hasta el script 20)
   tablas text[] := ARRAY[
@@ -139,6 +141,7 @@ SELECT
   pg_temp.cuenta('public.portal_consents')                   AS consentimientos_portal,
   pg_temp.cuenta('public.patient_exercise_plans')            AS planes_de_practica,
   pg_temp.cuenta('public.exercise_practice_logs')            AS practicas_anotadas,
+  pg_temp.cuenta('public.practice_recordings')               AS grabaciones,
   (SELECT count(*) FROM public.satisfaction_surveys)         AS encuestas,
   (SELECT count(*) FROM public.audit_log)                    AS historial,
   (SELECT count(*) FROM public.workshops)                    AS talleres_se_conservan,
