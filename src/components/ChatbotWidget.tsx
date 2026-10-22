@@ -238,7 +238,8 @@ export function ChatbotWidget({ staff, portal = false, raised = false }: { staff
 
       if (!response.ok) {
         console.error("[Migue] API error:", data);
-        throw new Error(data?.error ?? `HTTP ${response.status}`);
+        // Solo el mensaje del servidor (ya en castellano y sin detalles técnicos)
+        throw new Error(typeof data?.error === "string" ? data.error : "");
       }
 
       const reply = data.reply ?? "Lo siento, no pude procesar tu consulta. Intentá de nuevo.";
@@ -253,7 +254,7 @@ export function ChatbotWidget({ staff, portal = false, raised = false }: { staff
       setApiError(
         isAbort
           ? "La respuesta tardó demasiado. Verificá tu conexión e intentá de nuevo."
-          : `Error al conectar con el asistente. ${err instanceof Error ? err.message : ""}`
+          : err instanceof Error && err.name === "Error" && err.message ? err.message : "No pudimos conectar con el asistente. Probá de nuevo en un rato."
       );
     }
   };

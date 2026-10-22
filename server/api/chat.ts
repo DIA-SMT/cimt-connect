@@ -148,8 +148,10 @@ export default defineEventHandler(async (event) => {
   console.log("[Migue] apiKey present:", !!apiKey, "model:", model);
 
   if (!apiKey) {
-    setResponseStatus(event, 500);
-    return { error: "OpenRouter API key not configured" };
+    // Sin nombres de servicios ni detalles técnicos para quien usa el chat (quedan en el log)
+    console.error("[Migue] falta la clave del asistente");
+    setResponseStatus(event, 503);
+    return { error: "El asistente no está disponible en este momento. Probá de nuevo en un rato." };
   }
 
   // mode "portal": Migue dentro del Portal de familias (src/lib/portalHelp.ts).
@@ -200,7 +202,7 @@ export default defineEventHandler(async (event) => {
     if (!upstream.ok) {
       console.error("[Migue] upstream error:", data);
       setResponseStatus(event, upstream.status);
-      return { error: data?.error?.message ?? "Upstream error" };
+      return { error: "El asistente no pudo responder. Probá de nuevo en un rato." };
     }
 
     const reply =
@@ -212,7 +214,7 @@ export default defineEventHandler(async (event) => {
     console.error("[Migue] server fetch error:", err);
     setResponseStatus(event, 503);
     return {
-      error: `Error al conectar con el asistente: ${err instanceof Error ? err.message : String(err)}`,
+      error: "No pudimos conectar con el asistente. Probá de nuevo en un rato.",
     };
   }
 });

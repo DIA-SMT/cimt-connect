@@ -13,10 +13,11 @@
 
 import { type RecordingAnalysis, percentSS } from "./recordingAnalysis";
 
-export const RECORDING_NOTICE_VERSION = "2026-10-v1";
+// v2: sin nombres de servicios (son internos)
+export const RECORDING_NOTICE_VERSION = "2026-10-v2";
 export const RECORDING_NOTICE_POINTS = [
   "La grabación la escucha solo el equipo profesional del CIMT que atiende al paciente.",
-  "Para ayudar al profesional, el reconocimiento de voz de Microsoft Azure (en Brasil) la pasa a texto y marca momentos para escuchar. No decide nada: lo revisa el profesional.",
+  "Para ayudar al profesional, un sistema de reconocimiento de voz la pasa a texto y marca momentos para escuchar. No decide nada: lo revisa el profesional.",
   "El audio se borra solo a los 90 días. Quedan las anotaciones del profesional.",
   "Grabarse es optativo: el ejercicio se puede hacer igual sin grabar.",
   "Si cambiás de idea, avisanos y dejamos de usar tus grabaciones.",
