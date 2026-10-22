@@ -12,6 +12,15 @@ export default defineConfig({
   // Las funciones de Vercel corren en São Paulo (gru1), al lado de la base de
   // Supabase (sa-east-1): cada pedido del portal hace varias consultas
   // seguidas y desde Washington (la región por defecto) cada una cruzaba el
-  // continente
-  plugins: [nitro({ serverDir: "server", vercel: { functions: { regions: ["gru1"] } } })],
+  // continente.
+  // Todos los días a las 6 de Argentina (9 UTC): la limpieza de los audios de
+  // «Me grabo» con más de 90 días (server/api/cron/limpieza.ts; necesita la
+  // variable CRON_SECRET en Vercel)
+  plugins: [nitro({
+    serverDir: "server",
+    vercel: {
+      functions: { regions: ["gru1"] },
+      config: { version: 3, crons: [{ path: "/api/cron/limpieza", schedule: "0 9 * * *" }] },
+    },
+  })],
 });
