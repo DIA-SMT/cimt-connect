@@ -1787,7 +1787,7 @@ export type StaffPracticePending = {
 export type StaffPracticeDTO = {
   // ai: la ayuda de IA está disponible (etapa "ai" y clave). activities: las
   // actividades para jugar en el celular (etapa "activities" y script 33)
-  features: { ai: boolean; activities: boolean };
+  features: { ai: boolean; activities: boolean; recordings: boolean };
   can_edit: boolean; // profesional o Dirección
   author: { label: string | null; problem: string | null }; // con qué nombre se publica (como StaffInfoDTO)
   patient: {

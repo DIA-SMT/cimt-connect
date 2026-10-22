@@ -13,6 +13,7 @@ import type { StaffInfoDTO, WithdrawReason } from "@/lib/portalInfoRules";
 import type { ApptReqRejectReason, ApptReqStaffTarget, ApptReqStatus, StaffApptRequest } from "@/lib/apptRequestRules";
 import type { PracticeAction, StaffPracticeDTO } from "@/lib/practiceRules";
 import type { AiDraftRequest, AiDraftResult } from "@/lib/aiDraftRules";
+import type { RecordingsAction, RecordingsResult } from "@/lib/recordingRules";
 import type {
   HcEventKind, HcRejectReason, HcSendAcks, HcStaffTarget, HcStatus, NoticeAction, NoticeResolution,
   StaffHcRequest, StaffInbox, StaffInboxCount,
@@ -126,7 +127,7 @@ function mock(): Promise<MockPortal> {
   return mockApi;
 }
 
-async function staffCall<T>(body: unknown, path: "access" | "inbox" | "clinical" | "practice" | "ai-draft" = "access"): Promise<ApiResult<T>> {
+async function staffCall<T>(body: unknown, path: "access" | "inbox" | "clinical" | "practice" | "ai-draft" | "recordings" = "access"): Promise<ApiResult<T>> {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`/api/portal-staff/${path}`, {
@@ -312,6 +313,14 @@ export const portalStaffApi = {
     const issuedBy = (await supabase.auth.getSession()).data.session?.user?.email ?? "";
     if (MOCK) return (await mock()).staffPracticeAction(body, issuedBy);
     return staffCall(body, "practice");
+  },
+  // «Me grabo» (etapa recordings): las grabaciones de un paciente, el audio
+  // (URL firmada de 5 minutos), la revisión del profesional (%SS) y volver a
+  // analizar. Solo perfiles clínicos (server/api/portal-staff/recordings.ts)
+  async recordings(body: RecordingsAction): Promise<ApiResult<RecordingsResult>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).staffRecordings(body);
+    return staffCall(body, "recordings");
   },
   // "Adaptar con ayuda de IA" (etapa ai): borrador sobre ejercicios del
   // catálogo (POST /api/portal-staff/ai-draft). Errores con code:

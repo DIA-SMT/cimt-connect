@@ -9,4 +9,6 @@ export type MechanicProps<S> = {
   speech: Speech;
   big: boolean; // hasta 8 años (modo tortuga): letra más grande
   ink: string; // color de los dibujos (el del tema)
+  exerciseId: string | null; // el ejercicio en el portal (null en la vista previa del panel)
+  together: boolean; // con un acompañante («Con un adulto»): los textos van en plural; si no, a quien practica solo
 };

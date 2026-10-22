@@ -702,7 +702,13 @@ async function currentExercise(ctx: Ctx, patientId: string, key: string, act = f
 // Un id de ejercicio que llega de la familia: primero su paciente (y si la
 // cuenta lo puede ver), después la versión publicada. Un ejercicio de una
 // versión anterior que sigue en el plan se resuelve a la versión nueva.
-async function resolveExercise(ctx: Ctx, account: Account, exerciseId: unknown) {
+// La actividad que ve la familia: «Me grabo» sin la etapa "recordings" no se ofrece
+function familyActivity(raw: unknown) {
+  const a = readActivity(raw);
+  return a?.mecanica === "grabacion" && !features().includes("recordings") ? null : a;
+}
+
+export async function resolveExercise(ctx: Ctx, account: Account, exerciseId: unknown) {
   if (!isUuid(exerciseId)) throw new PortalError(404, EXERCISE_NOT_FOUND);
   const row = one<ExRow>(await ctx.admin.from("patient_exercises").select(EX_COLS).eq("id", exerciseId).maybeSingle());
   if (!row) throw new PortalError(404, EXERCISE_NOT_FOUND);
@@ -738,8 +744,9 @@ async function exerciseDto(
     exercise: {
       id: ex.id, title: ex.title, para_que: ex.para_que, pasos: steps(ex.pasos), minutes: ex.minutes,
       materiales: ex.materiales, for_adult: ex.for_adult, si_cuesta: ex.si_cuesta, with_adult: ex.with_adult,
-      // Desde los 6 años (por si se cargó antes de que el servidor lo pidiera)
-      activity: activityAgeOk(who.age) ? readActivity(ex.activity) : null,
+      // Desde los 6 años (por si se cargó antes de que el servidor lo pidiera).
+      // «Me grabo» solo con la etapa "recordings": si no, los pasos de siempre
+      activity: activityAgeOk(who.age) ? familyActivity(ex.activity) : null,
     },
     today,
     days,
@@ -1413,7 +1420,8 @@ export async function staffPractice(ctx: Ctx, staff: Staff, patientId: string, o
     .map((a) => (a.relationship ? `${a.name} (${a.relationship.trim().toLowerCase()})` : a.name));
 
   return {
-    features: { ai: features().includes("ai") && !!draftApiKey(process.env), activities: act },
+    // recordings: «Me grabo» (server/lib/recordings.ts), con las actividades y la etapa prendidas
+    features: { ai: features().includes("ai") && !!draftApiKey(process.env), activities: act, recordings: act && features().includes("recordings") },
     can_edit: staff.clinical,
     author: { label: author.label, problem: author.problem },
     patient: {

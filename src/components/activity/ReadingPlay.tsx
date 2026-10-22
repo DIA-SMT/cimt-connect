@@ -16,7 +16,7 @@ import type { MechanicProps } from "@/components/activity/types";
 
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function ReadingPlay({ spec, state, dispatch, big, ink }: MechanicProps<ReadingSpec>) {
+export function ReadingPlay({ spec, state, dispatch, big, ink, together }: MechanicProps<ReadingSpec>) {
   const frase = spec.frases[state.step];
   const { words, total } = useMemo(() => pacePhrase(frase, spec.ritmo), [frase, spec.ritmo]);
   const [ms, setMs] = useState<number | null>(null); // null: la tortuga todavía no salió
@@ -85,7 +85,7 @@ export function ReadingPlay({ spec, state, dispatch, big, ink }: MechanicProps<R
           style={{ left: `calc(1rem + (100% - 2rem) * ${progress})` }} />
       </div>
 
-      <p aria-live="polite" className="min-h-7 text-lg font-semibold">{finished ? "¡Llegaron con la tortuga!" : ""}</p>
+      <p aria-live="polite" className="min-h-7 text-lg font-semibold">{finished ? (together ? "¡Llegaron con la tortuga!" : "¡Llegaste con la tortuga!") : ""}</p>
 
       {playing ? (
         <button type="button" onClick={stopTurtle} className={`${pillOutline} ${focusRing} gap-2`}>

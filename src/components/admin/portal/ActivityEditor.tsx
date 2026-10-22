@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { selectClass } from "../fields";
 import {
-  type ActivitySpec, type BalloonSpec, type PoemScheme, type PoemSpec, type ReadingSpec, type RhymeCard, type RhymeSpec,
+  type ActivitySpec, type BalloonSpec, type PoemScheme, type PoemSpec, type ReadingSpec, type RecordingSpec, type RhymeCard, type RhymeSpec,
   ACTIVITY_LIMITS as AL, BLANK, MECHANICS, MECHANIC_HINT, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LABEL, SCHEME_LINES,
   mechanicAllowed, validateActivity,
 } from "@/lib/activitySpec";
@@ -34,12 +34,14 @@ const RHYME_KIND_LABEL: Record<RhymeKind, string> = {
   consonante: "Consonante (riman todos los sonidos: «canción» y «corazón»)",
 };
 
-export function ActivityEditor({ activity, exerciseTitle, age, approach, screenMode, onChange }: {
+export function ActivityEditor({ activity, exerciseTitle, age, approach, screenMode, together = true, recordings = false, onChange }: {
   activity: ActivitySpec | null;
   exerciseTitle: string;
   age: number | null;
   approach: Approach;
   screenMode: ScreenMode;
+  together?: boolean; // «Con un adulto»: la vista previa, con los textos en plural
+  recordings?: boolean; // «Me grabo» se ofrece solo con la etapa "recordings" prendida
   onChange: (a: ActivitySpec | null) => void;
 }) {
   const [pasting, setPasting] = useState(false);
@@ -60,7 +62,7 @@ export function ActivityEditor({ activity, exerciseTitle, age, approach, screenM
               La familia elige entre jugarlo en el celular o hacer los pasos sin pantalla. Terminar el juego no anota la práctica: la anotan como siempre.
             </p>
             <div className="flex flex-wrap gap-2">
-              {MECHANICS.filter((m) => mechanicAllowed(m, approach)).map((m) => (
+              {MECHANICS.filter((m) => mechanicAllowed(m, approach) && (m !== "grabacion" || recordings)).map((m) => (
                 <Button key={m} type="button" size="sm" variant="outline" className={PILL_BTN} title={MECHANIC_HINT[m]}
                   onClick={() => onChange(emptyActivity(m, exerciseTitle))}>
                   <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> {MECHANIC_LABEL[m]}
@@ -86,14 +88,15 @@ export function ActivityEditor({ activity, exerciseTitle, age, approach, screenM
     );
   }
 
-  return <FilledEditor activity={activity} age={age} approach={approach} screenMode={screenMode} onChange={onChange} />;
+  return <FilledEditor activity={activity} age={age} approach={approach} screenMode={screenMode} together={together} onChange={onChange} />;
 }
 
-function FilledEditor({ activity, age, approach, screenMode, onChange }: {
+function FilledEditor({ activity, age, approach, screenMode, together, onChange }: {
   activity: ActivitySpec;
   age: number | null;
   approach: Approach;
   screenMode: ScreenMode;
+  together: boolean;
   onChange: (a: ActivitySpec | null) => void;
 }) {
   const [preview, setPreview] = useState(false);
@@ -136,6 +139,7 @@ function FilledEditor({ activity, age, approach, screenMode, onChange }: {
       {activity.mecanica === "rima" && <RhymeFields spec={activity} onChange={onChange} />}
       {activity.mecanica === "globo" && <BalloonFields spec={activity} onChange={onChange} />}
       {activity.mecanica === "lectura" && <ReadingFields spec={activity} onChange={onChange} />}
+      {activity.mecanica === "grabacion" && <RecordingFields spec={activity} onChange={onChange} />}
 
       {!checked.ok && <p role="status" className={`text-xs font-semibold ${ERROR_TEXT}`}>Para guardar: {checked.error}</p>}
       {warnings.length > 0 && (
@@ -155,7 +159,7 @@ function FilledEditor({ activity, age, approach, screenMode, onChange }: {
       {preview && checked.ok && (
         <div className="mx-auto w-full max-w-[380px] rounded-[2rem] border-4 border-foreground/10 bg-background p-3">
           {/* Cada cambio vuelve a empezar la vista previa */}
-          <Activity key={JSON.stringify(checked.value)} spec={checked.value} screenMode={screenMode} speech={speech}
+          <Activity key={JSON.stringify(checked.value)} spec={checked.value} screenMode={screenMode} speech={speech} together={together}
             finishArea={<p className="text-sm text-muted-foreground">Acá la familia ve «Ya lo hicimos» para anotar la práctica.</p>} />
         </div>
       )}
@@ -313,7 +317,7 @@ function BalloonFields({ spec, onChange }: { spec: BalloonSpec; onChange: (a: Ac
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
         Una palabra o frase corta por paso. Para empezar, palabras que empiezan con vocal (árbol, oso, uva). Con el micrófono, el globo sube con la voz
-        y la familia ve cómo arrancó; sin micrófono, tocan «Ya la dijimos». No se graba nada. Si la palabra tiene dibujo, el globo lo lleva.
+        y se ve cómo arrancó la voz; sin micrófono, se sigue con un botón. No se graba nada. Si la palabra tiene dibujo, el globo lo lleva.
       </p>
       <ol className="space-y-2">
         {spec.palabras.map((w, i) => (
@@ -377,6 +381,35 @@ function ReadingFields({ spec, onChange }: { spec: ReadingSpec; onChange: (a: Ac
         onClick={() => setPhrases([...spec.frases, ""])}>
         <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Sumar una frase
       </Button>
+    </div>
+  );
+}
+
+// Me grabo: la consigna, el texto para leer (optativo) y cuánto puede durar
+function RecordingFields({ spec, onChange }: { spec: RecordingSpec; onChange: (a: ActivitySpec) => void }) {
+  const ids = { consigna: useId(), texto: useId(), segundos: useId() };
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        El paciente (solo o con quien lo acompañe) graba lo que pide la consigna, la escucha y te la manda. Te llega en «Grabaciones» con las
+        marcas de la IA (pausas largas, posibles repeticiones, muletillas) para que la escuches y cuentes las sílabas tartamudeadas. Quien graba no ve ningún número.
+      </p>
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.consigna}>Consigna</Label>
+        <Input id={ids.consigna} value={spec.consigna} maxLength={AL.consigna} placeholder="Contá en un minuto qué hiciste el fin de semana."
+          onChange={(e) => onChange({ ...spec, consigna: e.target.value })} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.texto}>Texto para leer <span className="font-normal text-muted-foreground">(opcional: si no, es habla libre)</span></Label>
+        <Textarea id={ids.texto} rows={3} value={spec.texto ?? ""} maxLength={AL.texto_grabacion}
+          onChange={(e) => onChange({ ...spec, texto: e.target.value || null })} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={ids.segundos}>Dura hasta</Label>
+        <select id={ids.segundos} className={selectClass} value={spec.segundos} onChange={(e) => onChange({ ...spec, segundos: Number(e.target.value) })}>
+          {[15, 30, 45, 60].map((n) => <option key={n} value={n}>{n} segundos</option>)}
+        </select>
+      </div>
     </div>
   );
 }

@@ -13,6 +13,9 @@
 // Juegos con la voz (src/lib/speechGames.ts), cargados a mano: «globo»
 // (arranque suave con el micrófono, que no graba nada) y «lectura» (leer
 // siguiendo a la tortuga, al ritmo que elige el profesional).
+// «Me grabo» («grabacion», cargada a mano, con la etapa "recordings"): la
+// familia graba lo que pide la consigna y se lo manda al profesional, que la
+// escucha con la microevaluación de la IA (src/lib/recordingAnalysis.ts).
 
 import { z } from "zod";
 import { DEFAULT_THEME, ICON_IDS, THEME_IDS } from "./activityAssets";
@@ -21,7 +24,7 @@ import { READING_PACES } from "./speechGames";
 
 export const SPEC_VERSION = 1;
 
-export const MECHANICS = ["poesia", "rima", "globo", "lectura"] as const;
+export const MECHANICS = ["poesia", "rima", "globo", "lectura", "grabacion"] as const;
 export type Mechanic = (typeof MECHANICS)[number];
 // Las que puede armar la IA (los juegos con la voz se cargan a mano)
 export const AI_MECHANICS = ["poesia", "rima"] as const satisfies readonly Mechanic[];
@@ -31,12 +34,14 @@ export const MECHANIC_LABEL: Record<Mechanic, string> = {
   rima: "Completar la rima",
   globo: "El globo de la voz suave",
   lectura: "Leer con la tortuga",
+  grabacion: "Me grabo",
 };
 export const MECHANIC_HINT: Record<Mechanic, string> = {
   poesia: "La poesía aparece verso por verso, con la voz del celular si quieren, para decirla juntos.",
   rima: "Tarjetas con un verso para completar: se elige la palabra que rima.",
   globo: "Se dice cada palabra arrancando suave, como un soplido: el globo sube con la voz. El micrófono se usa solo en el celular: no se graba nada.",
   lectura: "La tortuga va iluminando la frase despacito y se lee siguiéndola.",
+  grabacion: "Se graba lo que pide la consigna (hasta un minuto) y se le manda al profesional, que lo escucha. Solo lo escucha el equipo.",
 };
 
 // En qué enfoques del ejercicio se ofrece cada juego (null: en todos).
@@ -47,6 +52,9 @@ export const MECHANIC_APPROACHES: Record<Mechanic, readonly string[] | null> = {
   rima: null,
   globo: ["habla_facil"],
   lectura: ["habla_facil", "ritmo_y_claridad", "escuela_y_lectura"],
+  // Grabarse sirve para ver cómo va el habla: en las áreas de fonoaudiología
+  // y lectura (en «entorno familia» se trabaja con el adulto, no con el chico)
+  grabacion: ["habla_facil", "tartamudear_facil", "animarse", "ritmo_y_claridad", "escuela_y_lectura"],
 };
 export const mechanicAllowed = (m: Mechanic, approach: string) => {
   const list = MECHANIC_APPROACHES[m];
@@ -92,6 +100,10 @@ export const ACTIVITY_LIMITS = {
   frases_min: 1,
   frases_max: 8,
   frase: 140,
+  consigna: 160,
+  texto_grabacion: 600,
+  segundos_min: 15,
+  segundos_max: 60,
   json: 24_000, // tope del JSON guardado (el mismo CHECK en la base)
 } as const;
 
@@ -187,9 +199,19 @@ export const readingSchema = z.object({
     .max(L.frases_max, `Escribí de ${L.frases_min} a ${L.frases_max} frases.`),
 }).strict();
 
+// Me grabo: la consigna, el texto para leer (si es de lectura) y cuánto puede durar
+export const recordingSchema = z.object({
+  ...base,
+  mecanica: z.literal("grabacion"),
+  consigna: text(L.consigna, "la consigna"),
+  texto: z.preprocess((v) => (clean(v) ? v : null), text(L.texto_grabacion, "el texto para leer").nullable()).default(null),
+  segundos: z.number().int().min(L.segundos_min, `La grabación dura de ${L.segundos_min} a ${L.segundos_max} segundos.`)
+    .max(L.segundos_max, `La grabación dura de ${L.segundos_min} a ${L.segundos_max} segundos.`).default(60),
+}).strict();
+
 // La unión necesita los objetos sin refinar: la regla de los versos por
 // estrofa se corre después, sobre la unión
-export const activitySchema = z.discriminatedUnion("mecanica", [poemObject, rhymeSchema, balloonSchema, readingSchema]).superRefine((a, ctx) => {
+export const activitySchema = z.discriminatedUnion("mecanica", [poemObject, rhymeSchema, balloonSchema, readingSchema, recordingSchema]).superRefine((a, ctx) => {
   if (a.mecanica === "poesia") poemLines(a, ctx);
 });
 
@@ -198,7 +220,8 @@ export type RhymeCard = z.output<typeof rhymeCardSchema>;
 export type RhymeSpec = z.output<typeof rhymeSchema>;
 export type BalloonSpec = z.output<typeof balloonSchema>;
 export type ReadingSpec = z.output<typeof readingSchema>;
-export type ActivitySpec = PoemSpec | RhymeSpec | BalloonSpec | ReadingSpec;
+export type RecordingSpec = z.output<typeof recordingSchema>;
+export type ActivitySpec = PoemSpec | RhymeSpec | BalloonSpec | ReadingSpec | RecordingSpec;
 
 // Lleva una versión vieja del contrato a la actual. null: no se reconoce
 export function migrateSpec(raw: unknown): unknown | null {

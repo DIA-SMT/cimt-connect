@@ -190,6 +190,12 @@ import {
 } from "@/lib/practiceRules";
 import { profileFromRow, suggestPractice } from "@/lib/practiceSuggest";
 import { type ActivitySpec, readActivity } from "@/lib/activitySpec";
+import { analyzeWords, parseAzureDetailed } from "@/lib/recordingAnalysis";
+import {
+  RECORDING_MIN_MS, RECORDING_NOTICE_VERSION, type RecordingsAction, type RecordingsResult, type RecordingStatus,
+  type StaffRecordingDTO, deleteAfter, validateReview,
+} from "@/lib/recordingRules";
+import { wavDurationMs } from "@/lib/wavEncoder";
 import { ACTIVITY_MIN_AGE, activityAgeOk } from "@/lib/activityMechanics";
 import { CATALOG_VERSION, catalogEntry, catalogFor } from "@/lib/exerciseCatalog";
 import {
@@ -401,11 +407,11 @@ const SESSION_KEY = "cimt-portal-mock-session";
 // "Volvé a poner tu contraseña": va con la sesión de la pestaña (en la base,
 // portal_step_up por session_id)
 const STEP_UP_KEY = "cimt-portal-mock-step-up";
-const DB_VERSION = 14; // 14: el globo y la tortuga en la demo
+const DB_VERSION = 15; // 14: el globo y la tortuga en la demo; 15: «Me grabo»
 
 // Etapas de la información de salud prendidas (en el servidor:
 // PORTAL_CLINICAL_FEATURES). La demo muestra las etapas A, B, C, D y E1.
-const FEATURES: ClinicalFeature[] = ["consent", "info", "practice", "ai", "hc_digital", "activities"];
+const FEATURES: ClinicalFeature[] = ["consent", "info", "practice", "ai", "hc_digital", "activities", "recordings"];
 const activitiesOn = () => FEATURES.includes("activities") && FEATURES.includes("practice");
 
 // Copia digital de la historia clínica (E1): solo vale con "consent" también
@@ -737,6 +743,12 @@ const DEMO_READING: ActivitySpec = {
   frases: ["La tortuga camina despacito por el campo.", "Mira las flores, saluda al sol y sigue su camino.", "Cuando llega al río, toma agua y descansa."],
 };
 const DEMO_READING_EXERCISE = { id: "4c9e1a5d-7f6b-4d8e-8a2c-5b4f3e2d1c06", key: "8b5d2f7e-4a6c-4e9d-9f0b-3c2a5e7f9d46" } as const;
+// «Me grabo»: contar el fin de semana (habla espontánea)
+const DEMO_RECORDING: ActivitySpec = {
+  v: 1, mecanica: "grabacion", titulo: "Contame tu fin de semana", tema: "ciudad",
+  consigna: "Contá en un minuto qué hiciste el fin de semana. Hablá tranquilo, como te salga.", texto: null, segundos: 60,
+};
+const DEMO_RECORDING_EXERCISE = { id: "5d0f2b6e-8a7c-4e9f-9b3d-6c5a4f3e2d17", key: "9c6e3a8f-5b7d-4fa0-8a1c-4d3b6f8a0e57" } as const;
 // Valentina: logros sin plan publicado (una devolución con medalla y dos metas)
 const DEMO_VALE = {
   feedback: "5c1d7e3a-9b2f-4e6d-8a4c-1f0b3d5e7a92",
@@ -858,7 +870,22 @@ function seedPractice(today: string, authorLabel: string, staffEmail: string): P
     si_cuesta: "Si se cansa o se aburre, paren ahí. Cuéntenlo en la próxima sesión.",
     activity: DEMO_READING,
   };
-  for (const e of [arranque, turnos, trabas, lectura]) if (e) out.practice_exercises.push(e);
+  // Me grabo: también escrito a mano por la profesional
+  const grabacion: ExerciseRow | null = arranque && {
+    ...arranque, id: DEMO_RECORDING_EXERCISE.id, exercise_key: DEMO_RECORDING_EXERCISE.key, source: "manual",
+    catalog_id: null, catalog_version: null, position: 4,
+    title: "Contame tu fin de semana",
+    para_que: "Grabarte contando algo, para que tu profesional escuche cómo va tu habla en casa.",
+    pasos: [
+      "Pensá qué hiciste el fin de semana.",
+      "Contalo en voz alta, tranquilo, como te salga.",
+      "Si querés, el adulto te hace preguntas para ayudarte.",
+    ],
+    minutes: 5, materiales: null,
+    si_cuesta: "Si no tiene ganas de grabarse, no pasa nada: cuéntenlo sin grabar.",
+    activity: DEMO_RECORDING,
+  };
+  for (const e of [arranque, turnos, trabas, lectura, grabacion]) if (e) out.practice_exercises.push(e);
 
   // Las prácticas que anotó Laura (fecha → ejercicios) y lo que contó
   const { arranque: A, turnos: T, trabas: TF } = DEMO_EXERCISES;
@@ -2637,6 +2664,12 @@ function practicePage(db: Db, f: PracticeFamily, today: string): PracticeDTO {
   };
 }
 
+// Como el servidor: «Me grabo» solo con la etapa "recordings"
+function familyActivity(raw: unknown) {
+  const a = readActivity(raw);
+  return a?.mecanica === "grabacion" && !FEATURES.includes("recordings") ? null : a;
+}
+
 // Edad de un chico de la demo (para la versión interactiva, desde los 6)
 function childAge(db: Db, patientId: string, today: string): number | null {
   const birth = db.children.find((c) => c.id === patientId)?.birth_date ?? null;
@@ -2663,7 +2696,7 @@ function exercisePage(db: Db, f: PracticeFamily, plan: PlanRow, ex: ExerciseRow,
     exercise: {
       id: ex.id, title: ex.title, para_que: ex.para_que, pasos: [...ex.pasos], minutes: ex.minutes,
       materiales: ex.materiales, for_adult: ex.for_adult, si_cuesta: ex.si_cuesta, with_adult: ex.with_adult,
-      activity: activitiesOn() && activityAgeOk(childAge(db, ex.patient_id, today)) ? readActivity(ex.activity ?? null) : null,
+      activity: activitiesOn() && activityAgeOk(childAge(db, ex.patient_id, today)) ? familyActivity(ex.activity ?? null) : null,
     },
     today,
     days,
@@ -4938,7 +4971,7 @@ async function staffPractice(staff: Staff, patientId: string, withCatalog = fals
 
   return ok({
     // En el mock la ayuda de IA no necesita clave (son plantillas fijas)
-    features: { ai: FEATURES.includes("ai"), activities: activitiesOn() },
+    features: { ai: FEATURES.includes("ai"), activities: activitiesOn(), recordings: activitiesOn() && FEATURES.includes("recordings") },
     can_edit: staff.clinical,
     author: { label: author.label, problem: admin ? STAFF_PRACTICE_TEXT.admin_readonly : author.problem },
     patient: {
@@ -5584,4 +5617,120 @@ export async function staffAiDraft(req: AiDraftRequest, issuedBy: string): Promi
   save(db);
   if (!parsed.ok) return fail(502, AI_ERROR.failed, { code: "AI_FAILED" });
   return ok({ draft_id: id, draft: parsed.draft, flags: parsed.flags, sent: describeSent(built.params, built.entries), demo: true });
+}
+
+// ── «Me grabo» (etapa recordings) ───────────────────────────────────────────
+// En la demo, las grabaciones viven en la memoria de esta pestaña (el audio no
+// entra en el almacenamiento del navegador): al recargar quedan solo las de
+// ejemplo. La demo no reconoce voz: cada grabación nueva lleva el análisis de
+// ejemplo (lo que devolvió Azure para el audio de /demo/me-grabo-demo.wav, una
+// voz sintética: «Hoy fui a la plaza con mi mamá… la pe pe pelota… eh…»).
+
+const recordingsOn = () => FEATURES.includes("practice") && FEATURES.includes("activities") && FEATURES.includes("recordings");
+
+const DEMO_AZURE = {
+  RecognitionStatus: "Success",
+  NBest: [{
+    Words: ([
+      ["hoy", 0.21, 0.21], ["fui", 0.43, 0.25], ["a", 0.69, 0.05], ["la", 0.75, 0.11], ["plaza", 0.87, 0.31],
+      ["con", 1.19, 0.18], ["mi", 1.38, 0.1], ["mam", 1.49, 0.28], ["jugamos", 4.42, 0.6], ["a", 5.03, 0.04],
+      ["la", 5.08, 0.11], ["pc", 5.2, 0.26], ["pelota", 5.47, 0.36], ["y", 5.84, 0.05], ["después", 5.9, 0.47],
+      ["e", 6.38, 0.41], ["comimos", 6.8, 0.51], ["un", 7.32, 0.07], ["helado", 7.4, 0.39],
+    ] as const).map(([Word, st, d]) => ({ Word, Offset: Math.round(st * 1e7), Duration: Math.round(d * 1e7) })),
+  }],
+};
+const demoAnalysis = () => ({ ...analyzeWords(parseAzureDetailed(DEMO_AZURE)!), source: "azure" as const });
+
+type MockRecording = Omit<StaffRecordingDTO, "exercise_title" | "consigna" | "texto" | "audio"> & {
+  patient_id: string; exercise_id: string; account_id: string | null; url: string;
+};
+const recordingConsents = new Map<string, boolean>();
+const demoCreated = new Date(Date.now() - 2 * 86_400_000).toISOString();
+const EXAMPLE_RECORDING_ID = "6e1a3c7f-9b8d-4fa0-8c2e-7d6b5a4f3e28";
+const mockRecordings: MockRecording[] = [{
+  id: EXAMPLE_RECORDING_ID, patient_id: "c-martin", exercise_id: DEMO_RECORDING_EXERCISE.id, account_id: "acc-laura",
+  url: "/demo/me-grabo-demo.wav", created_at: demoCreated, duration_ms: 8_550, status: "lista", analysis: demoAnalysis(),
+  review: null, reviewed_at: null, reviewed_by_email: null, delete_after: deleteAfter(demoCreated),
+}];
+
+export async function recordingConsent(): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+  if (!recordingsOn()) return fail(404, NOT_AVAILABLE);
+  const acc = requireAccount(load());
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  return ok({ accepted: recordingConsents.get(acc.id) === true, version: RECORDING_NOTICE_VERSION });
+}
+
+export async function recordingAccept(accept: boolean): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+  if (!recordingsOn()) return fail(404, NOT_AVAILABLE);
+  await wait(300);
+  const acc = requireAccount(load());
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  recordingConsents.set(acc.id, accept === true);
+  return ok({ accepted: accept === true, version: RECORDING_NOTICE_VERSION });
+}
+
+export async function recordingUpload(exerciseId: string, wav: Uint8Array): Promise<ApiResult<{ id: string; status: RecordingStatus }>> {
+  if (!recordingsOn()) return fail(404, NOT_AVAILABLE);
+  await wait(900);
+  const db = load();
+  const acc = requireAccount(db);
+  if (!acc) return fail(401, SESSION_EXPIRED);
+  const row = validId(exerciseId) ? db.practice_exercises.find((e) => e.id === exerciseId) : undefined;
+  if (!row) return fail(404, EXERCISE_NOT_FOUND);
+  const gate = await practiceGate(db, acc, row.patient_id);
+  if (!("acc" in gate)) return gate.ok === false && gate.status === 404 ? fail(404, EXERCISE_NOT_FOUND) : gate;
+  const cur = currentOf(load(), row.patient_id, row.exercise_key);
+  const act = cur ? readActivity(cur.ex.activity ?? null) : null;
+  if (!cur || !act || act.mecanica !== "grabacion") return fail(404, "Este ejercicio no pide una grabación.");
+  if (recordingConsents.get(acc.id) !== true) return fail(403, "Para mandar grabaciones, primero aceptá el permiso.", { code: "RECORDING_CONSENT" });
+  const ms = wavDurationMs(wav);
+  if (ms === null || ms < RECORDING_MIN_MS) return fail(400, "No pudimos leer la grabación. Probá grabar de nuevo.");
+  if (ms > act.segundos * 1000 + 1500) return fail(400, `La grabación dura hasta ${act.segundos} segundos.`);
+  const created = new Date().toISOString();
+  const id = crypto.randomUUID();
+  mockRecordings.unshift({
+    id, patient_id: row.patient_id, exercise_id: cur.ex.id, account_id: acc.id,
+    url: URL.createObjectURL(new Blob([wav as BlobPart], { type: "audio/wav" })),
+    created_at: created, duration_ms: ms, status: "lista", analysis: demoAnalysis(),
+    review: null, reviewed_at: null, reviewed_by_email: null, delete_after: deleteAfter(created),
+  });
+  return ok({ id, status: "lista" as RecordingStatus });
+}
+
+export async function staffRecordings(body: RecordingsAction): Promise<ApiResult<RecordingsResult>> {
+  await wait(300);
+  if (!recordingsOn()) return fail(404, NOT_AVAILABLE);
+  const staff = await currentStaff("");
+  if (!staff.ok) return staff;
+  if (!staff.clinical) return fail(403, "Solo los profesionales y la Dirección pueden hacer esto.");
+  const b = (body ?? {}) as unknown as Record<string, unknown>;
+  if (b.action === "list") {
+    if (!validId(b.patient_id)) return fail(400, "Pedido inválido");
+    if (!mockIsMyPatient(String(b.patient_id))) return fail(403, "Ese paciente no está a tu cargo.");
+    const db = load();
+    // Los pacientes del panel de la demo no son los del portal: uno sin
+    // grabaciones propias muestra la de ejemplo, para ver cómo se revisa
+    const own = mockRecordings.filter((r) => r.patient_id === b.patient_id);
+    const shown = own.length ? own : mockRecordings.filter((r) => r.id === EXAMPLE_RECORDING_ID);
+    const items: StaffRecordingDTO[] = shown.map((r) => {
+      const ex = db.practice_exercises.find((e) => e.id === r.exercise_id);
+      const act = ex ? readActivity(ex.activity ?? null) : null;
+      const rec = act?.mecanica === "grabacion" ? act : null;
+      const { patient_id: _p, exercise_id: _e, account_id: _a, url: _u, ...dto } = r;
+      return { ...dto, exercise_title: ex?.title ?? "Ejercicio", consigna: rec?.consigna ?? null, texto: rec?.texto ?? null, audio: true };
+    });
+    return ok({ items });
+  }
+  const rec = mockRecordings.find((r) => r.id === b.id);
+  if (!rec) return fail(404, "No encontramos esa grabación.");
+  if (rec.id !== EXAMPLE_RECORDING_ID && !mockIsMyPatient(rec.patient_id)) return fail(403, "Ese paciente no está a tu cargo.");
+  if (b.action === "audio") return ok({ url: rec.url });
+  if (b.action === "review") {
+    const v = validateReview(b);
+    if (!v.ok) return fail(400, v.error);
+    Object.assign(rec, { review: v.value, status: "revisada", reviewed_at: new Date().toISOString(), reviewed_by_email: staff.email });
+    return ok({ ok: true as const });
+  }
+  if (b.action === "reanalyze") return ok({ status: rec.status });
+  return fail(400, "Pedido inválido");
 }

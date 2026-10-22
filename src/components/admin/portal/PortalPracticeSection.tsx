@@ -7,6 +7,7 @@ import { STAFF_PRACTICE_TEXT } from "@/lib/practiceRules";
 import { type PracticeAction, type StaffPracticeDTO, portalStaffApi } from "@/lib/portalStaff";
 import { PortalPracticeFollowup, PortalPracticeGoals } from "./PortalPracticeFollowup";
 import { PortalPracticePlan, type PracticeSend } from "./PortalPracticePlan";
+import { PortalRecordings } from "./PortalRecordings";
 import {
   type UnsavedPart, changesInbox, hasUnsaved, isPanelOwner, isSectionMounted, markInboxStale, sectionMounted,
 } from "./practiceHandoff";
@@ -32,7 +33,8 @@ import {
 //   - Después de cada acción que sale bien, avisa a la bandeja y al número de
 //     la pestaña Portal que se vuelvan a cargar (markInboxStale).
 
-type View = "plan" | "followup" | "goals";
+// "recordings": «Me grabo» (etapa recordings), solo para perfiles clínicos
+type View = "plan" | "followup" | "goals" | "recordings";
 
 const ERROR_BOX = "rounded-xl bg-[color:var(--status-occupied-bg)] px-3 py-2 text-sm font-semibold text-[oklch(0.48_0.19_25)]";
 const PILL_BTN = "h-8 rounded-full";
@@ -185,6 +187,7 @@ export function PortalPracticeSection({ patientId, refreshKey, onDirtyChange, ow
     { key: "plan", label: "Plan de práctica", count: data?.draft ? 1 : 0, urgent: false },
     { key: "followup", label: "Prácticas y devoluciones", count: newPractice, urgent: (data?.pending.risk ?? 0) > 0 },
     { key: "goals", label: "Metas y medallas", count: data?.goals_met.length ?? 0, urgent: false },
+    ...(data?.features.recordings && data.can_edit ? [{ key: "recordings" as const, label: "Grabaciones", count: 0, urgent: false }] : []),
   ];
 
   function onTabKey(e: React.KeyboardEvent<HTMLDivElement>) {
@@ -251,6 +254,12 @@ export function PortalPracticeSection({ patientId, refreshKey, onDirtyChange, ow
           <div role="tabpanel" id={`${tabsId}-panel-goals`} aria-labelledby={`${tabsId}-tab-goals`} hidden={view !== "goals"}>
             <PortalPracticeGoals {...props} medalAsk={goalsAsk} />
           </div>
+          {/* Grabaciones: se carga recién al abrirla (el audio, al abrir cada una) */}
+          {view === "recordings" && (
+            <div role="tabpanel" id={`${tabsId}-panel-recordings`} aria-labelledby={`${tabsId}-tab-recordings`}>
+              <PortalRecordings patientId={patientId} />
+            </div>
+          )}
         </>
       )}
     </section>

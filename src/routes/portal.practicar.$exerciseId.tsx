@@ -282,7 +282,7 @@ function Practice({ initial, toLogin }: { initial: PracticeExerciseDTO; toLogin:
       {ex.activity && <PlayWay value={way} onChange={(w) => { speech.stop(); setWay(w); }} />}
 
       {ex.activity && way === "jugar" ? (
-        <Activity spec={ex.activity} screenMode={mode} speech={speech} storageKey={ex.id} finishArea={doneArea} />
+        <Activity spec={ex.activity} screenMode={mode} speech={speech} storageKey={ex.id} finishArea={doneArea} together={ex.with_adult} />
       ) : mode === "lista" ? (
         <StepList pasos={ex.pasos} title={ex.title} paraQue={ex.para_que} minutes={ex.minutes} speech={speech} doneArea={doneArea} />
       ) : (

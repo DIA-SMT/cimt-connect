@@ -7,7 +7,7 @@
 // MECHANIC_RULES y su componente en el registro del portal.
 
 import {
-  type ActivitySpec, type BalloonSpec, type Mechanic, type PoemScheme, type PoemSpec, type ReadingSpec, type RhymeSpec,
+  type ActivitySpec, type BalloonSpec, type Mechanic, type PoemScheme, type PoemSpec, type ReadingSpec, type RecordingSpec, type RhymeSpec,
   BLANK, MECHANIC_LABEL, POEM_SCHEMES, SCHEME_LINES, SCHEME_PAIRS, SPEC_VERSION,
 } from "./activitySpec";
 import { DEFAULT_THEME } from "./activityAssets";
@@ -89,6 +89,15 @@ function readingWarnings(s: ReadingSpec): ActivityWarning[] {
   });
 }
 
+// Leer un texto largo en poco tiempo apura: mejor más segundos o menos texto
+function recordingWarnings(s: RecordingSpec): ActivityWarning[] {
+  if (!s.texto) return [];
+  const ms = pacePhrase(s.texto, "tranquilo").total;
+  return ms > s.segundos * 1000
+    ? [{ path: "texto", message: `Leído tranquilo, el texto dura unos ${Math.round(ms / 1000)} segundos y la grabación ${s.segundos}: subí los segundos o acortalo.` }]
+    : [];
+}
+
 export const MECHANIC_RULES: { [K in Mechanic]: Rules<Extract<ActivitySpec, { mecanica: K }>> } = {
   poesia: {
     steps: (p) => p.estrofas.reduce((n, e) => n + e.versos.length, 0),
@@ -116,6 +125,13 @@ export const MECHANIC_RULES: { [K in Mechanic]: Rules<Extract<ActivitySpec, { me
     texts: (s) => [s.titulo, ...s.frases],
     warnings: readingWarnings,
   },
+  // Un solo paso: queda hecho cuando la grabación llega al profesional
+  grabacion: {
+    steps: () => 1,
+    autoComplete: false,
+    texts: (s) => [s.titulo, s.consigna, ...(s.texto ? [s.texto] : [])],
+    warnings: recordingWarnings,
+  },
 };
 
 // Las funciones de cada mecánica, sin perder el tipo de la unión
@@ -139,6 +155,7 @@ export function emptyActivity(m: Mechanic, titulo: string): ActivitySpec {
   const t = titulo.trim().slice(0, 60) || (m === "rima" ? "Rimas para completar" : MECHANIC_LABEL[m]);
   if (m === "globo") return { v: SPEC_VERSION, mecanica: "globo", titulo: t, tema: DEFAULT_THEME, palabras: ["", "", ""] };
   if (m === "lectura") return { v: SPEC_VERSION, mecanica: "lectura", titulo: t, tema: DEFAULT_THEME, ritmo: "lento", frases: [""] };
+  if (m === "grabacion") return { v: SPEC_VERSION, mecanica: "grabacion", titulo: t, tema: DEFAULT_THEME, consigna: "", texto: null, segundos: 60 };
   if (m === "poesia") {
     return { v: SPEC_VERSION, mecanica: "poesia", titulo: t, tema: DEFAULT_THEME, esquema: "AABB", rima: "asonante", palmas: false,
       estrofas: [{ versos: ["", "", "", ""], icono: null }] };

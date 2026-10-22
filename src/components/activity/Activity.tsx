@@ -21,6 +21,9 @@ import type { Speech } from "@/components/portal/useSpeech";
 //     disponible, se empieza de cero.
 //   - Al terminar, finishArea: en el portal, el «Ya lo hicimos» de siempre
 //     (terminar el juego no anota nada solo).
+//   - together: el ejercicio es con un acompañante («Con un adulto») y los
+//     textos van en plural; si no (un adulto o un adolescente que practica
+//     solo), en singular.
 
 const STORE_PREFIX = "cimt-actividad-";
 
@@ -42,12 +45,13 @@ function saveState(key: string | null, s: EngineState) {
   } catch { /* sin almacenamiento: no se recuerda dónde quedaron */ }
 }
 
-export function Activity({ spec, screenMode, speech, storageKey = null, finishArea = null }: {
+export function Activity({ spec, screenMode, speech, storageKey = null, finishArea = null, together = true }: {
   spec: ActivitySpec;
   screenMode: ScreenMode;
   speech: Speech;
   storageKey?: string | null; // portal: el ejercicio (null en la vista previa)
   finishArea?: ReactNode;
+  together?: boolean;
 }) {
   const total = activitySteps(spec);
   const auto = activityAutoComplete(spec);
@@ -92,10 +96,10 @@ export function Activity({ spec, screenMode, speech, storageKey = null, finishAr
       <section aria-labelledby={headingId} className={`${card} flex flex-col items-center gap-4 text-center`}>
         {band}
         <h2 id={headingId} ref={headingRef} tabIndex={-1} className="font-display text-2xl font-bold text-[color:var(--primary-deep)] outline-none">
-          {resume ? "¿Siguen donde quedaron?" : "¡A jugar!"}
+          {resume ? (together ? "¿Siguen donde quedaron?" : "¿Seguís donde quedaste?") : (words.start ?? "¡A jugar!")}
         </h2>
         <p className="text-lg leading-snug">
-          {resume ? `Quedaron en: ${words.step.toLowerCase()} ${state.step + 1} de ${state.total}.` : MECHANIC_HINT[spec.mecanica]}
+          {resume ? `${together ? "Quedaron" : "Quedaste"} en: ${words.step.toLowerCase()} ${state.step + 1} de ${state.total}.` : MECHANIC_HINT[spec.mecanica]}
         </p>
         <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:justify-center">
           <button type="button" onClick={() => send({ type: resume ? "SEGUIR" : "EMPEZAR" })} className={`${pillPrimary} ${focusRing} gap-2`}>
@@ -119,9 +123,9 @@ export function Activity({ spec, screenMode, speech, storageKey = null, finishAr
         {band}
         <Sparkles className={`h-12 w-12 ${theme.ink}`} aria-hidden="true" />
         <h2 id={headingId} ref={headingRef} tabIndex={-1} className="font-display text-3xl font-bold text-[color:var(--primary-deep)] outline-none">
-          ¡Terminaron!
+          {together ? "¡Terminaron!" : "¡Terminaste!"}
         </h2>
-        <p className="text-lg">Llegaron hasta el final de «{spec.titulo}».</p>
+        <p className="text-lg">{together ? "Llegaron" : "Llegaste"} hasta el final de «{spec.titulo}».</p>
         {finishArea && <div className="flex w-full flex-col items-center gap-3">{finishArea}</div>}
         <div className="flex w-full flex-col gap-2 min-[420px]:flex-row min-[420px]:justify-center">
           <button type="button" onClick={() => send({ type: "ANTERIOR" })} className={`${pillOutline} ${focusRing} gap-2`}>
@@ -152,7 +156,7 @@ export function Activity({ spec, screenMode, speech, storageKey = null, finishAr
           <div className="h-full rounded-full bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${progress}%` }} />
         </div>
       </div>
-      <Player spec={spec} state={state} dispatch={send} speech={speech} big={big} ink={theme.ink} />
+      <Player spec={spec} state={state} dispatch={send} speech={speech} big={big} ink={theme.ink} exerciseId={storageKey} together={together} />
       {!canGo && words.locked && <p className="text-center text-sm text-muted-foreground">{words.locked}</p>}
       <div className="grid w-full grid-cols-2 gap-2">
         <button type="button" onClick={() => send({ type: "ANTERIOR" })} disabled={state.step === 0} className={`${pillOutline} ${focusRing} gap-1`}>

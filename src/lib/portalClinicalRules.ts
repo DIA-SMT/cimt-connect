@@ -13,7 +13,9 @@ import type { PracticeHomeDTO } from "./practiceRules";
 // ── Etapas que se prenden en el servidor (PORTAL_CLINICAL_FEATURES) ──────────
 // "activities": actividades para jugar en el celular (vale junto con
 // "practice"; necesita el script 33)
-export const CLINICAL_FEATURES = ["consent", "info", "practice", "ai", "docs", "hc_digital", "activities"] as const;
+// "recordings": «Me grabo», grabaciones que escucha el profesional (vale
+// junto con "practice" y "activities"; necesita el script 38)
+export const CLINICAL_FEATURES = ["consent", "info", "practice", "ai", "docs", "hc_digital", "activities", "recordings"] as const;
 export type ClinicalFeature = (typeof CLINICAL_FEATURES)[number];
 
 export function parseFeatures(raw: string | null | undefined): ClinicalFeature[] {

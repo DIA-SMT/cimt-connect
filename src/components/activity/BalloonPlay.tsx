@@ -15,7 +15,8 @@ import { useVoiceMeter } from "@/components/activity/useVoiceMeter";
 // igual: dicen la palabra y tocan «Ya la dijimos». Si la palabra tiene
 // dibujo (src/lib/wordPictures.ts), el globo lo lleva.
 
-export function BalloonPlay({ spec, state, dispatch, big, ink }: MechanicProps<BalloonSpec>) {
+export function BalloonPlay({ spec, state, dispatch, big, ink, together }: MechanicProps<BalloonSpec>) {
+  const said = together ? "Ya la dijimos" : "Ya la dije";
   const word = spec.palabras[state.step];
   const [feedback, setFeedback] = useState<string | null>(null);
   const [curve, setCurve] = useState<number[] | null>(null);
@@ -60,12 +61,13 @@ export function BalloonPlay({ spec, state, dispatch, big, ink }: MechanicProps<B
       )}
       {(meter.status === "sin_permiso" || meter.status === "sin_microfono") && (
         <p className="text-base text-muted-foreground">
-          {meter.status === "sin_permiso" ? "El micrófono no tiene permiso." : "Acá no se puede usar el micrófono."} Pueden jugar igual: digan la palabra y toquen «Ya la dijimos».
+          {meter.status === "sin_permiso" ? "El micrófono no tiene permiso." : "Acá no se puede usar el micrófono."}{" "}
+          {together ? `Pueden jugar igual: digan la palabra y toquen «${said}».` : `Podés jugar igual: decí la palabra y tocá «${said}».`}
         </p>
       )}
       {!done && (
         <button type="button" onClick={() => dispatch({ type: "COMPLETAR" })} className={`${pillOutline} ${focusRing} gap-2`}>
-          <Check className="h-5 w-5" aria-hidden="true" /> Ya la dijimos
+          <Check className="h-5 w-5" aria-hidden="true" /> {said}
         </button>
       )}
     </div>

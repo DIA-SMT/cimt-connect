@@ -81,3 +81,50 @@ export function verifyVoice(pepper: string, text: string, sig: string): boolean 
 
 export const voiceUrl = (pepper: string, text: string) =>
   `/api/voz?v=${VOICE_VERSION}&t=${encodeURIComponent(text)}&s=${signVoice(pepper, text)}`;
+
+// ── Reconocimiento de voz («Me grabo») ──────────────────────────────────────
+// La grabación (WAV, 16 kHz, mono, hasta 60 s) → el resultado «detailed» de
+// Azure con cada palabra y su tiempo (src/lib/recordingAnalysis.ts lo lee).
+// El audio no queda en Azure: el reconocimiento de audio corto no lo guarda.
+
+export async function recognize(wav: Uint8Array, cfg: AzureConfig, language = "es-AR"): Promise<unknown> {
+  let last = "";
+  const url = `https://${cfg.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1`
+    + `?language=${language}&format=detailed&wordLevelTimestamps=true&profanity=raw`;
+  for (const key of cfg.keys) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        Accept: "application/json",
+      },
+      body: wav,
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (res.ok) return res.json();
+    last = `Azure ${res.status}`;
+    if (res.status !== 401 && res.status !== 403) break;
+  }
+  throw new Error(last);
+}
+
+// Groq (Whisper) como alternativa (PORTAL_STT=groq y GROQ_API_KEY): transcribe
+// muy bien y en la prueba dejó la repetición («pepe pelota») y el «eh», pero
+// procesa el audio en Estados Unidos
+export async function recognizeGroq(wav: Uint8Array, key: string): Promise<unknown> {
+  const form = new FormData();
+  form.append("file", new Blob([wav], { type: "audio/wav" }), "grabacion.wav");
+  form.append("model", "whisper-large-v3");
+  form.append("language", "es");
+  form.append("response_format", "verbose_json");
+  form.append("timestamp_granularities[]", "word");
+  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+    signal: AbortSignal.timeout(25_000),
+  });
+  if (!res.ok) throw new Error(`Groq ${res.status}`);
+  return res.json();
+}

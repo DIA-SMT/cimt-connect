@@ -1537,7 +1537,7 @@ function ExerciseCard({
             <FlagLine flags={flagsFor("pasos")} />
           </fieldset>
           {(data.features.activities || ex.activity) && (
-            <ActivityEditor activity={ex.activity} exerciseTitle={ex.title} age={data.patient.age} approach={ex.approach}
+            <ActivityEditor activity={ex.activity} exerciseTitle={ex.title} age={data.patient.age} approach={ex.approach} together={ex.with_adult} recordings={data.features.recordings}
               screenMode={SCREEN_MODE_BY_AUDIENCE[data.patient.audience]} onChange={(activity) => onChange({ activity })} />
           )}
           <div className="flex flex-wrap items-end gap-4">

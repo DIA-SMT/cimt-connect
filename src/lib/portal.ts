@@ -22,6 +22,7 @@ import type { ChildClinicalDTO, FamilyClinicalDTO } from "@/lib/portalClinicalRu
 import type { InfoDTO } from "@/lib/portalInfoRules";
 import type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";
 import type { VoiceUrlsDTO } from "@/lib/voiceRules";
+import type { RecordingStatus } from "@/lib/recordingRules";
 import type {
   CelebrationDTO, FeedbackDTO, MedalsDTO, PracticeActionResult, PracticeDTO, PracticeExerciseDTO, PracticeLogInput,
   PracticeNoteInput,
@@ -267,7 +268,7 @@ const OFFLINE = { ok: false as const, status: 503, error: "No pudimos conectar. 
 
 // Llama a un endpoint del portal con la sesión de la familia. Si el token
 // venció, lo renueva una vez; si la sesión ya no sirve, la cierra.
-async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; auth?: boolean; keepMe?: boolean } = {}): Promise<ApiResult<T>> {
+async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown; raw?: Uint8Array; rawType?: string; auth?: boolean; keepMe?: boolean } = {}): Promise<ApiResult<T>> {
   // Un cambio (responder un turno, pedir una copia…) deja vieja cualquier /me
   // en curso: el próximo me() pregunta de nuevo. keepMe: un POST que no cambia nada
   if ((init.method ?? "GET") !== "GET" && !init.keepMe) meInFlight = null;
@@ -275,10 +276,11 @@ async function call<T>(path: string, init: { method?: "GET" | "POST"; body?: unk
   const send = async (token: string | null) => fetch(`/api/portal/${path}`, {
     method: init.method ?? "GET",
     headers: {
-      ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(init.raw ? { "Content-Type": init.rawType ?? "application/octet-stream" } : init.body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+    // raw: un archivo tal cual (la grabación de «Me grabo»)
+    body: init.raw ? (init.raw as BodyInit) : init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
   try {
     const token = init.auth === false ? null : (await client.auth.getSession()).data.session?.access_token ?? null;
@@ -480,6 +482,22 @@ export const portalApi = {
     if (MOCK) return { ok: true, data: { available: false, urls: [] } };
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     return call<VoiceUrlsDTO>("voz", { method: "POST", body: { texts }, keepMe: true });
+  },
+  // «Me grabo»: el permiso de grabaciones de la cuenta, aceptarlo y mandar una grabación (WAV)
+  async recordingConsent(): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).recordingConsent();
+    return call("grabacion");
+  },
+  async recordingAccept(accept: boolean): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).recordingAccept(accept);
+    return call("grabacion?action=consent", { method: "POST", body: { accept }, keepMe: true });
+  },
+  async recordingUpload(exerciseId: string, wav: Uint8Array): Promise<ApiResult<{ id: string; status: RecordingStatus }>> {
+    if (!PORTAL_ENABLED) return UNAVAILABLE;
+    if (MOCK) return (await mock()).recordingUpload(exerciseId, wav);
+    return call(`grabacion?ejercicio=${encodeURIComponent(exerciseId)}`, { method: "POST", raw: wav, rawType: "audio/wav" });
   },
   // La celebración ya se vio (por cuenta: si hay dos adultos, cada uno la ve una vez)
   async medalsSeen(ids: string[]): Promise<ApiResult<{ ok: true }>> {
