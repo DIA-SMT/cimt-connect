@@ -9,14 +9,17 @@
 //   - El profesional (Dirección o el profesional del paciente) lo escucha con
 //     una URL firmada de pocos minutos y anota su conteo (%SS).
 //   - A los 90 días se borra el audio y el texto de lo que se dijo; quedan los
-//     números. Se barre en cada subida y cada vez que el panel pide la lista.
+//     números. Se barre todos los días (server/api/cron/limpieza.ts), en cada
+//     subida y cada vez que el panel pide la lista.
+//   - Si la cuenta retira el permiso, se borra ya el audio de lo que mandó.
+//   - Cada vez que alguien del equipo abre un audio queda en portal_access_log.
 
 import { randomUUID } from "node:crypto";
 import { type ActivitySpec, readActivity } from "../../src/lib/activitySpec";
 import { type RecognizedWord, type RecordingAnalysis, analyzeWords, parseAzureDetailed, parseWhisperVerbose } from "../../src/lib/recordingAnalysis";
 import {
-  RECORDING_BUCKET, RECORDING_DAILY_MAX, RECORDING_MAX_BYTES, RECORDING_MIN_MS, RECORDING_NOTICE_VERSION, type RecordingStatus,
-  type StaffRecordingDTO, deleteAfter, stripAnalysis, validateReview,
+  type FamilyRecordingConsentDTO, RECORDING_BUCKET, RECORDING_DAILY_MAX, RECORDING_MAX_BYTES, RECORDING_MIN_MS, RECORDING_NOTICE_VERSION,
+  type RecordingStatus, type StaffRecordingConsent, type StaffRecordingDTO, deleteAfter, stripAnalysis, validateReview,
 } from "../../src/lib/recordingRules";
 import { wavDurationMs } from "../../src/lib/wavEncoder";
 import { type Account, type Ctx, PortalError, centerNow, missingTable } from "./portal";
@@ -27,6 +30,7 @@ import { azureConfig, recognize, recognizeGroq } from "./voice";
 const OFFLINE = "No pudimos conectar. Probá de nuevo.";
 const NOT_FOUND = "No encontramos esa grabación.";
 const MISSING = "Las grabaciones todavía no están listas en la base (falta correr el script 38).";
+const AUDIO_GONE = "El audio ya se borró (pasaron los 90 días o la familia retiró el permiso).";
 const SWEEP_BATCH = 20;
 
 type Row = {
@@ -59,18 +63,36 @@ async function consentOk(ctx: Ctx, accountId: string): Promise<boolean> {
   return !!data && data.accepted === true && data.version === RECORDING_NOTICE_VERSION;
 }
 
-export async function familyRecordingConsent(ctx: Ctx, account: Account): Promise<{ accepted: boolean; version: string }> {
-  requireRecordings();
-  return { accepted: await consentOk(ctx, account.id), version: RECORDING_NOTICE_VERSION };
+/** Cuántas grabaciones de la cuenta todavía tienen audio */
+async function audiosOf(ctx: Ctx, accountId: string): Promise<number> {
+  const { count, error } = await ctx.admin.from("practice_recordings").select("id", { count: "exact", head: true })
+    .eq("account_id", accountId).is("audio_deleted_at", null);
+  if (error) throw dbFail(error);
+  return count ?? 0;
 }
 
-export async function familyRecordingAccept(ctx: Ctx, account: Account, accepted: boolean): Promise<{ accepted: boolean; version: string }> {
+export async function familyRecordingConsent(ctx: Ctx, account: Account): Promise<FamilyRecordingConsentDTO> {
+  requireRecordings();
+  const [accepted, audios] = await Promise.all([consentOk(ctx, account.id), audiosOf(ctx, account.id)]);
+  return { accepted, version: RECORDING_NOTICE_VERSION, audios };
+}
+
+// Retirar el permiso borra ya el audio de todo lo que mandó la cuenta (el
+// aviso lo promete): se adelanta el vencimiento y se barre. Quedan los números
+// y las anotaciones del profesional, como a los 90 días.
+export async function familyRecordingAccept(ctx: Ctx, account: Account, accepted: boolean): Promise<FamilyRecordingConsentDTO> {
   requireRecordings();
   const { error } = await ctx.admin.from("portal_consents").insert({
     account_id: account.id, kind: "grabaciones", version: RECORDING_NOTICE_VERSION, accepted, channel: "portal",
   });
   if (error) throw new PortalError(503, "No pudimos guardar tu respuesta. Probá de nuevo.");
-  return { accepted, version: RECORDING_NOTICE_VERSION };
+  if (!accepted) {
+    const { error: upErr } = await ctx.admin.from("practice_recordings").update({ delete_after: new Date().toISOString() })
+      .eq("account_id", account.id).is("audio_deleted_at", null);
+    if (upErr) console.error("[grabaciones] retirar permiso:", upErr.code ?? "error");
+    for (let i = 0; i < 25 && (await sweepExpired(ctx).catch(() => 0)) > 0; i++);
+  }
+  return { accepted, version: RECORDING_NOTICE_VERSION, audios: await audiosOf(ctx, account.id) };
 }
 
 // ── La familia manda una grabación ──────────────────────────────────────────
@@ -85,13 +107,16 @@ export async function familyUpload(ctx: Ctx, account: Account, exerciseId: unkno
   }
   if (wav.length > RECORDING_MAX_BYTES) throw new PortalError(413, "La grabación es demasiado larga.");
   const ms = wavDurationMs(wav);
-  if (ms === null || ms < RECORDING_MIN_MS) throw new PortalError(400, "No pudimos leer la grabación. Probá grabar de nuevo.");
+  if (ms === null) throw new PortalError(400, "No pudimos leer la grabación. Probá grabar de nuevo.");
+  if (ms < RECORDING_MIN_MS) throw new PortalError(400, "Fue muy cortita. Probá grabar de nuevo.");
   if (ms > act.segundos * 1000 + 1500) throw new PortalError(400, `La grabación dura hasta ${act.segundos} segundos.`);
 
   const { count, error: countErr } = await ctx.admin.from("practice_recordings").select("id", { count: "exact", head: true })
     .eq("account_id", account.id).gte("created_at", centerDayStartIso(centerNow().date));
   if (countErr) throw dbFail(countErr);
-  if ((count ?? 0) >= RECORDING_DAILY_MAX) throw new PortalError(429, "Por hoy ya mandaron muchas grabaciones. Sigan mañana.", { code: "LIMIT" });
+  if ((count ?? 0) >= RECORDING_DAILY_MAX) {
+    throw new PortalError(429, `Por hoy ya llegaron ${RECORDING_DAILY_MAX} grabaciones. Mañana se puede mandar otra.`, { code: "LIMIT" });
+  }
 
   const id = randomUUID();
   const path = `${ex.patient_id}/${id}.wav`;
@@ -214,13 +239,50 @@ export async function staffRecordings(ctx: Ctx, patientId: string): Promise<Staf
   });
 }
 
-/** El audio, con una URL firmada de 5 minutos */
-export async function staffRecordingAudio(ctx: Ctx, id: unknown): Promise<{ url: string }> {
+/** El audio, con una URL firmada de 5 minutos. Queda registrado quién lo abrió */
+export async function staffRecordingAudio(ctx: Ctx, staff: { email: string }, id: unknown): Promise<{ url: string }> {
   const row = await rowById(ctx, id);
-  if (row.audio_deleted_at) throw new PortalError(410, "El audio ya se borró (pasaron los 90 días).");
+  if (row.audio_deleted_at) throw new PortalError(410, AUDIO_GONE);
   const { data, error } = await ctx.admin.storage.from(RECORDING_BUCKET).createSignedUrl(row.storage_path, 300);
   if (error || !data?.signedUrl) throw new PortalError(503, OFFLINE);
+  const { error: logErr } = await ctx.admin.from("portal_access_log").insert({
+    patient_id: row.patient_id, account_id: null, staff_email: staff.email, action: "equipo_escuchar_grabacion", target_id: row.id,
+  });
+  if (logErr) console.error("[grabaciones] registro de acceso:", logErr.code ?? "error");
   return { url: data.signedUrl };
+}
+
+/** El permiso de grabaciones de cada adulto (o del paciente) con acceso al portal */
+export async function staffRecordingConsents(ctx: Ctx, patientId: string): Promise<StaffRecordingConsent[]> {
+  const { data: links, error } = await ctx.admin.from("portal_links").select("account_id, guardian_id")
+    .eq("patient_id", patientId).is("revoked_at", null);
+  if (error) throw new PortalError(503, OFFLINE);
+  const rows = (links ?? []) as { account_id: string; guardian_id: string | null }[];
+  if (!rows.length) return [];
+  const accountIds = [...new Set(rows.map((l) => l.account_id))];
+  const guardianIds = rows.map((l) => l.guardian_id).filter((g): g is string => !!g);
+  const [accounts, guardians, consents] = await Promise.all([
+    ctx.admin.from("portal_accounts").select("id, first_name, last_name").in("id", accountIds),
+    guardianIds.length
+      ? ctx.admin.from("patient_guardians").select("id, relationship").in("id", guardianIds)
+      : Promise.resolve({ data: [], error: null }),
+    ctx.admin.from("portal_consents").select("account_id, accepted, version, created_at")
+      .in("account_id", accountIds).eq("kind", "grabaciones").order("created_at", { ascending: false }),
+  ]);
+  if (accounts.error || guardians.error || consents.error) throw dbFail(accounts.error ?? guardians.error ?? consents.error);
+  const accs = (accounts.data ?? []) as { id: string; first_name: string; last_name: string }[];
+  const rels = (guardians.data ?? []) as { id: string; relationship: string | null }[];
+  const cons = (consents.data ?? []) as { account_id: string; accepted: boolean; version: string; created_at: string }[];
+  return rows.flatMap((l) => {
+    const acc = accs.find((a) => a.id === l.account_id);
+    if (!acc) return [];
+    const c = cons.find((x) => x.account_id === l.account_id);
+    const state: StaffRecordingConsent["state"] = !c ? "nunca" : c.accepted && c.version === RECORDING_NOTICE_VERSION ? "si" : "no";
+    return [{
+      name: `${acc.first_name} ${acc.last_name}`.trim(), relationship: rels.find((x) => x.id === l.guardian_id)?.relationship ?? null,
+      state, at: c?.created_at ?? null,
+    }];
+  });
 }
 
 export async function staffRecordingReview(ctx: Ctx, staff: { email: string }, id: unknown, body: unknown): Promise<{ ok: true }> {
@@ -236,7 +298,7 @@ export async function staffRecordingReview(ctx: Ctx, staff: { email: string }, i
 
 export async function staffRecordingReanalyze(ctx: Ctx, id: unknown): Promise<{ status: RecordingStatus }> {
   const row = await rowById(ctx, id);
-  if (row.audio_deleted_at) throw new PortalError(410, "El audio ya se borró (pasaron los 90 días).");
+  if (row.audio_deleted_at) throw new PortalError(410, AUDIO_GONE);
   const { data, error } = await ctx.admin.storage.from(RECORDING_BUCKET).download(row.storage_path);
   if (error || !data) throw new PortalError(503, OFFLINE);
   const status = await analyze(ctx, row.id, new Uint8Array(await data.arrayBuffer()));

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { portalStaffApi } from "@/lib/portalStaff";
 import { MARK_LABEL, type Mark, type MarkKind, analysisSummary, percentSS } from "@/lib/recordingAnalysis";
-import { RECORDING_STATUS_LABEL, REVIEW_NOTE_MAX, type StaffRecordingDTO } from "@/lib/recordingRules";
+import { RECORDING_STATUS_LABEL, REVIEW_NOTE_MAX, type StaffRecordingConsent, type StaffRecordingDTO } from "@/lib/recordingRules";
 
 // «Grabaciones» (etapa recordings), dentro de «Ejercicios, devoluciones y
 // medallas»: lo que mandó el paciente (o quien lo acompaña) desde «Me grabo».
@@ -18,7 +18,9 @@ import { RECORDING_STATUS_LABEL, REVIEW_NOTE_MAX, type StaffRecordingDTO } from 
 //     y el %SS sale de su conteo sobre el total de sílabas (el de la IA, que
 //     se puede corregir). Eso es lo que queda, y su evolución.
 //   - Quien grabó nunca ve estos números.
-//   - El audio se borra a los 90 días; quedan los números.
+//   - El audio se borra a los 90 días, o antes si la familia retira el
+//     permiso; quedan los números. Arriba, el permiso de cada adulto.
+//   - Abrir un audio queda registrado (portal_access_log).
 
 const ERROR_BOX = "rounded-xl bg-[color:var(--status-occupied-bg)] px-3 py-2 text-sm font-semibold text-[oklch(0.48_0.19_25)]";
 const PILL_BTN = "h-8 rounded-full";
@@ -30,16 +32,27 @@ const MARK_COLOR: Record<MarkKind, string> = {
 };
 const clock = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const dateTime = (iso: string) => new Date(iso).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const dayMonth = (iso: string) => new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+// Un análisis que no terminó en este tiempo quedó colgado: se puede repetir
+const STALE_MS = 3 * 60_000;
+
+function consentLine(c: StaffRecordingConsent): string {
+  const who = c.relationship ? `${c.name} (${c.relationship.toLowerCase()})` : c.name;
+  if (c.state === "si") return `${who}: dio permiso${c.at ? ` el ${dayMonth(c.at)}` : ""}.`;
+  if (c.state === "no") return `${who}: no tiene el permiso vigente${c.at ? ` (desde el ${dayMonth(c.at)})` : ""}. No puede mandar grabaciones.`;
+  return `${who}: todavía no dio permiso (se le pide al mandar la primera).`;
+}
 
 export function PortalRecordings({ patientId }: { patientId: string }) {
   const [items, setItems] = useState<StaffRecordingDTO[] | null>(null);
+  const [consents, setConsents] = useState<StaffRecordingConsent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     const r = await portalStaffApi.recordings({ action: "list", patient_id: patientId });
-    if (r.ok) setItems(r.data.items ?? []);
+    if (r.ok) { setItems(r.data.items ?? []); setConsents(r.data.consents ?? []); }
     else setError(r.error);
   }, [patientId]);
   useEffect(() => { void load(); }, [load]);
@@ -59,8 +72,14 @@ export function PortalRecordings({ patientId }: { patientId: string }) {
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         Lo que se grabó desde «Me grabo». La IA marca momentos para escuchar; vos contás las sílabas tartamudeadas y queda tu %SS.
-        Quien grabó no ve ningún número. El audio se borra a los 90 días.
+        Quien grabó no ve ningún número. El audio se borra a los 90 días, o antes si la familia retira el permiso.
       </p>
+      {consents.length > 0 && (
+        <div className="rounded-xl bg-muted/60 px-3 py-2 text-sm">
+          <p className="font-semibold">Permiso para mandar grabaciones</p>
+          <ul className="mt-0.5 space-y-0.5">{consents.map((c) => <li key={c.name}>{consentLine(c)}</li>)}</ul>
+        </div>
+      )}
       {reviewed.length >= 2 && (
         <p className="rounded-xl bg-muted/60 px-3 py-2 text-sm">
           <span className="font-semibold">Evolución del %SS:</span>{" "}
@@ -85,7 +104,7 @@ export function PortalRecordings({ patientId }: { patientId: string }) {
                 {open === r.id ? "Cerrar" : r.status === "revisada" ? "Ver la revisión" : "Escuchar y revisar"}
               </Button>
             </div>
-            {open === r.id && <RecordingReview rec={r} onSaved={() => void load()} />}
+            {open === r.id && <RecordingReview key={`${r.id}-${r.status}-${r.analysis?.syllables ?? ""}`} rec={r} onSaved={() => void load()} />}
           </li>
         ))}
       </ul>
@@ -103,6 +122,10 @@ function RecordingReview({ rec, onSaved }: { rec: StaffRecordingDTO; onSaved: ()
   const audio = useRef<HTMLAudioElement>(null);
   const ids = { syl: useId(), note: useId() };
 
+  // El enlace del audio vence a los 5 minutos: si falla, se pide otro (una vez
+  // por apertura, para no quedar en un ciclo)
+  const [attempt, setAttempt] = useState(0);
+  const resumeAt = useRef(0);
   useEffect(() => {
     if (!rec.audio) return;
     let cancelled = false;
@@ -112,7 +135,14 @@ function RecordingReview({ rec, onSaved }: { rec: StaffRecordingDTO; onSaved: ()
       else setAudioError(r.ok ? "No se pudo abrir el audio." : r.error);
     });
     return () => { cancelled = true; };
-  }, [rec.id, rec.audio]);
+  }, [rec.id, rec.audio, attempt]);
+  function audioFailed() {
+    if (attempt >= 1) { setAudioError("No se pudo abrir el audio. Cerrá y volvé a abrir la grabación."); return; }
+    const at = audio.current?.currentTime ?? 0;
+    setUrl(null);
+    setAttempt((n) => n + 1);
+    resumeAt.current = at;
+  }
 
   function seek(m: Mark) {
     const a = audio.current;
@@ -148,13 +178,14 @@ function RecordingReview({ rec, onSaved }: { rec: StaffRecordingDTO; onSaved: ()
       {rec.texto && <p className="text-sm"><span className="font-semibold">Texto para leer:</span> {rec.texto}</p>}
 
       {!rec.audio ? (
-        <p className="text-sm text-muted-foreground">El audio ya se borró (pasaron los 90 días). Quedan los números.</p>
+        <p className="text-sm text-muted-foreground">El audio ya se borró (pasaron los 90 días o la familia retiró el permiso). Quedan los números.</p>
       ) : audioError ? (
         <p className={ERROR_BOX}>{audioError}</p>
       ) : !url ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Abriendo el audio…</p>
       ) : (
-        <audio ref={audio} controls src={url} className="w-full" />
+        <audio ref={audio} controls src={url} className="w-full" onError={audioFailed}
+          onLoadedMetadata={(e) => { if (resumeAt.current) { e.currentTarget.currentTime = resumeAt.current; resumeAt.current = 0; } }} />
       )}
 
       {/* Las marcas de la IA sobre la línea del tiempo: un toque lleva el audio ahí */}
@@ -185,7 +216,7 @@ function RecordingReview({ rec, onSaved }: { rec: StaffRecordingDTO; onSaved: ()
           <span className="font-semibold">Lo que entendió la computadora</span> (puede tener errores): «{rec.analysis.text}»
         </p>
       )}
-      {rec.status === "error" && rec.audio && (
+      {(rec.status === "error" || (rec.status === "analizando" && Date.now() - new Date(rec.created_at).getTime() > STALE_MS)) && rec.audio && (
         <Button type="button" size="sm" variant="outline" className={PILL_BTN} disabled={busy} onClick={() => void reanalyze()}>
           <RefreshCw className="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Volver a analizar
         </Button>
@@ -198,11 +229,13 @@ function RecordingReview({ rec, onSaved }: { rec: StaffRecordingDTO; onSaved: ()
           <Button type="button" className="h-12 rounded-full px-5 text-base" onClick={() => setStuttered((n) => Math.min(n + 1, total || n + 1))}>
             <Plus className="mr-1.5 h-5 w-5" aria-hidden="true" /> Sílaba tartamudeada
           </Button>
-          <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full" aria-label="Restar una"
+          <Button type="button" variant="outline" size="icon" className="h-10 w-10 rounded-full" aria-label="Restar una sílaba tartamudeada"
             disabled={stuttered === 0} onClick={() => setStuttered((n) => Math.max(0, n - 1))}>
             <Minus className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <p className="text-lg font-bold" aria-live="polite">{stuttered}</p>
+          <p className="text-lg font-bold" aria-live="polite">
+            {stuttered}<span className="sr-only"> {stuttered === 1 ? "sílaba tartamudeada" : "sílabas tartamudeadas"}</span>
+          </p>
         </div>
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-1.5">

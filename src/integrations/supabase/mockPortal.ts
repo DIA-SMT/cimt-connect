@@ -192,8 +192,8 @@ import { profileFromRow, suggestPractice } from "@/lib/practiceSuggest";
 import { type ActivitySpec, readActivity } from "@/lib/activitySpec";
 import { analyzeWords, parseAzureDetailed } from "@/lib/recordingAnalysis";
 import {
-  RECORDING_MIN_MS, RECORDING_NOTICE_VERSION, type RecordingsAction, type RecordingsResult, type RecordingStatus,
-  type StaffRecordingDTO, deleteAfter, validateReview,
+  type FamilyRecordingConsentDTO, RECORDING_DAILY_MAX, RECORDING_MIN_MS, RECORDING_NOTICE_VERSION, type RecordingsAction,
+  type RecordingsResult, type RecordingStatus, type StaffRecordingConsent, type StaffRecordingDTO, deleteAfter, stripAnalysis, validateReview,
 } from "@/lib/recordingRules";
 import { wavDurationMs } from "@/lib/wavEncoder";
 import { ACTIVITY_MIN_AGE, activityAgeOk } from "@/lib/activityMechanics";
@@ -5642,7 +5642,7 @@ const DEMO_AZURE = {
 const demoAnalysis = () => ({ ...analyzeWords(parseAzureDetailed(DEMO_AZURE)!), source: "azure" as const });
 
 type MockRecording = Omit<StaffRecordingDTO, "exercise_title" | "consigna" | "texto" | "audio"> & {
-  patient_id: string; exercise_id: string; account_id: string | null; url: string;
+  patient_id: string; exercise_id: string; account_id: string | null; url: string; audio_deleted?: boolean;
 };
 const recordingConsents = new Map<string, boolean>();
 const demoCreated = new Date(Date.now() - 2 * 86_400_000).toISOString();
@@ -5652,21 +5652,28 @@ const mockRecordings: MockRecording[] = [{
   url: "/demo/me-grabo-demo.wav", created_at: demoCreated, duration_ms: 8_550, status: "lista", analysis: demoAnalysis(),
   review: null, reviewed_at: null, reviewed_by_email: null, delete_after: deleteAfter(demoCreated),
 }];
+const audiosOf = (accountId: string) => mockRecordings.filter((r) => r.account_id === accountId && !r.audio_deleted).length;
 
-export async function recordingConsent(): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+export async function recordingConsent(): Promise<ApiResult<FamilyRecordingConsentDTO>> {
   if (!recordingsOn()) return fail(404, NOT_AVAILABLE);
   const acc = requireAccount(load());
   if (!acc) return fail(401, SESSION_EXPIRED);
-  return ok({ accepted: recordingConsents.get(acc.id) === true, version: RECORDING_NOTICE_VERSION });
+  return ok({ accepted: recordingConsents.get(acc.id) === true, version: RECORDING_NOTICE_VERSION, audios: audiosOf(acc.id) });
 }
 
-export async function recordingAccept(accept: boolean): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+// Retirar el permiso borra el audio de lo que mandó la cuenta (como el servidor)
+export async function recordingAccept(accept: boolean): Promise<ApiResult<FamilyRecordingConsentDTO>> {
   if (!recordingsOn()) return fail(404, NOT_AVAILABLE);
   await wait(300);
   const acc = requireAccount(load());
   if (!acc) return fail(401, SESSION_EXPIRED);
   recordingConsents.set(acc.id, accept === true);
-  return ok({ accepted: accept === true, version: RECORDING_NOTICE_VERSION });
+  if (accept !== true) {
+    for (const r of mockRecordings) {
+      if (r.account_id === acc.id && !r.audio_deleted) Object.assign(r, { audio_deleted: true, analysis: stripAnalysis(r.analysis) });
+    }
+  }
+  return ok({ accepted: accept === true, version: RECORDING_NOTICE_VERSION, audios: audiosOf(acc.id) });
 }
 
 export async function recordingUpload(exerciseId: string, wav: Uint8Array): Promise<ApiResult<{ id: string; status: RecordingStatus }>> {
@@ -5684,8 +5691,13 @@ export async function recordingUpload(exerciseId: string, wav: Uint8Array): Prom
   if (!cur || !act || act.mecanica !== "grabacion") return fail(404, "Este ejercicio no pide una grabación.");
   if (recordingConsents.get(acc.id) !== true) return fail(403, "Para mandar grabaciones, primero aceptá el permiso.", { code: "RECORDING_CONSENT" });
   const ms = wavDurationMs(wav);
-  if (ms === null || ms < RECORDING_MIN_MS) return fail(400, "No pudimos leer la grabación. Probá grabar de nuevo.");
+  if (ms === null) return fail(400, "No pudimos leer la grabación. Probá grabar de nuevo.");
+  if (ms < RECORDING_MIN_MS) return fail(400, "Fue muy cortita. Probá grabar de nuevo.");
   if (ms > act.segundos * 1000 + 1500) return fail(400, `La grabación dura hasta ${act.segundos} segundos.`);
+  const today = new Date().toDateString();
+  if (mockRecordings.filter((r) => r.account_id === acc.id && new Date(r.created_at).toDateString() === today).length >= RECORDING_DAILY_MAX) {
+    return fail(429, `Por hoy ya llegaron ${RECORDING_DAILY_MAX} grabaciones. Mañana se puede mandar otra.`, { code: "LIMIT" });
+  }
   const created = new Date().toISOString();
   const id = crypto.randomUUID();
   mockRecordings.unshift({
@@ -5717,14 +5729,20 @@ export async function staffRecordings(body: RecordingsAction): Promise<ApiResult
       const act = ex ? readActivity(ex.activity ?? null) : null;
       const rec = act?.mecanica === "grabacion" ? act : null;
       const { patient_id: _p, exercise_id: _e, account_id: _a, url: _u, ...dto } = r;
-      return { ...dto, exercise_title: ex?.title ?? "Ejercicio", consigna: rec?.consigna ?? null, texto: rec?.texto ?? null, audio: true };
+      const { audio_deleted: gone, ...rest } = dto;
+      return { ...rest, exercise_title: ex?.title ?? "Ejercicio", consigna: rec?.consigna ?? null, texto: rec?.texto ?? null, audio: !gone };
     });
-    return ok({ items });
+    // En la demo, el permiso de la cuenta de ejemplo (Laura)
+    const laura = recordingConsents.get("acc-laura");
+    const consents: StaffRecordingConsent[] = [{
+      name: "Laura Gómez", relationship: "Madre", state: laura === undefined ? "nunca" : laura ? "si" : "no", at: laura === undefined ? null : new Date().toISOString(),
+    }];
+    return ok({ items, consents });
   }
   const rec = mockRecordings.find((r) => r.id === b.id);
   if (!rec) return fail(404, "No encontramos esa grabación.");
   if (rec.id !== EXAMPLE_RECORDING_ID && !mockIsMyPatient(rec.patient_id)) return fail(403, "Ese paciente no está a tu cargo.");
-  if (b.action === "audio") return ok({ url: rec.url });
+  if (b.action === "audio") return rec.audio_deleted ? fail(410, "El audio ya se borró (pasaron los 90 días o la familia retiró el permiso).") : ok({ url: rec.url });
   if (b.action === "review") {
     const v = validateReview(b);
     if (!v.ok) return fail(400, v.error);

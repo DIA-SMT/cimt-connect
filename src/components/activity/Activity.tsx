@@ -134,7 +134,7 @@ export function Activity({ spec, screenMode, speech, storageKey = null, finishAr
           </button>
           <button type="button" onClick={() => send({ type: "REINICIAR" })} className={`${pillOutline} ${focusRing} gap-2`}>
             <RotateCcw className="h-5 w-5" aria-hidden="true" />
-            Jugar otra vez
+            {words.again ?? "Jugar otra vez"}
           </button>
         </div>
       </section>
@@ -157,7 +157,7 @@ export function Activity({ spec, screenMode, speech, storageKey = null, finishAr
         </div>
       </div>
       <Player spec={spec} state={state} dispatch={send} speech={speech} big={big} ink={theme.ink} exerciseId={storageKey} together={together} />
-      {!canGo && words.locked && <p className="text-center text-sm text-muted-foreground">{words.locked}</p>}
+      {!canGo && words.locked[together ? 1 : 0] && <p className="text-center text-sm text-muted-foreground">{words.locked[together ? 1 : 0]}</p>}
       <div className="grid w-full grid-cols-2 gap-2">
         <button type="button" onClick={() => send({ type: "ANTERIOR" })} disabled={state.step === 0} className={`${pillOutline} ${focusRing} gap-1`}>
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />

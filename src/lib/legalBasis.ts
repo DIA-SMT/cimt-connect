@@ -67,7 +67,7 @@ export const CLINICAL_LEGAL_BASIS: LegalBasis = {
 export const RECORDING_LEGAL_BASIS: LegalBasis = {
   summary:
     "Una grabación de cómo habla el paciente es información de salud, un dato sensible. Por eso la ley pide tu permiso expreso antes de mandarla, y podés retirarlo cuando quieras.",
-  laws: "Ley 25.326 de Protección de Datos Personales (arts. 2 y 5).",
+  laws: "Ley 25.326 de Protección de Datos Personales (arts. 2, 5 y 12).",
   more: [
     SENSITIVE,
     {
@@ -79,8 +79,12 @@ export const RECORDING_LEGAL_BASIS: LegalBasis = {
       text: `Los datos se borran cuando ya no hacen falta para lo que se pidieron. Por eso el audio se borra a los ${RECORDING_KEEP_DAYS} días.`,
     },
     {
+      ref: "Ley 25.326, art. 12, y Decreto 1558/2001, art. 12",
+      text: "La ley limita que los datos personales se procesen en otros países: con tu consentimiento expreso se puede. Por eso te avisamos que el reconocimiento de voz puede hacerse fuera de la Argentina.",
+    },
+    {
       ref: "Decreto 1558/2001, art. 5",
-      text: "El permiso se puede retirar en cualquier momento: avisanos y dejamos de usar tus grabaciones.",
+      text: "El permiso se puede retirar en cualquier momento, desde «Información de salud» en el portal: no se mandan más grabaciones y se borran los audios.",
     },
   ],
 };

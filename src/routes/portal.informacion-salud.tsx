@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ChevronLeft, CircleCheck, Info, Loader2 } from "lucide-react";
+import { ChevronLeft, CircleCheck, Info, Loader2, Mic } from "lucide-react";
 import { CENTER } from "@/lib/center";
 import { CLINICAL_LEGAL_BASIS } from "@/lib/legalBasis";
+import type { FamilyRecordingConsentDTO } from "@/lib/recordingRules";
 import {
   type ChildClinicalDTO, type ChildDTO, type FamilyClinicalDTO, type MeDTO, type PublicOutcome,
   CLINICAL_NOTICE_POINTS, portalApi, retryLabel,
@@ -105,6 +106,8 @@ function InformacionSaludPage() {
 
   const clinical = data.clinical;
   const accepted = !!clinical?.consent.accepted;
+  // «Me grabo» prendido (práctica, actividades y grabaciones)
+  const recordingsOn = !!clinical && (["practice", "activities", "recordings"] as const).every((f) => clinical.features.includes(f));
 
   return (
     <div className="flex flex-col gap-4">
@@ -133,6 +136,10 @@ function InformacionSaludPage() {
         <Activate clinical={clinical}
           onActivated={(c) => changed(c, "Listo: activaste la información de salud. Nada aparece hasta que tu profesional lo publique.")}
           onAction={() => setFlash(null)} />
+      )}
+
+      {recordingsOn && (
+        <RecordingsConsent onDone={(message) => { setFlash(message); focusFlash.current = true; }} />
       )}
     </div>
   );
@@ -364,5 +371,93 @@ function Activated({ data, onRevoked, onAction }: {
         )}
       </div>
     </>
+  );
+}
+
+// ── «Me grabo»: el permiso de grabaciones de la cuenta ────────────────────────
+// Retirarlo borra ya los audios que mandó la cuenta (server/lib/recordings.ts);
+// sin permiso pero con audios guardados (por ejemplo, después de un aviso
+// nuevo), igual se pueden borrar. Sin permiso ni audios, no se muestra.
+
+function RecordingsConsent({ onDone }: { onDone: (message: string) => void }) {
+  const askId = useId();
+  const [state, setState] = useState<FamilyRecordingConsentDTO | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const askRef = useRef<HTMLParagraphElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const focusNext = useRef<"ask" | "button" | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void portalApi.recordingConsent().then((r) => { if (live && r.ok) setState(r.data); });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    const target = focusNext.current;
+    if (!target) return;
+    focusNext.current = null;
+    (target === "ask" ? askRef : buttonRef).current?.focus();
+  });
+
+  if (!state || (!state.accepted && state.audios === 0)) return null;
+  const n = state.audios;
+  const saved = n === 0 ? null : `Hay ${n} ${n === 1 ? "grabación" : "grabaciones"} con el audio guardado.`;
+
+  async function revoke() {
+    if (!state) return;
+    const before = state;
+    setSaving(true);
+    setError(null);
+    const r = await portalApi.recordingAccept(false);
+    setSaving(false);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setConfirming(false);
+    setState(r.data);
+    const audios = before.audios === 0 ? null : before.audios === 1 ? "se borró el audio que mandaste" : `se borraron los ${before.audios} audios que mandaste`;
+    onDone(before.accepted
+      ? `Listo: retiraste el permiso de grabaciones${audios ? ` y ${audios}` : ""}.`
+      : `Listo: ${audios ?? "no había audios guardados"}.`);
+  }
+
+  return (
+    <section aria-labelledby="portal-salud-grabaciones" className={`${card} mt-2 flex flex-col gap-3`}>
+      <h2 id="portal-salud-grabaciones" className="flex items-center gap-2 font-display text-lg font-bold leading-snug">
+        <Mic className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" /> Grabaciones de «Me grabo»
+      </h2>
+      <p className="text-base">
+        {state.accepted ? "Diste permiso para mandar grabaciones al equipo profesional. " : ""}
+        {saved ? `${saved} ` : ""}Cada audio se borra solo a los 90 días.
+      </p>
+      {confirming ? (
+        <div role="group" aria-labelledby={askId} className="flex flex-col gap-3 rounded-2xl bg-muted p-4">
+          <p id={askId} ref={askRef} tabIndex={-1} className="text-base font-bold outline-none">
+            {state.accepted
+              ? "¿Retirar el permiso? No se mandan más grabaciones y se borran ya los audios que mandaste. Las anotaciones del profesional quedan."
+              : "¿Borrar ya los audios que mandaste? Las anotaciones del profesional quedan."}
+          </p>
+          <FormAlert>{error}</FormAlert>
+          <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+            <button type="button" onClick={() => void revoke()} disabled={saving} className={pillPrimary}>
+              {saving ? "Guardando…" : state.accepted ? "Sí, retirar" : "Sí, borrar"}
+            </button>
+            <button type="button" disabled={saving} className={pillOutline}
+              onClick={() => { focusNext.current = "button"; setError(null); setConfirming(false); }}>
+              No
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button ref={buttonRef} type="button" className={`${pillOutline} min-[420px]:self-start`}
+          onClick={() => { focusNext.current = "ask"; setError(null); setConfirming(true); }}>
+          {state.accepted ? "Retirar el permiso de grabaciones" : "Borrar los audios ahora"}
+        </button>
+      )}
+    </section>
   );
 }

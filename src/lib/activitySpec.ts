@@ -37,11 +37,11 @@ export const MECHANIC_LABEL: Record<Mechanic, string> = {
   grabacion: "Me grabo",
 };
 export const MECHANIC_HINT: Record<Mechanic, string> = {
-  poesia: "La poesía aparece verso por verso, con la voz del celular si quieren, para decirla juntos.",
+  poesia: "La poesía aparece verso por verso, con la voz del celular si se quiere, para decirla en voz alta.",
   rima: "Tarjetas con un verso para completar: se elige la palabra que rima.",
   globo: "Se dice cada palabra arrancando suave, como un soplido: el globo sube con la voz. El micrófono se usa solo en el celular: no se graba nada.",
-  lectura: "La tortuga va iluminando la frase despacito y se lee siguiéndola.",
-  grabacion: "Se graba lo que pide la consigna (hasta un minuto) y se le manda al profesional, que lo escucha. Solo lo escucha el equipo.",
+  lectura: "La tortuga va iluminando la frase palabra por palabra y se lee siguiéndola.",
+  grabacion: "Se graba lo que pide la consigna y se le manda al profesional, que la escucha. Grabarse es optativo.",
 };
 
 // En qué enfoques del ejercicio se ofrece cada juego (null: en todos).

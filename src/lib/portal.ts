@@ -22,7 +22,7 @@ import type { ChildClinicalDTO, FamilyClinicalDTO } from "@/lib/portalClinicalRu
 import type { InfoDTO } from "@/lib/portalInfoRules";
 import type { ApptRequestDTO, ApptRequestInput } from "@/lib/apptRequestRules";
 import type { VoiceUrlsDTO } from "@/lib/voiceRules";
-import type { RecordingStatus } from "@/lib/recordingRules";
+import type { FamilyRecordingConsentDTO, RecordingStatus } from "@/lib/recordingRules";
 import type {
   CelebrationDTO, FeedbackDTO, MedalsDTO, PracticeActionResult, PracticeDTO, PracticeExerciseDTO, PracticeLogInput,
   PracticeNoteInput,
@@ -483,13 +483,14 @@ export const portalApi = {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     return call<VoiceUrlsDTO>("voz", { method: "POST", body: { texts }, keepMe: true });
   },
-  // «Me grabo»: el permiso de grabaciones de la cuenta, aceptarlo y mandar una grabación (WAV)
-  async recordingConsent(): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+  // «Me grabo»: el permiso de grabaciones de la cuenta, aceptarlo o retirarlo
+  // (retirarlo borra los audios que mandó) y mandar una grabación (WAV)
+  async recordingConsent(): Promise<ApiResult<FamilyRecordingConsentDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).recordingConsent();
     return call("grabacion");
   },
-  async recordingAccept(accept: boolean): Promise<ApiResult<{ accepted: boolean; version: string }>> {
+  async recordingAccept(accept: boolean): Promise<ApiResult<FamilyRecordingConsentDTO>> {
     if (!PORTAL_ENABLED) return UNAVAILABLE;
     if (MOCK) return (await mock()).recordingAccept(accept);
     return call("grabacion?action=consent", { method: "POST", body: { accept }, keepMe: true });

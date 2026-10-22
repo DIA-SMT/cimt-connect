@@ -14,13 +14,16 @@
 import { type RecordingAnalysis, percentSS } from "./recordingAnalysis";
 
 // v2: sin nombres de servicios (son internos)
-export const RECORDING_NOTICE_VERSION = "2026-10-v2";
+// v3: el reconocimiento puede ser fuera del país (Ley 25.326, art. 12) y el
+// permiso se retira desde «Información de salud», con los audios borrados
+export const RECORDING_NOTICE_VERSION = "2026-10-v3";
 export const RECORDING_NOTICE_POINTS = [
   "La grabación la escucha solo el equipo profesional del CIMT que atiende al paciente.",
   "Para ayudar al profesional, un sistema de reconocimiento de voz la pasa a texto y marca momentos para escuchar. No decide nada: lo revisa el profesional.",
+  "Ese sistema es un servicio externo y puede funcionar fuera de la Argentina. Recibe solo el audio: no le mandamos nombre, DNI ni otros datos.",
   "El audio se borra solo a los 90 días. Quedan las anotaciones del profesional.",
   "Grabarse es optativo: el ejercicio se puede hacer igual sin grabar.",
-  "Si cambiás de idea, avisanos y dejamos de usar tus grabaciones.",
+  "Si cambiás de idea, lo retirás en «Información de salud»: no se mandan más grabaciones y se borran los audios que mandaste.",
 ] as const;
 
 export const RECORDING_KEEP_DAYS = 90;
@@ -56,6 +59,13 @@ export type StaffRecordingDTO = {
   delete_after: string;
 };
 
+// El permiso de grabaciones de una cuenta, como lo ve la familia (audios:
+// cuántas grabaciones suyas todavía tienen audio)
+export type FamilyRecordingConsentDTO = { accepted: boolean; version: string; audios: number };
+
+// Cómo está el permiso de cada adulto con acceso, como lo ve el profesional
+export type StaffRecordingConsent = { name: string; relationship: string | null; state: "si" | "no" | "nunca"; at: string | null };
+
 export const REVIEW_NOTE_MAX = 600;
 
 /** La revisión que manda el profesional: conteo de sílabas tartamudeadas y total */
@@ -86,4 +96,6 @@ export type RecordingsAction =
   | { action: "audio"; id: string }
   | { action: "review"; id: string; stuttered: number; syllables: number; note: string | null }
   | { action: "reanalyze"; id: string };
-export type RecordingsResult = { items?: StaffRecordingDTO[]; url?: string; ok?: true; status?: RecordingStatus };
+export type RecordingsResult = {
+  items?: StaffRecordingDTO[]; consents?: StaffRecordingConsent[]; url?: string; ok?: true; status?: RecordingStatus;
+};
