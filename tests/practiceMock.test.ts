@@ -328,12 +328,14 @@ describe("mock: equipo", () => {
     writeDb(db);
 
     await asStaff("direccion@cimt.test");
-    const items = ok(await mock.staffInbox()).practice!.items.filter((i) => i.kind === "practicas");
+    const all = ok(await mock.staffInbox()).practice!.items;
+    const items = all.filter((i) => i.kind === "practicas");
     expect(items.find((i) => i.patient_id === other)?.mine).toBe(false);
     expect(items.find((i) => i.patient_id === MARTIN)?.mine).toBe(true); // los chicos de la demo son de todos
     const counts = await mock.staffInboxCount();
     expect(counts.practice_risk).toBe(1); // el otro; Martín ya está en practice_pending
-    expect(counts.practice_pending).toBe(items.filter((i) => i.mine).length);
+    // practice_pending: todas las filas mías (prácticas, metas y grabaciones para escuchar)
+    expect(counts.practice_pending).toBe(all.filter((i) => i.mine).length);
     // practice_urgent: todos los pacientes con riesgo sin ver, también los míos
     expect(counts.practice_urgent).toBe(2);
 
@@ -343,6 +345,14 @@ describe("mock: equipo", () => {
     expect(admin.practice_risk).toBeUndefined();
     expect(admin.practice_pending).toBeUndefined();
     expect(admin.practice_urgent).toBeUndefined();
+  });
+
+  test("la bandeja trae las grabaciones para escuchar de «Me grabo» y la ficha las cuenta", async () => {
+    await asStaff("direccion@cimt.test");
+    const rec = ok(await mock.staffInbox()).practice!.items.find((i) => i.kind === "grabaciones" && i.patient_id === MARTIN);
+    expect(rec?.recordings?.count).toBe(1); // la grabación de ejemplo, sin revisar
+    expect(rec?.mine).toBe(true);
+    expect(ok(await staffDo({ action: "get" })).recordings_to_listen).toBe(1);
   });
 
   // Un comentario de Laura sobre la práctica más nueva de Martín (devuelve su id)

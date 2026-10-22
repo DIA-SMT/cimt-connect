@@ -187,7 +187,9 @@ export function PortalPracticeSection({ patientId, refreshKey, onDirtyChange, ow
     { key: "plan", label: "Plan de práctica", count: data?.draft ? 1 : 0, urgent: false },
     { key: "followup", label: "Prácticas y devoluciones", count: newPractice, urgent: (data?.pending.risk ?? 0) > 0 },
     { key: "goals", label: "Metas y medallas", count: data?.goals_met.length ?? 0, urgent: false },
-    ...(data?.features.recordings && data.can_edit ? [{ key: "recordings" as const, label: "Grabaciones", count: 0, urgent: false }] : []),
+    ...(data?.features.recordings && data.can_edit
+      ? [{ key: "recordings" as const, label: "Grabaciones", count: data.recordings_to_listen ?? 0, urgent: false }]
+      : []),
   ];
 
   function onTabKey(e: React.KeyboardEvent<HTMLDivElement>) {

@@ -1788,6 +1788,8 @@ export type StaffPracticeDTO = {
   // ai: la ayuda de IA está disponible (etapa "ai" y clave). activities: las
   // actividades para jugar en el celular (etapa "activities" y script 33)
   features: { ai: boolean; activities: boolean; recordings: boolean };
+  // «Me grabo»: grabaciones sin revisar que todavía tienen audio (0 sin la etapa)
+  recordings_to_listen: number;
   can_edit: boolean; // profesional o Dirección
   author: { label: string | null; problem: string | null }; // con qué nombre se publica (como StaffInfoDTO)
   patient: {
@@ -1821,8 +1823,9 @@ export type StaffPracticeDTO = {
 };
 
 // Bandeja Portal → "Prácticas" (solo perfiles clínicos)
+// grabaciones: «Me grabo» (etapa recordings), grabaciones sin revisar con audio
 export type StaffPracticeInboxItem = {
-  kind: "practicas" | "meta_cumplida";
+  kind: "practicas" | "meta_cumplida" | "grabaciones";
   patient_id: string;
   patient_name: string; // "Apellido, Nombre"
   professional_id: string | null; // profesional a cargo
@@ -1831,6 +1834,7 @@ export type StaffPracticeInboxItem = {
   last_reviewed_at: string | null;
   on_break: boolean;
   goal: { id: string; title: string; met_on: string } | null; // solo "meta_cumplida"
+  recordings?: { count: number; since: string } | null; // solo "grabaciones": cuántas y la más vieja
 };
 
 // ── Acciones del equipo: POST /api/portal-staff/practice ────────────────────

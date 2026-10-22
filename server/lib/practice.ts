@@ -1422,6 +1422,7 @@ export async function staffPractice(ctx: Ctx, staff: Staff, patientId: string, o
   return {
     // recordings: «Me grabo» (server/lib/recordings.ts), con las actividades y la etapa prendidas
     features: { ai: features().includes("ai") && !!draftApiKey(process.env), activities: act, recordings: act && features().includes("recordings") },
+    recordings_to_listen: staff.clinical ? ((await recordingsToListen(ctx, [patient.id])).get(patient.id)?.count ?? 0) : 0,
     can_edit: staff.clinical,
     author: { label: author.label, problem: author.problem },
     patient: {
@@ -1948,6 +1949,30 @@ export async function staffPracticeAction(ctx: Ctx, staff: Staff, body: Json): P
 
 // ── Bandeja Portal → "Prácticas" (solo perfiles clínicos) ───────────────────
 
+// «Me grabo»: grabaciones para escuchar (sin revisar y con audio), por
+// paciente: cuántas y desde cuándo. Sin la etapa, o sin el script 38, ninguna.
+function recordingsOnHere(): boolean {
+  const f = features();
+  return f.includes("practice") && f.includes("activities") && f.includes("recordings");
+}
+async function recordingsToListen(ctx: Ctx, patientIds?: string[]): Promise<Map<string, { count: number; since: string }>> {
+  const out = new Map<string, { count: number; since: string }>();
+  if (!recordingsOnHere() || (patientIds && !patientIds.length)) return out;
+  let q = ctx.admin.from("practice_recordings").select("patient_id, created_at")
+    .in("status", ["lista", "error"]).is("audio_deleted_at", null).order("created_at", { ascending: true }).limit(LIST_MAX);
+  if (patientIds) q = q.in("patient_id", patientIds);
+  const { data, error } = await q;
+  if (error) {
+    if (!missingTable(error)) console.error("[practica] grabaciones para escuchar:", error.code ?? "error");
+    return out;
+  }
+  for (const r of (data ?? []) as { patient_id: string; created_at: string }[]) {
+    const cur = out.get(r.patient_id);
+    out.set(r.patient_id, { count: (cur?.count ?? 0) + 1, since: cur?.since ?? r.created_at });
+  }
+  return out;
+}
+
 // Lo pendiente lo cuenta la base (practice_pending: una fila por paciente),
 // así ninguna práctica nueva ni ningún comentario de riesgo queda afuera por
 // el tope de filas de la API. Las metas cumplidas, con los días con práctica
@@ -1968,9 +1993,10 @@ async function inboxItems(ctx: Ctx, staff: Staff): Promise<StaffPracticeInboxIte
   // Prácticas de los pacientes con metas de práctica activas, desde que se publicó la más vieja
   const goalPatients = uniq(goals.map((g) => g.patient_id));
   const goalStart = goals.map((g) => centerDateOf(g.published_at!)).sort()[0] ?? null;
-  const [pending, days] = await Promise.all([
+  const [pending, days, toListen] = await Promise.all([
     pendingRows(ctx, cutoff, goalPatients),
     practiceDays(ctx, goalPatients, goalStart),
+    recordingsToListen(ctx),
   ]);
 
   type Entry = { pending: StaffPracticePending; last_reviewed_at: string | null; on_break: boolean };
@@ -1986,7 +2012,7 @@ async function inboxItems(ctx: Ctx, staff: Staff): Promise<StaffPracticeInboxIte
   });
   const withPractice = uniq(pending.filter((r) => Number(r.logs) || Number(r.comments) || Number(r.costo) || Number(r.risk))
     .map((r) => r.patient_id));
-  const ids = uniq([...withPractice, ...met.map((m) => m.goal.patient_id)]);
+  const ids = uniq([...withPractice, ...met.map((m) => m.goal.patient_id), ...toListen.keys()]);
   if (!ids.length) return [];
   const patients = await rowsByIds<{ id: string; first_name: string; last_name: string; professional_id: string | null }>(
     ctx, "patients", "id, first_name, last_name, professional_id", ids);
@@ -2006,11 +2032,15 @@ async function inboxItems(ctx: Ctx, staff: Staff): Promise<StaffPracticeInboxIte
   const goalRowsOut: StaffPracticeInboxItem[] = met
     .filter((m) => patients.some((p) => p.id === m.goal.patient_id))
     .map((m) => ({ kind: "meta_cumplida", ...base(m.goal.patient_id), goal: { id: m.goal.id, title: m.goal.title, met_on: m.met_on } }));
+  const recordingRows: StaffPracticeInboxItem[] = [...toListen.entries()]
+    .filter(([id]) => patients.some((p) => p.id === id))
+    .map(([id, rec]) => ({ kind: "grabaciones", ...base(id), goal: null, recordings: rec }));
+  recordingRows.sort((a, b) => a.recordings!.since.localeCompare(b.recordings!.since));
   // Los comentarios con palabras de riesgo, arriba de todo; después lo más viejo
   practiceRows.sort((a, b) => Number(b.pending.risk > 0) - Number(a.pending.risk > 0)
     || (a.pending.since ?? "").localeCompare(b.pending.since ?? ""));
   goalRowsOut.sort((a, b) => a.goal!.met_on.localeCompare(b.goal!.met_on));
-  return [...practiceRows, ...goalRowsOut];
+  return [...practiceRows, ...goalRowsOut, ...recordingRows];
 }
 
 // { action: "list" } de la bandeja. Administración: { allowed: false, items: [] }

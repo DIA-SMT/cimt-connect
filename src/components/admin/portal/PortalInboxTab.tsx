@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Award, BellRing, CalendarCheck, CalendarPlus, ChevronDown, Clock, Eye, FileText, IdCard, Loader2, NotebookPen, PackageCheck,
+  Award, BellRing, CalendarCheck, CalendarPlus, ChevronDown, Clock, Eye, FileText, IdCard, Loader2, Mic, NotebookPen, PackageCheck,
   Phone, PhoneCall, RefreshCw, Scale, Send, ShieldAlert, Target, Trash2, TriangleAlert, Undo2, Upload, UserRound, XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +33,7 @@ import type { PracticeAction, StaffPracticeDTO, StaffPracticeInboxItem, StaffPra
 import { STAFF_PRACTICE_TEXT, ddmm, goalMetLine } from "@/lib/practiceRules";
 import { PortalApptSchedule } from "./PortalApptSchedule";
 import { PortalPracticeFollowup } from "./PortalPracticeFollowup";
+import { PortalRecordings } from "./PortalRecordings";
 import { askGoalMedal, inMyPracticeList, onInboxStale, practiceCountsFromInbox } from "./practiceHandoff";
 import type { PortalCounts } from "./usePortalInboxCount";
 
@@ -1997,12 +1998,14 @@ function ApptDialog({ request: r, mode, onClose, onSubmit, onReload, onFresh }: 
 // fila: se leen al abrir sus prácticas (la misma vista que en la ficha).
 
 // Arriba los que tienen comentarios con palabras de riesgo; después los que
-// pasaron 7 días sin revisar (ámbar), las metas cumplidas y el resto, lo más
-// viejo primero
+// pasaron 7 días sin revisar (ámbar), las metas cumplidas, las grabaciones
+// para escuchar y el resto, lo más viejo primero
 function sortPractice(list: StaffPracticeInboxItem[]): StaffPracticeInboxItem[] {
   const rank = (i: StaffPracticeInboxItem) =>
-    i.pending.risk > 0 ? 0 : i.kind === "practicas" && i.pending.stale && !i.on_break ? 1 : i.kind === "meta_cumplida" ? 2 : 3;
-  const since = (i: StaffPracticeInboxItem) => (i.kind === "meta_cumplida" ? i.goal?.met_on : i.pending.since) ?? "9999";
+    i.kind === "practicas" && i.pending.risk > 0 ? 0 : i.kind === "practicas" && i.pending.stale && !i.on_break ? 1
+      : i.kind === "meta_cumplida" ? 2 : i.kind === "grabaciones" ? 3 : 4;
+  const since = (i: StaffPracticeInboxItem) =>
+    (i.kind === "meta_cumplida" ? i.goal?.met_on : i.kind === "grabaciones" ? i.recordings?.since : i.pending.since) ?? "9999";
   return [...list].sort((a, b) => rank(a) - rank(b) || since(a).localeCompare(since(b))
     || a.patient_name.localeCompare(b.patient_name, "es"));
 }
@@ -2053,6 +2056,9 @@ function PracticeList({ list, filter, onFilter, busy, onNotYet, onGiveMedal, onO
             const key = practiceKey(i);
             return i.kind === "meta_cumplida" ? (
               <GoalMetRow key={key} item={i} busy={busy} onNotYet={onNotYet} onGiveMedal={onGiveMedal} onOpenPatient={onOpenPatient} />
+            ) : i.kind === "grabaciones" ? (
+              <RecordingsRow key={key} item={i} open={openKey === key} onToggle={() => setOpenKey((k) => (k === key ? null : key))}
+                onOpenPatient={onOpenPatient} onChanged={onChanged} />
             ) : (
               <PracticeRow key={key} item={i} open={openKey === key} onToggle={() => setOpenKey((k) => (k === key ? null : key))}
                 onOpenPatient={onOpenPatient} onChanged={onChanged} />
@@ -2124,6 +2130,48 @@ function PracticeRow({ item: i, open, onToggle, onOpenPatient, onChanged }: {
         </Button>
       </div>
       {open && <PracticePanel id={panelId} patientId={i.patient_id} onChanged={onChanged} />}
+    </li>
+  );
+}
+
+// «Me grabo»: grabaciones sin revisar de un paciente. Se escuchan y se
+// revisan acá mismo (la misma vista que la pestaña Grabaciones de la ficha)
+function RecordingsRow({ item: i, open, onToggle, onOpenPatient, onChanged }: {
+  item: StaffPracticeInboxItem;
+  open: boolean;
+  onToggle: () => void;
+  onOpenPatient: (patientId: string) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const panelId = useId();
+  const { full } = nameParts(i.patient_name);
+  const n = i.recordings?.count ?? 0;
+  return (
+    <li className="grid gap-2 p-4 md:px-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Mic className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+        <button type="button" onClick={() => onOpenPatient(i.patient_id)} title="Abrir ficha"
+          className="font-bold underline-offset-2 hover:text-[color:var(--primary-deep)] hover:underline">
+          {full}
+        </button>
+        {!i.mine && <Pill tone="muted">No es tu paciente</Pill>}
+        {i.recordings?.since && <span className="ml-auto text-xs text-muted-foreground">desde el {shortDay(i.recordings.since)}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1.5 text-xs">
+        <span className="rounded-full bg-muted px-2.5 py-0.5 font-semibold text-foreground/80">
+          {n === 1 ? "1 grabación para escuchar" : `${n} grabaciones para escuchar`}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-1">
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" aria-expanded={open} aria-controls={open ? panelId : undefined}
+          onClick={() => { if (open) void onChanged(); onToggle(); }}>
+          <ChevronDown className={`mr-1 transition-transform ${open ? "rotate-180" : ""}`} /> {open ? "Cerrar" : "Escuchar"}
+        </Button>
+        <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => onOpenPatient(i.patient_id)}>
+          <UserRound className="mr-1" /> Abrir ficha
+        </Button>
+      </div>
+      {open && <div id={panelId} className="rounded-xl border border-border/60 p-3"><PortalRecordings patientId={i.patient_id} /></div>}
     </li>
   );
 }

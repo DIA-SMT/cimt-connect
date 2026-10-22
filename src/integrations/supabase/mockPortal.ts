@@ -4972,6 +4972,9 @@ async function staffPractice(staff: Staff, patientId: string, withCatalog = fals
   return ok({
     // En el mock la ayuda de IA no necesita clave (son plantillas fijas)
     features: { ai: FEATURES.includes("ai"), activities: activitiesOn(), recordings: activitiesOn() && FEATURES.includes("recordings") },
+    recordings_to_listen: staff.clinical && recordingsOn()
+      ? mockRecordings.filter((r) => r.patient_id === patientId && !r.audio_deleted && (r.status === "lista" || r.status === "error")).length
+      : 0,
     can_edit: staff.clinical,
     author: { label: author.label, problem: admin ? STAFF_PRACTICE_TEXT.admin_readonly : author.problem },
     patient: {
@@ -5554,7 +5557,24 @@ async function practiceInboxItems(db: Db, staff: Staff): Promise<StaffPracticeIn
   practiceRows.sort((x, y) => Number(y.pending.risk > 0) - Number(x.pending.risk > 0)
     || (x.pending.since ?? "").localeCompare(y.pending.since ?? ""));
   goalRows.sort((x, y) => (x.goal?.met_on ?? "").localeCompare(y.goal?.met_on ?? ""));
-  return [...practiceRows, ...goalRows];
+  // «Me grabo»: grabaciones sin revisar con audio, una fila por paciente
+  const recordingRows: StaffPracticeInboxItem[] = [];
+  if (recordingsOn()) {
+    const waiting = mockRecordings.filter((r) => !r.audio_deleted && (r.status === "lista" || r.status === "error"));
+    for (const id of [...new Set(waiting.map((r) => r.patient_id))]) {
+      const p = await practicePatient(db, id);
+      if (!p) continue;
+      const mineRecs = waiting.filter((r) => r.patient_id === id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+      const plan = livePlan(db, id);
+      recordingRows.push({
+        kind: "grabaciones", patient_id: id, patient_name: (await patientInfo(db, [id])).get(id)?.name ?? "Paciente",
+        professional_id: p.professional_id, mine: isMine(staff, p), pending: practicePending(db, id, today, true, cutoff),
+        last_reviewed_at: lastReviewedOf(db, id), on_break: !!plan && onBreak(plan.on_break_until, today), goal: null,
+        recordings: { count: mineRecs.length, since: mineRecs[0].created_at },
+      });
+    }
+  }
+  return [...practiceRows, ...goalRows, ...recordingRows];
 }
 
 // ── "Adaptar con ayuda de IA" (equipo, etapa D) ─────────────────────────────
